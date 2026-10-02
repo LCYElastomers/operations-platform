@@ -36,7 +36,7 @@ class MoistureRecord(CamelModel):
 
 
 class DataSourceInfo(CamelModel):
-    kind: Literal["development-fixture"]
+    kind: Literal["development-fixture", "database"]
     is_fixture: bool
     label: str
 

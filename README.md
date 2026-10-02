@@ -93,6 +93,11 @@ uv run pytest
 uv run ruff check .
 uv run ruff format --check .
 
+# Optional: PostgreSQL integration tests (migrations, persistence, repository).
+# Point at a disposable database whose name contains "test"; the tests run
+# migrations up and down against it. Skipped when unset.
+TEST_DATABASE_URL=postgresql+psycopg://<user>:<password>@localhost:5432/operations_platform_test uv run pytest
+
 # Web
 cd apps/web
 npm run lint
@@ -145,6 +150,7 @@ from Docker build contexts. Never commit real credentials.
 | `ENVIRONMENT`  | api     | `development` | `production` disables API docs          |
 | `LOG_LEVEL`    | api     | `INFO`        |                                         |
 | `DATABASE_URL` | api     | _(unset)_     | SQLAlchemy URL for host PostgreSQL      |
+| `MOISTURE_DATA_SOURCE` | api | `fixture` | `fixture` or `database`; `database` requires `DATABASE_URL` |
 
 ## Database migrations
 
@@ -154,12 +160,37 @@ environment; no URL is stored in `alembic.ini`. Register new models in
 
 ```bash
 cd apps/api
-uv run alembic revision --autogenerate -m "describe change"
+uv run alembic history
 uv run alembic upgrade head
+uv run alembic check            # fails if models and migrations have drifted
+uv run alembic revision --autogenerate -m "describe change"
+
+# In the deployed stack
+docker compose exec api alembic upgrade head
 ```
+
+Schema changes happen only through Alembic; the API never creates tables at
+startup. Autogenerate only inspects application-owned schemas (`quality`).
 
 Use a least-privilege database role for the application. From inside the API
 container, the host database is reachable as `host.docker.internal`.
+
+Privileges needed by the role that runs migrations:
+
+- `CREATE` on the database, unless a DBA pre-creates the `quality` schema
+  and grants the role `USAGE, CREATE` on it.
+- `CREATE` on schema `public` for Alembic's `alembic_version` table (or
+  pre-create that table).
+
+Downgrading revision `0001` drops `quality.finishing_measurements` and its
+data. It drops the `quality` schema only when that schema is empty and owned
+by the migrating role.
+
+Current revisions:
+
+| Revision | Creates                           |
+| -------- | --------------------------------- |
+| `0001`   | `quality.finishing_measurements`  |
 
 ## Quality > Raw Materials > Moisture Analysis
 
@@ -200,6 +231,39 @@ Data rules:
 - Campaign number, lot, and product are identifiers (strings), never numbers.
 - Locations are not normalized (`Silo 1` and `SILO 1` are distinct).
 - No specification limits or in/out-of-spec classifications exist yet.
+
+### Persistence
+
+Moisture records are stored in `quality.finishing_measurements`, one row per
+source query row:
+
+| Column                                         | Type          | Notes                                  |
+| ---------------------------------------------- | ------------- | -------------------------------------- |
+| `id`                                           | bigint        | Identity primary key                   |
+| `source_date`                                  | date          | Not null                               |
+| `campaign_no`, `lot`, `location`, `product`    | text          | Nullable, stored exactly as received   |
+| `avg_moisture`, `avg_color`, `avg_combined_bd` | numeric       | Nullable, unconstrained precision      |
+| `source_system`                                | text          | Not null; name of the delivering system |
+| `source_row_hash`                              | text          | Not null; SHA-256 of the source row    |
+| `synced_at`                                    | timestamptz   | Not null; when the row was ingested    |
+| `created_at`                                   | timestamptz   | Not null; database default `now()`     |
+
+`(source_system, source_row_hash)` is unique, so re-delivering an identical
+row is a no-op (`insert_source_rows` in `ingestion.py` uses
+`ON CONFLICT DO NOTHING`). The hash covers all eight source fields after
+canonicalization: `26101` and `"26101"` hash alike, but `null` and `0`
+differ, and text is never trimmed or case-folded. A row whose values change
+in the source therefore produces a new hash and a new row; reconciling
+corrections is a decision for the future sync agent.
+
+Float measurements are stored via their shortest round-trip representation
+(`0.43333333333333335` stays exactly that), so values read back unchanged.
+
+The API reads from the fixture or the database depending on
+`MOISTURE_DATA_SOURCE`. Both implement the same repository interface
+(`repository.py`), so the HTTP contract is identical; only
+`dataSource.kind` / `isFixture` / `label` change. No historical data has
+been imported yet, so keep `MOISTURE_DATA_SOURCE=fixture` until it has.
 
 ### Development fixture
 

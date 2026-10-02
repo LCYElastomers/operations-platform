@@ -1,7 +1,7 @@
 """Moisture source data.
 
-The production source is an Access query; until synchronization exists the
-API serves a development fixture with the same field names.
+The production source is an Access query. Until synchronization exists the
+API can serve a development fixture with the same field names.
 """
 
 import json
@@ -34,6 +34,12 @@ FIXTURE_DATA_SOURCE = DataSourceInfo(
     label="Development fixture. Not production data.",
 )
 
+DATABASE_DATA_SOURCE = DataSourceInfo(
+    kind="database",
+    is_fixture=False,
+    label="Operations database.",
+)
+
 
 def record_from_source_row(row: Mapping[str, Any]) -> MoistureRecord:
     missing = set(SOURCE_FIELD_MAP) - set(row)
@@ -50,12 +56,3 @@ def load_fixture_records() -> tuple[MoistureRecord, ...]:
     records = tuple(record_from_source_row(row) for row in payload["rows"])
     logger.info("Loaded moisture development fixture: %d records", len(records))
     return records
-
-
-def get_moisture_records() -> tuple[MoistureRecord, ...]:
-    """FastAPI dependency returning source records in source order."""
-    return load_fixture_records()
-
-
-def get_moisture_data_source() -> DataSourceInfo:
-    return FIXTURE_DATA_SOURCE

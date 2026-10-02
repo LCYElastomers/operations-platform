@@ -6,12 +6,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
+from app.quality.moisture.repository import FixtureMoistureRepository, get_moisture_repository
 from app.quality.moisture.schemas import MoistureRecord
-from app.quality.moisture.source import (
-    get_moisture_records,
-    load_fixture_records,
-    record_from_source_row,
-)
+from app.quality.moisture.source import load_fixture_records, record_from_source_row
 
 BASE = "/api/v1/quality/moisture"
 
@@ -43,7 +40,9 @@ def use_records() -> Iterator[Any]:
 
     def build(data: Sequence[MoistureRecord]) -> TestClient:
         app = create_app()
-        app.dependency_overrides[get_moisture_records] = lambda: tuple(data)
+        app.dependency_overrides[get_moisture_repository] = lambda: FixtureMoistureRepository(
+            tuple(data)
+        )
         client = TestClient(app)
         clients.append(client)
         return client
