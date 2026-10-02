@@ -107,6 +107,8 @@ def test_indexes_support_recent_and_product_queries() -> None:
         "ix_finishing_measurements_source_date_desc",
         "ix_finishing_measurements_product_source_date",
         "ix_finishing_measurements_product_lot",
+        "ix_finishing_measurements_current_record_key",
+        "ix_finishing_measurements_current_source_date",
     }
     assert "(source_date DESC, id DESC)" in _index_ddl("ix_finishing_measurements_source_date_desc")
     assert "(product, source_date DESC)" in _index_ddl(

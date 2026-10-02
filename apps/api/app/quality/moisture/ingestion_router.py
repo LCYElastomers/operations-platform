@@ -1,6 +1,7 @@
 """Machine-to-machine ingestion endpoint for finishing measurements."""
 
 import json
+import logging
 from decimal import Decimal
 from typing import Annotated, Any
 
@@ -17,7 +18,14 @@ from app.quality.moisture.ingestion_schemas import (
     IngestionResult,
     batch_request_json_schema,
 )
-from app.quality.moisture.ingestion_service import IngestionDatabaseError, SessionFactory
+from app.quality.moisture.ingestion_service import (
+    BatchConflictError,
+    IngestionDatabaseError,
+    SessionFactory,
+    StaleBatchError,
+)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/ingestion/quality/finishing", tags=["ingestion"])
 
@@ -131,6 +139,9 @@ def _validate_batch(payload: Any) -> FinishingBatchIn:
     },
     responses={
         400: {"description": "Body is not valid JSON"},
+        401: {"description": "Connector authentication failed"},
+        403: {"description": "Connector may not write this source system"},
+        409: {"description": "Batch ID conflict, or stale batch (nothing applied)"},
         413: {"description": "Body too large"},
         415: {"description": "Content-Type is not application/json"},
         422: {"description": "Batch envelope invalid; nothing processed"},
@@ -143,6 +154,18 @@ async def ingest_finishing_batch(
     session_factory: Annotated[SessionFactory, Depends(get_ingestion_session_factory)],
 ) -> IngestionResult:
     batch = _validate_batch(_parse_json(await _read_body(request)))
+    if not principal.may_write(batch.source_system):
+        logger.warning(
+            "event=machine_auth result=forbidden reason=source_system_not_allowed "
+            "connector=%s source_system=%s",
+            principal.connector_id,
+            batch.source_system,
+        )
+        raise _error(
+            status.HTTP_403_FORBIDDEN,
+            "source_system_not_allowed",
+            "This connector may not write to the requested source system.",
+        )
     try:
         return await run_in_threadpool(
             ingestion_service.ingest_batch,
@@ -150,6 +173,21 @@ async def ingest_finishing_batch(
             session_factory,
             connector_id=principal.connector_id,
         )
+    except BatchConflictError:
+        raise _error(
+            status.HTTP_409_CONFLICT,
+            "batch_id_conflict",
+            "This batch ID was already used with different content or by another connector. "
+            "Use a new batch ID for each extraction.",
+            batchId=batch.batch_id,
+        ) from None
+    except StaleBatchError:
+        raise _error(
+            status.HTTP_409_CONFLICT,
+            "stale_batch",
+            "Data from a later extraction has already been applied. The batch was not applied.",
+            batchId=batch.batch_id,
+        ) from None
     except IngestionDatabaseError:
         raise _error(
             status.HTTP_503_SERVICE_UNAVAILABLE,

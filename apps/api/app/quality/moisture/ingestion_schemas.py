@@ -19,16 +19,15 @@ from pydantic import (
     Field,
     PlainValidator,
     WithJsonSchema,
+    model_validator,
 )
 from pydantic.alias_generators import to_camel
 
+from app.core.config import SAFE_NAME_PATTERN
 from app.quality.moisture.schemas import CamelModel
 
 MAX_BATCH_ROWS = 5000
 MAX_IDENTIFIER_LENGTH = 200
-# Batch and source-system identifiers appear in logs, so they are restricted
-# to characters that cannot break log lines.
-SAFE_NAME_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._:\-]{0,99}$"
 SOURCE_ROW_HASH_PATTERN = r"^[0-9a-f]{64}$"
 _DATE_PATTERN = re.compile(r"\d{4}-\d{2}-\d{2}")
 
@@ -54,6 +53,13 @@ def _identifier(value: object) -> str | None:
     if "\x00" in value:
         raise ValueError("must not contain NUL characters")
     return value
+
+
+def _record_id(value: object) -> str | None:
+    identifier = _identifier(value)
+    if identifier == "":
+        raise ValueError("must not be empty")
+    return identifier
 
 
 def _measurement(value: object) -> Decimal | None:
@@ -83,6 +89,19 @@ Identifier = Annotated[
         }
     ),
 ]
+RecordId = Annotated[
+    str | None,
+    PlainValidator(_record_id),
+    WithJsonSchema(
+        {
+            "anyOf": [
+                {"type": "string", "minLength": 1, "maxLength": MAX_IDENTIFIER_LENGTH},
+                {"type": "null"},
+            ],
+            "description": "Durable upstream identity of the record, if the source has one.",
+        }
+    ),
+]
 Measurement = Annotated[
     Decimal | None,
     PlainValidator(_measurement),
@@ -108,6 +127,7 @@ class FinishingRowIn(BaseModel):
     avg_moisture: Measurement
     avg_color: Measurement
     avg_combined_bd: Measurement
+    source_record_id: RecordId = None
     source_row_hash: Annotated[str | None, Field(pattern=SOURCE_ROW_HASH_PATTERN)] = None
 
     def to_source_row(self) -> dict[str, Any]:
@@ -129,6 +149,25 @@ ROW_FIELD_ALIASES = frozenset(
 )
 
 
+class ReconciliationWindow(BaseModel):
+    """Declares the batch to be the complete, authoritative set of source rows
+    whose source date falls within this inclusive range."""
+
+    model_config = ConfigDict(alias_generator=to_camel, extra="forbid", frozen=True)
+
+    source_date_from: SourceDate
+    source_date_to: SourceDate
+
+    @model_validator(mode="after")
+    def _ordered(self) -> "ReconciliationWindow":
+        if self.source_date_from > self.source_date_to:
+            raise ValueError("sourceDateFrom must be on or before sourceDateTo")
+        return self
+
+    def contains(self, day: dt.date) -> bool:
+        return self.source_date_from <= day <= self.source_date_to
+
+
 class FinishingBatchIn(BaseModel):
     """Batch envelope. Rows are validated individually so one bad row does not
     hide the outcome of the others."""
@@ -138,11 +177,18 @@ class FinishingBatchIn(BaseModel):
     source_system: Annotated[str, Field(pattern=SAFE_NAME_PATTERN)]
     batch_id: Annotated[str, Field(pattern=SAFE_NAME_PATTERN)]
     extracted_at: AwareDatetime
+    reconciliation_window: ReconciliationWindow | None = None
     rows: Annotated[list[Any], Field(min_length=1, max_length=MAX_BATCH_ROWS)]
 
 
 def batch_request_json_schema() -> dict[str, Any]:
-    schema = FinishingBatchIn.model_json_schema(by_alias=True)
+    schema = FinishingBatchIn.model_json_schema(
+        by_alias=True, ref_template="#/components/schemas/{model}"
+    )
+    schema.pop("$defs", None)
+    schema["properties"]["reconciliationWindow"] = {
+        "anyOf": [ReconciliationWindow.model_json_schema(by_alias=True), {"type": "null"}]
+    }
     schema["properties"]["rows"]["items"] = FinishingRowIn.model_json_schema(by_alias=True)
     return schema
 
@@ -165,5 +211,11 @@ class IngestionResult(CamelModel):
     inserted_rows: int
     duplicate_rows: int
     rejected_rows: int
+    restored_rows: int
+    superseded_rows: int
+    # null when the batch declared no reconciliation window.
+    window_applied: bool | None
+    # True when this batch ID was already processed with identical content.
+    replayed: bool
     rejections: list[RowRejection]
     rejections_truncated: bool

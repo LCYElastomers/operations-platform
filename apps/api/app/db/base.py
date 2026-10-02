@@ -12,7 +12,7 @@ NAMING_CONVENTION = {
 
 
 # PostgreSQL schemas owned by this application (used by Alembic autogenerate).
-MANAGED_SCHEMAS = frozenset({"quality"})
+MANAGED_SCHEMAS = frozenset({"core", "quality"})
 
 # Alembic records the applied revision in core.alembic_version. The schema must
 # already exist; the application role has no CREATE privilege on public.

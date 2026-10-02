@@ -37,6 +37,11 @@ def test_finishing_measurements_is_created_in_quality(upgrade_sql: str) -> None:
     assert "CREATE TABLE quality.finishing_measurements" in upgrade_sql
 
 
+def test_ingestion_batches_is_created_in_core(upgrade_sql: str) -> None:
+    assert "CREATE TABLE core.ingestion_batches" in upgrade_sql
+    assert "REFERENCES core.ingestion_batches" in upgrade_sql
+
+
 def test_no_objects_are_created_in_public(upgrade_sql: str) -> None:
     created = re.findall(r"CREATE (?:TABLE|INDEX \S+ ON) (\S+)", upgrade_sql)
     assert created

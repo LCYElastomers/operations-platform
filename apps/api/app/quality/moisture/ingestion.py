@@ -1,8 +1,8 @@
-"""Storage of source rows in quality.finishing_measurements.
+"""Canonical values and content hashes for quality.finishing_measurements rows.
 
-This is the write path a future synchronization job will call. It does not
-read from Access. Values are stored as received: no trimming, case changes,
-rounding, or substitution of zero for missing values.
+Values are stored as received: no trimming, case changes, rounding, or
+substitution of zero for missing values. ``insert_source_rows`` is the plain
+append path (no reconciliation); batch ingestion lives in ingestion_service.
 """
 
 import datetime as dt
@@ -77,12 +77,14 @@ def _canonical_decimal(number: Decimal | None) -> str | None:
     return format(number.normalize(), "f")
 
 
-def compute_source_row_hash(row: Mapping[str, Any]) -> str:
-    """Stable SHA-256 of a source row's values, used for idempotent ingestion.
+def compute_source_row_hash(row: Mapping[str, Any], record_key: str | None = None) -> str:
+    """Stable SHA-256 of a source row's content: its version, not its identity.
 
     Equal source values hash equally regardless of Python type (e.g. 0.5 and
     Decimal("0.50"), 26101 and "26101"). NULL and 0 hash differently, and text
-    is hashed exactly as received.
+    is hashed exactly as received. A durable record key, when present, is part
+    of the content so identical values of two different records stay distinct;
+    rows without one hash exactly as before record keys existed.
     """
     missing = set(SOURCE_FIELD_MAP) - set(row)
     if missing:
@@ -94,8 +96,11 @@ def compute_source_row_hash(row: Mapping[str, Any]) -> str:
     for field in MEASUREMENT_FIELDS:
         canonical[field] = _canonical_decimal(measurement(row[field]))
 
+    document: dict[str, Any] = {"v": HASH_VERSION, "row": canonical}
+    if record_key is not None:
+        document["key"] = record_key
     payload = json.dumps(
-        {"v": HASH_VERSION, "row": canonical},
+        document,
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=False,
@@ -104,13 +109,20 @@ def compute_source_row_hash(row: Mapping[str, Any]) -> str:
 
 
 def to_measurement_values(
-    row: Mapping[str, Any], *, source_system: str, synced_at: dt.datetime
+    row: Mapping[str, Any],
+    *,
+    source_system: str,
+    synced_at: dt.datetime,
+    record_key: str | None = None,
+    ingestion_batch_id: int | None = None,
 ) -> dict[str, Any]:
     if not source_system:
         raise ValueError("source_system is required")
     if synced_at.tzinfo is None:
         raise ValueError("synced_at must be timezone-aware")
     return {
+        "source_record_key": record_key,
+        "ingestion_batch_id": ingestion_batch_id,
         "source_date": source_date(row["DATE"]),
         "campaign_no": identifier(row["CAMPNO"]),
         "lot": identifier(row["LOT"]),
@@ -120,7 +132,7 @@ def to_measurement_values(
         "avg_color": measurement(row["AvgOfCOLOR"]),
         "avg_combined_bd": measurement(row["AvgOfCombined_BD"]),
         "source_system": source_system,
-        "source_row_hash": compute_source_row_hash(row),
+        "source_row_hash": compute_source_row_hash(row, record_key),
         "synced_at": synced_at,
     }
 

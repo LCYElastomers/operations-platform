@@ -1,6 +1,6 @@
-"""Finishing batch ingestion: authentication, validation, hashing, and failure
-handling. No database required; persistence is covered in
-test_finishing_ingestion_database.py."""
+"""Finishing batch ingestion: request handling, row validation, hashing, and
+database failure. No database required; persistence, auditing, and
+reconciliation are covered in test_finishing_ingestion_database.py."""
 
 import datetime as dt
 import json
@@ -22,8 +22,12 @@ from app.quality.moisture.ingestion_router import (
     _parse_json,
     get_ingestion_session_factory,
 )
-from app.quality.moisture.ingestion_schemas import MAX_BATCH_ROWS
-from app.quality.moisture.ingestion_service import validate_rows
+from app.quality.moisture.ingestion_schemas import (
+    MAX_BATCH_ROWS,
+    FinishingBatchIn,
+    ReconciliationWindow,
+)
+from app.quality.moisture.ingestion_service import request_digest, validate_rows
 
 URL = "/api/v1/ingestion/quality/finishing/batches"
 SYNCED_AT = dt.datetime(2026, 10, 2, 12, 0, tzinfo=dt.UTC)
@@ -57,6 +61,10 @@ def batch(*rows: dict[str, Any], **overrides: Any) -> dict[str, Any]:
     return data
 
 
+def window(start: str, end: str) -> dict[str, str]:
+    return {"sourceDateFrom": start, "sourceDateTo": end}
+
+
 def enabled_settings(**overrides: Any) -> Settings:
     values: dict[str, Any] = {
         "_env_file": None,
@@ -85,12 +93,24 @@ def enabled() -> Iterator[TestClient]:
         yield client
 
 
-def validated(*rows: Any) -> tuple[list[dict[str, Any]], list[Any]]:
+def validated(
+    *rows: Any, window: ReconciliationWindow | None = None
+) -> tuple[list[dict[str, Any]], list[Any]]:
     parsed = _parse_json(json.dumps(list(rows)).encode())
-    return validate_rows(parsed, source_system="access", synced_at=SYNCED_AT)
+    return validate_rows(parsed, source_system="access", synced_at=SYNCED_AT, window=window)
 
 
-# Authentication fails closed ------------------------------------------------------
+def rejections_for(*rows: Any, **kwargs: Any) -> list[dict[str, Any]]:
+    _, rejections = validated(*rows, **kwargs)
+    return [r.model_dump(by_alias=True) for r in rejections]
+
+
+def first_error_field(*rows: Any) -> str | None:
+    (rejection,) = rejections_for(*rows)
+    return rejection["errors"][0]["field"]
+
+
+# Ingestion is fail-closed ---------------------------------------------------------
 
 
 def test_ingestion_is_disabled_by_default() -> None:
@@ -167,6 +187,18 @@ def test_too_many_rows_are_rejected(enabled: TestClient) -> None:
         ({"extractedAt": "yesterday"}, "extractedAt"),
         ({"rows": {"0": {}}}, "rows"),
         ({"unexpected": 1}, "unexpected"),
+        (
+            {"reconciliationWindow": {"sourceDateFrom": "2026-09-01"}},
+            "reconciliationWindow.sourceDateTo",
+        ),
+        (
+            {"reconciliationWindow": window("2026-09-05", "2026-09-01")},
+            "reconciliationWindow",
+        ),
+        (
+            {"reconciliationWindow": window("09/01/2026", "2026-09-05")},
+            "reconciliationWindow.sourceDateFrom",
+        ),
     ],
 )
 def test_invalid_batch_metadata_is_rejected(
@@ -225,53 +257,36 @@ def test_oversized_body_is_rejected(enabled: TestClient) -> None:
 # Row-level validation ---------------------------------------------------------------
 
 
-def post_rows(client: TestClient, *rows: dict[str, Any]) -> dict[str, Any]:
-    response = client.post(URL, json=batch(*rows))
-    assert response.status_code == 200, response.text
-    return response.json()
-
-
 @pytest.mark.parametrize(
     "value",
     ["2026-13-01", "2026-02-30", "09/01/2026", "2026-9-1", "2026-09-01T10:00:00", 20260901, ""],
 )
-def test_malformed_dates_are_rejected(enabled: TestClient, value: Any) -> None:
-    result = post_rows(enabled, row(sourceDate=value))
+def test_malformed_dates_are_rejected(value: Any) -> None:
+    (rejection,) = rejections_for(row(sourceDate=value))
 
-    assert result["status"] == "rejected"
-    assert result["rejectedRows"] == 1
-    assert result["insertedRows"] == 0
-    assert result["rejections"][0]["rowIndex"] == 0
-    assert result["rejections"][0]["errors"][0]["field"] == "sourceDate"
+    assert rejection["rowIndex"] == 0
+    assert rejection["errors"][0]["field"] == "sourceDate"
 
 
 @pytest.mark.parametrize("value", ["abc", "0.5", "", True, [0.5], {"value": 0.5}])
-def test_malformed_numeric_measurements_are_rejected(enabled: TestClient, value: Any) -> None:
-    result = post_rows(enabled, row(avgMoisture=value))
-
-    assert result["rejectedRows"] == 1
-    assert result["rejections"][0]["errors"][0]["field"] == "avgMoisture"
+def test_malformed_numeric_measurements_are_rejected(value: Any) -> None:
+    assert first_error_field(row(avgMoisture=value)) == "avgMoisture"
 
 
 @pytest.mark.parametrize("value", [None, "missing"])
-def test_missing_source_date_is_rejected(enabled: TestClient, value: Any) -> None:
+def test_missing_source_date_is_rejected(value: Any) -> None:
     data = row(sourceDate=value)
     if value == "missing":
         del data["sourceDate"]
 
-    result = post_rows(enabled, data)
-
-    assert result["rejectedRows"] == 1
-    assert result["rejections"][0]["errors"][0]["field"] == "sourceDate"
+    assert first_error_field(data) == "sourceDate"
 
 
-def test_measurement_fields_must_be_present_even_when_null(enabled: TestClient) -> None:
+def test_measurement_fields_must_be_present_even_when_null() -> None:
     data = row()
     del data["avgColor"]
 
-    result = post_rows(enabled, data)
-
-    assert result["rejections"][0]["errors"][0]["field"] == "avgColor"
+    assert first_error_field(data) == "avgColor"
 
 
 @pytest.mark.parametrize(
@@ -282,60 +297,76 @@ def test_measurement_fields_must_be_present_even_when_null(enabled: TestClient) 
         ("location", "x" * 201),
         ("campaignNo", "26\x00101"),
         ("unknownField", "x"),
+        ("sourceRecordId", ""),
+        ("sourceRecordId", 1.5),
+        ("sourceRecordId", "k" * 201),
     ],
 )
-def test_invalid_identifiers_and_unknown_fields_are_rejected(
-    enabled: TestClient, field: str, value: Any
-) -> None:
-    result = post_rows(enabled, row(**{field: value}))
-
-    assert result["rejections"][0]["errors"][0]["field"] == field
+def test_invalid_identifiers_and_unknown_fields_are_rejected(field: str, value: Any) -> None:
+    assert first_error_field(row(**{field: value})) == field
 
 
-def test_non_object_rows_are_rejected(enabled: TestClient) -> None:
-    result = post_rows(enabled, "not a row", 42)  # type: ignore[arg-type]
+def test_non_object_rows_are_rejected() -> None:
+    rejections = rejections_for("not a row", 42)
 
-    assert result["rejectedRows"] == 2
-    assert [r["rowIndex"] for r in result["rejections"]] == [0, 1]
-
-
-def test_rejections_report_every_problem_in_a_row(enabled: TestClient) -> None:
-    result = post_rows(enabled, row(sourceDate="bad", avgColor="bad"))
-
-    fields = {e["field"] for e in result["rejections"][0]["errors"]}
-    assert fields == {"sourceDate", "avgColor"}
+    assert [r["rowIndex"] for r in rejections] == [0, 1]
 
 
-def test_rejections_do_not_echo_submitted_values(enabled: TestClient) -> None:
-    response = enabled.post(
-        URL, json=batch(row(avgMoisture="SUBMITTED-VALUE-123", lot=["LOT-VALUE-456"]))
-    )
+def test_rejections_report_every_problem_in_a_row() -> None:
+    (rejection,) = rejections_for(row(sourceDate="bad", avgColor="bad"))
 
-    assert "SUBMITTED-VALUE-123" not in response.text
-    assert "LOT-VALUE-456" not in response.text
+    assert {e["field"] for e in rejection["errors"]} == {"sourceDate", "avgColor"}
 
 
-def test_rejection_list_is_capped(enabled: TestClient) -> None:
-    result = post_rows(enabled, *[row(sourceDate="bad")] * 150)
+def test_rejections_do_not_echo_submitted_values() -> None:
+    rejections = rejections_for(row(avgMoisture="SUBMITTED-VALUE-123", lot=["LOT-VALUE-456"]))
 
-    assert result["rejectedRows"] == 150
-    assert len(result["rejections"]) == 100
-    assert result["rejectionsTruncated"] is True
+    assert "SUBMITTED-VALUE-123" not in str(rejections)
+    assert "LOT-VALUE-456" not in str(rejections)
 
 
-def test_mismatched_source_row_hash_is_rejected(enabled: TestClient) -> None:
-    result = post_rows(enabled, row(sourceRowHash="0" * 64))
+def test_mismatched_source_row_hash_is_rejected() -> None:
+    (rejection,) = rejections_for(row(sourceRowHash="0" * 64))
 
-    assert result["rejections"][0]["errors"][0] == {
+    assert rejection["errors"][0] == {
         "field": "sourceRowHash",
         "message": "does not match the row values",
     }
 
 
-def test_malformed_source_row_hash_is_rejected(enabled: TestClient) -> None:
-    result = post_rows(enabled, row(sourceRowHash="ABC"))
+def test_malformed_source_row_hash_is_rejected() -> None:
+    assert first_error_field(row(sourceRowHash="ABC")) == "sourceRowHash"
 
-    assert result["rejections"][0]["errors"][0]["field"] == "sourceRowHash"
+
+def test_rows_outside_the_reconciliation_window_are_rejected() -> None:
+    window = ReconciliationWindow.model_validate(
+        {"sourceDateFrom": "2026-09-01", "sourceDateTo": "2026-09-03"}
+    )
+
+    accepted, rejections = validated(
+        row(sourceDate="2026-08-31"),
+        row(sourceDate="2026-09-01"),
+        row(sourceDate="2026-09-03"),
+        row(sourceDate="2026-09-04"),
+        window=window,
+    )
+
+    assert len(accepted) == 2
+    assert [r.row_index for r in rejections] == [0, 3]
+    assert rejections[0].errors[0].message == "is outside the reconciliation window"
+
+
+def test_record_with_two_different_versions_in_one_batch_is_rejected() -> None:
+    accepted, rejections = validated(
+        row(sourceRecordId="R1", avgMoisture=0.4),
+        row(sourceRecordId="R1", avgMoisture=0.5),
+        row(sourceRecordId="R2"),
+        row(sourceRecordId="R2"),
+    )
+
+    assert [r.row_index for r in rejections] == [0, 1]
+    assert rejections[0].errors[0].field == "sourceRecordId"
+    assert [v["source_record_key"] for v in accepted] == ["R2", "R2"]
 
 
 # Values are preserved -------------------------------------------------------------
@@ -379,12 +410,15 @@ def test_measurement_precision_is_exact() -> None:
 
 
 def test_raw_identifiers_and_locations_are_preserved() -> None:
-    (values,), _ = validated(row(location="  SILO 1 ", product="prd-a", lot="", campaignNo=26101))
+    (values,), _ = validated(
+        row(location="  SILO 1 ", product="prd-a", lot="", campaignNo=26101, sourceRecordId=" R1")
+    )
 
     assert values["location"] == "  SILO 1 "
     assert values["product"] == "prd-a"
     assert values["lot"] == ""
     assert values["campaign_no"] == "26101"
+    assert values["source_record_key"] == " R1"
 
 
 @pytest.mark.parametrize("value", [-5, 0.000001, 999999999, 1e10])
@@ -401,9 +435,10 @@ def test_values_carry_source_identity_and_sync_time() -> None:
     assert values["source_system"] == "access"
     assert values["synced_at"] == SYNCED_AT
     assert values["source_date"] == dt.date(2026, 9, 1)
+    assert values["source_record_key"] is None
 
 
-# Deterministic hashing -------------------------------------------------------------
+# Identity versus content hash ----------------------------------------------------------
 
 
 def test_hash_is_deterministic() -> None:
@@ -448,18 +483,43 @@ def test_hash_changes_with_any_value() -> None:
         "avgMoisture": 0.41,
         "avgColor": None,
         "avgCombinedBd": 0,
+        "sourceRecordId": "R1",
     }.items():
         (changed,), _ = validated(row(**{field: value}))
         assert changed["source_row_hash"] != base["source_row_hash"], field
 
 
-def test_correct_client_hash_is_accepted() -> None:
-    (values,), _ = validated(row())
+def test_record_key_distinguishes_records_with_identical_values() -> None:
+    (a, b), _ = validated(row(sourceRecordId="R1"), row(sourceRecordId="R2"))
 
-    accepted, rejections = validated(row(sourceRowHash=values["source_row_hash"]))
+    assert a["source_row_hash"] != b["source_row_hash"]
+    assert (a["source_record_key"], b["source_record_key"]) == ("R1", "R2")
+
+
+def test_correct_client_hash_is_accepted() -> None:
+    (values,), _ = validated(row(sourceRecordId="R1"))
+
+    accepted, rejections = validated(
+        row(sourceRecordId="R1", sourceRowHash=values["source_row_hash"])
+    )
 
     assert rejections == []
     assert accepted[0]["source_row_hash"] == values["source_row_hash"]
+
+
+def test_request_digest_identifies_exact_resubmissions() -> None:
+    def digest(**overrides: Any) -> str:
+        return request_digest(FinishingBatchIn.model_validate(_parse_json(
+            json.dumps(batch(**overrides)).encode()
+        )))  # fmt: skip
+
+    assert digest() == digest()
+    assert digest() == digest(batchId="another-id")
+    assert digest() != digest(rows=[row(avgMoisture=0.41)])
+    assert digest() != digest(extractedAt="2026-10-02T12:00:00-05:00")
+    assert digest() != digest(
+        reconciliationWindow={"sourceDateFrom": "2026-09-01", "sourceDateTo": "2026-09-01"}
+    )
 
 
 # Database failure ----------------------------------------------------------------
@@ -481,47 +541,7 @@ def test_database_failure_is_reported_separately_and_safely(
     assert detail["batchId"] == "batch-0001"
     assert "not-a-real-password" not in response.text
     assert "result=database_error" in caplog.text
+    assert "stage=claim" in caplog.text
     assert "error_type=OperationalError" in caplog.text
     assert "not-a-real-password" not in caplog.text
     assert "LOT-SHOULD-NOT-BE-LOGGED" not in caplog.text
-
-
-# Logging -----------------------------------------------------------------------------
-
-
-def test_batch_outcome_is_logged_without_row_values(
-    enabled: TestClient, caplog: pytest.LogCaptureFixture
-) -> None:
-    caplog.set_level(logging.INFO)
-    enabled.post(
-        URL,
-        json=batch(row(sourceDate="bad", lot="LOT-SHOULD-NOT-BE-LOGGED"), row(avgColor="x")),
-        headers={"authorization": "Bearer header-should-not-be-logged"},
-    )
-
-    (record,) = [r for r in caplog.records if "event=finishing_ingestion" in r.getMessage()]
-    message = record.getMessage()
-    for expected in (
-        "result=rejected",
-        "batch_id=batch-0001",
-        "source_system=access-qryFINISHING-AVG",
-        "received=2",
-        "inserted=0",
-        "duplicates=0",
-        "rejected=2",
-        "rejected_fields=avgColor:1,sourceDate:1",
-    ):
-        assert expected in message
-    assert record.ingestion["rejected"] == 2
-    assert "LOT-SHOULD-NOT-BE-LOGGED" not in caplog.text
-    assert "header-should-not-be-logged" not in caplog.text
-
-
-def test_unknown_field_names_are_not_logged_verbatim(
-    enabled: TestClient, caplog: pytest.LogCaptureFixture
-) -> None:
-    caplog.set_level(logging.INFO)
-    enabled.post(URL, json=batch(row(**{"injected field": 1})))
-
-    assert "injected field" not in caplog.text
-    assert "rejected_fields=other:1" in caplog.text

@@ -25,14 +25,14 @@ from postgres_support import (
     current_revision,
     requires_postgres,
 )
-from sqlalchemy import Engine, func, inspect, select, text
+from sqlalchemy import Engine, func, insert, inspect, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Settings
-from app.db.base import ALEMBIC_VERSION_TABLE, MANAGED_SCHEMAS
+from app.db.base import ALEMBIC_VERSION_SCHEMA, ALEMBIC_VERSION_TABLE, MANAGED_SCHEMAS
 from app.main import create_app
-from app.models import Base
+from app.models import Base, IngestionBatch
 from app.quality.moisture import repository as repository_module
 from app.quality.moisture.ingestion import compute_source_row_hash, insert_source_rows
 from app.quality.moisture.models import FinishingMeasurement
@@ -49,6 +49,7 @@ pytestmark = requires_postgres
 SYNCED_AT = dt.datetime(2026, 10, 2, 12, 0, tzinfo=dt.UTC)
 SOURCE = "access-test"
 BASE = "/api/v1/quality/moisture"
+HEAD = "0002"
 
 
 @pytest.fixture
@@ -104,17 +105,19 @@ def lots(records: list[Any]) -> list[str | None]:
 # Migrations -----------------------------------------------------------------------
 
 
-def test_alembic_history_contains_initial_revision() -> None:
+def test_alembic_history_is_linear() -> None:
     script = ScriptDirectory.from_config(alembic_config())
 
-    assert script.get_heads() == ["0001"]
+    assert script.get_heads() == [HEAD]
+    assert script.get_revision("0002").down_revision == "0001"
     assert script.get_revision("0001").down_revision is None
 
 
-def test_upgrade_head_creates_table(engine: Engine) -> None:
+def test_upgrade_head_creates_tables(engine: Engine) -> None:
     inspector = inspect(engine)
 
     assert inspector.has_table("finishing_measurements", schema="quality")
+    assert inspector.has_table("ingestion_batches", schema="core")
     indexes = {
         i["name"]
         for i in inspector.get_indexes("finishing_measurements", "quality")
@@ -124,7 +127,18 @@ def test_upgrade_head_creates_table(engine: Engine) -> None:
         "ix_finishing_measurements_source_date_desc",
         "ix_finishing_measurements_product_source_date",
         "ix_finishing_measurements_product_lot",
+        "ix_finishing_measurements_current_record_key",
+        "ix_finishing_measurements_current_source_date",
     }
+    foreign_keys = inspector.get_foreign_keys("finishing_measurements", "quality")
+    assert {(f["name"], f["referred_schema"], f["referred_table"]) for f in foreign_keys} == {
+        ("fk_finishing_measurements_ingestion_batch", "core", "ingestion_batches"),
+        ("fk_finishing_measurements_superseded_by_batch", "core", "ingestion_batches"),
+    }
+    batch_uniques = inspector.get_unique_constraints("ingestion_batches", "core")
+    assert [(u["name"], u["column_names"]) for u in batch_uniques] == [
+        ("uq_ingestion_batches_source_system_batch_id", ["source_system", "batch_id"])
+    ]
     uniques = inspector.get_unique_constraints("finishing_measurements", "quality")
     assert [(u["name"], u["column_names"]) for u in uniques] == [
         (
@@ -133,7 +147,7 @@ def test_upgrade_head_creates_table(engine: Engine) -> None:
         )
     ]
     with engine.connect() as connection:
-        assert current_revision(connection) == "0001"
+        assert current_revision(connection) == HEAD
 
 
 def test_version_table_is_in_core_not_public(engine: Engine) -> None:
@@ -143,7 +157,7 @@ def test_version_table_is_in_core_not_public(engine: Engine) -> None:
     assert not inspector.has_table(ALEMBIC_VERSION_TABLE, schema="public")
     with engine.connect() as connection:
         versions = connection.execute(text("SELECT version_num FROM core.alembic_version"))
-        assert versions.scalars().all() == ["0001"]
+        assert versions.scalars().all() == [HEAD]
 
 
 def test_model_matches_migration(engine: Engine) -> None:
@@ -153,21 +167,74 @@ def test_model_matches_migration(engine: Engine) -> None:
     with engine.connect() as connection:
         context = MigrationContext.configure(
             connection,
-            opts={"include_schemas": True, "include_name": include_name, "compare_type": True},
+            opts={
+                "include_schemas": True,
+                "include_name": include_name,
+                "compare_type": True,
+                "version_table": ALEMBIC_VERSION_TABLE,
+                "version_table_schema": ALEMBIC_VERSION_SCHEMA,
+            },
         )
         assert compare_metadata(context, Base.metadata) == []
 
 
-def test_downgrade_removes_table_and_upgrade_restores_it(engine: Engine) -> None:
+def test_downgrades_remove_objects_and_upgrade_restores_them(engine: Engine) -> None:
+    columns = ("source_record_key", "ingestion_batch_id", "superseded_at", "superseded_by_batch_id")
     with engine.begin() as connection:
-        command.downgrade(alembic_config(connection), "-1")
+        command.downgrade(alembic_config(connection), "0001")
+        inspector = inspect(connection)
+        assert not inspector.has_table("ingestion_batches", schema="core")
+        remaining = {c["name"] for c in inspector.get_columns("finishing_measurements", "quality")}
+        assert remaining.isdisjoint(columns)
+        assert current_revision(connection) == "0001"
+
+        command.downgrade(alembic_config(connection), "base")
         inspector = inspect(connection)
         assert not inspector.has_table("finishing_measurements", schema="quality")
         assert inspector.has_table(ALEMBIC_VERSION_TABLE, schema="core")
         assert current_revision(connection) is None
 
         command.upgrade(alembic_config(connection), "head")
-        assert inspect(connection).has_table("finishing_measurements", schema="quality")
+        inspector = inspect(connection)
+        assert inspector.has_table("finishing_measurements", schema="quality")
+        assert inspector.has_table("ingestion_batches", schema="core")
+        assert current_revision(connection) == HEAD
+
+
+def test_downgrade_refuses_to_discard_superseded_versions(engine: Engine) -> None:
+    with engine.connect() as connection:
+        transaction = connection.begin()
+        try:
+            batch_pk = connection.scalar(
+                insert(IngestionBatch)
+                .values(
+                    batch_id="downgrade-guard",
+                    source_system=SOURCE,
+                    connector_id="test",
+                    extracted_at=SYNCED_AT,
+                    received_at=SYNCED_AT,
+                    status="accepted",
+                    received_rows=1,
+                    request_digest="0" * 64,
+                )
+                .returning(IngestionBatch.id)
+            )
+            connection.execute(
+                insert(FinishingMeasurement).values(
+                    source_date=dt.date(2026, 9, 1),
+                    source_system=SOURCE,
+                    source_row_hash="f" * 64,
+                    synced_at=SYNCED_AT,
+                    superseded_at=SYNCED_AT,
+                    superseded_by_batch_id=batch_pk,
+                )
+            )
+            with pytest.raises(Exception, match="superseded"):
+                command.downgrade(alembic_config(connection), "0001")
+        finally:
+            transaction.rollback()
+    with engine.connect() as connection:
+        assert current_revision(connection) == HEAD
 
 
 def test_created_at_has_server_default(session: Session) -> None:

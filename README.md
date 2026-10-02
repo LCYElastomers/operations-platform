@@ -153,7 +153,8 @@ from Docker build contexts. Never commit real credentials.
 | `LOG_LEVEL`    | api     | `INFO`        |                                         |
 | `DATABASE_URL` | api     | _(unset)_     | SQLAlchemy URL for host PostgreSQL      |
 | `MOISTURE_DATA_SOURCE` | api | `fixture` | `fixture` or `database`; `database` requires `DATABASE_URL` |
-| `INGESTION_AUTH_MODE` | api | `disabled` | `disabled` or `development-unauthenticated` (refused in production); see Ingestion API |
+| `INGESTION_AUTH_MODE` | api | `disabled` | `disabled`, `connector`, or `development-unauthenticated` (refused in production); see Ingestion API |
+| `INGESTION_CONNECTORS` | api | _(empty)_ | JSON connector registry holding secret **digests** only; see Ingestion API |
 
 ## Database migrations
 
@@ -173,7 +174,8 @@ docker compose exec api alembic upgrade head
 ```
 
 Schema changes happen only through Alembic; the API never creates tables at
-startup. Autogenerate only inspects application-owned schemas (`quality`).
+startup. Autogenerate only inspects application-owned schemas (`core` and
+`quality`; `core.alembic_version` itself is excluded).
 
 Use a least-privilege database role for the application. From inside the API
 container, the host database is reachable as `host.docker.internal`.
@@ -216,9 +218,14 @@ dropped, and `core.alembic_version` remains (empty).
 
 Current revisions:
 
-| Revision | Creates                           |
-| -------- | --------------------------------- |
-| `0001`   | `quality.finishing_measurements`  |
+| Revision | Changes                                                                 |
+| -------- | ----------------------------------------------------------------------- |
+| `0001`   | Creates `quality.finishing_measurements`                                |
+| `0002`   | Creates `core.ingestion_batches`; adds record identity and versioning columns to `quality.finishing_measurements` |
+
+Downgrading `0002` drops `core.ingestion_batches` and the versioning
+columns. It refuses to run while superseded measurement versions exist,
+because they would otherwise become indistinguishable from current rows.
 
 ## Quality > Raw Materials > Moisture Analysis
 
@@ -275,14 +282,24 @@ source query row:
 | `source_row_hash`                              | text          | Not null; SHA-256 of the source row    |
 | `synced_at`                                    | timestamptz   | Not null; when the row was ingested    |
 | `created_at`                                   | timestamptz   | Not null; database default `now()`     |
+| `source_record_key`                            | text          | Nullable; durable upstream record ID, when the source has one |
+| `ingestion_batch_id`                           | bigint        | Nullable; FK to the `core.ingestion_batches` row that wrote (or restored) this version |
+| `superseded_at`                                | timestamptz   | Null while current; set when a correction replaces this version |
+| `superseded_by_batch_id`                       | bigint        | Nullable; FK to the batch that superseded it |
 
-`(source_system, source_row_hash)` is unique, so re-delivering an identical
-row is a no-op (`insert_source_rows` in `ingestion.py` uses
-`ON CONFLICT DO NOTHING`). The hash covers all eight source fields after
+Each row is one **content version**. `(source_system, source_row_hash)` is
+unique, so re-delivering identical content is a no-op. The hash covers all
+eight source fields (plus `source_record_key` when present) after
 canonicalization: `26101` and `"26101"` hash alike, but `null` and `0`
-differ, and text is never trimmed or case-folded. A row whose values change
-in the source therefore produces a new hash and a new row; reconciling
-corrections is a decision for the future sync agent.
+differ, and text is never trimmed or case-folded.
+
+The hash is **not** the business identity. Corrections are recognized only
+through an explicit identity (a source record key or an authoritative date
+window; see Corrections below), never by guessing a key from product and
+lot. A replaced version is marked superseded, never deleted. At most one
+current version exists per `(source_system, source_record_key)` (partial
+unique index). The read API (`/recent`, `/trends`, `/filters`) returns only
+current versions (`superseded_at IS NULL`).
 
 Float measurements are stored via their shortest round-trip representation
 (`0.43333333333333335` stays exactly that), so values read back unchanged.
@@ -310,14 +327,68 @@ results of the Access query `qryFINISHING-AVG` from a machine connector, in
 batches. Code: `ingestion_router.py`, `ingestion_service.py`,
 `ingestion_schemas.py`, and `FinishingMeasurementWriter` in `repository.py`.
 
-**Authentication.** Connector credentials are not implemented yet, so the
-endpoint fails closed: with `INGESTION_AUTH_MODE=disabled` (the default)
-every request gets `503 ingestion_disabled` before the body is read.
-`INGESTION_AUTH_MODE=development-unauthenticated` opens it for local
-development only. The API refuses to start with that mode when
-`ENVIRONMENT=production`, and each request through it logs a warning. Real
-connector credentials will replace it behind the same dependency
-(`app/core/machine_auth.py`).
+**Authentication** (`app/core/machine_auth.py`). The endpoint fails closed.
+Authentication runs before the request body is read.
+
+| `INGESTION_AUTH_MODE`         | Behaviour                                                        |
+| ----------------------------- | ---------------------------------------------------------------- |
+| `disabled` (default)          | Every request gets `503 ingestion_disabled`                      |
+| `connector`                   | Connector credentials required (below)                           |
+| `development-unauthenticated` | Local development only. The API refuses to start with it when `ENVIRONMENT=production`; each request logs a warning |
+
+In `connector` mode each request carries two headers:
+
+```
+X-Connector-Id: lcy-access-sync
+Authorization: Bearer opc_...
+```
+
+The connector ID is public; the secret is a 256-bit random token. The
+server stores only SHA-256 digests of secrets, in `INGESTION_CONNECTORS`
+(environment, never source control):
+
+```json
+{
+  "lcy-access-sync": {
+    "secret_sha256": ["<64 hex digest>"],
+    "source_systems": ["access-qryFINISHING-AVG"]
+  }
+}
+```
+
+- Missing headers, an unknown connector ID, and a wrong secret all return
+  the same `401 invalid_credentials` with `WWW-Authenticate: Bearer`.
+  Unknown IDs are compared against a dummy digest so that response timing
+  does not reveal whether the ID exists. Digests are compared with
+  `hmac.compare_digest` against a fixed number of slots.
+- An authenticated connector may write only to its listed `source_systems`
+  (otherwise `403 source_system_not_allowed`).
+- The authenticated connector ID is recorded on every audit row.
+- Neither headers nor secrets are logged. Rejections log
+  `event=machine_auth result=rejected reason=invalid_credentials` and the
+  connector ID only if it is a configured one (otherwise `unrecognized`).
+- The API refuses to start if `connector` mode has no connectors, a digest
+  is malformed, or the same digest is assigned to two connectors.
+  Configuration errors never echo the offending values.
+
+Provisioning and rotation:
+
+```bash
+cd apps/api
+uv run python -m app.core.machine_auth new-secret   # prints a secret and its digest
+uv run python -m app.core.machine_auth digest       # digest of an existing secret (prompted, not echoed)
+```
+
+1. Give the secret to the connector host through a secure channel. Store it
+   there, for example in Windows Credential Manager. Never put it in a repository.
+2. Add the digest to `secret_sha256`. When writing JSON in `.env`, wrap the
+   value in single quotes.
+3. To rotate, add the new digest alongside the old one (up to 5 per
+   connector), restart the API, switch the connector to the new secret, then
+   remove the old digest. The payload format does not change.
+
+Nginx (or any proxy) in front of the API must not log the `Authorization`
+header.
 
 **Request** (`Content-Type: application/json`, at most 5 MiB):
 
@@ -326,6 +397,7 @@ connector credentials will replace it behind the same dependency
   "sourceSystem": "access-qryFINISHING-AVG",
   "batchId": "2026-10-02T16-40-00Z-0001",
   "extractedAt": "2026-10-02T16:40:00Z",
+  "reconciliationWindow": { "sourceDateFrom": "2026-09-01", "sourceDateTo": "2026-09-30" },
   "rows": [
     {
       "sourceDate": "2026-09-01",
@@ -344,8 +416,9 @@ connector credentials will replace it behind the same dependency
 | Field          | Rules                                                                    |
 | -------------- | ------------------------------------------------------------------------ |
 | `sourceSystem` | 1-100 chars: letters, digits, `.` `_` `:` `-`; starts with letter/digit   |
-| `batchId`      | Same rules. Chosen by the connector; used for tracing, not identity      |
-| `extractedAt`  | ISO 8601 date-time **with** a timezone offset                             |
+| `batchId`      | Same rules. Chosen by the connector; unique per `sourceSystem` (see Batch auditing) |
+| `extractedAt`  | ISO 8601 date-time **with** a timezone offset; when the source was read  |
+| `reconciliationWindow` | Optional. `sourceDateFrom` / `sourceDateTo` (`YYYY-MM-DD`, inclusive, from <= to). Declares the batch the complete source content for that range (strategy B) |
 | `rows`         | 1 to 5000 row objects                                                    |
 
 | Row field       | Source (`qryFINISHING-AVG`) | Rules                                                     |
@@ -358,21 +431,107 @@ connector credentials will replace it behind the same dependency
 | `avgMoisture`   | `AvgOfMOISTURE`             | JSON number or null                                       |
 | `avgColor`      | `AvgOfCOLOR`                | JSON number or null                                       |
 | `avgCombinedBd` | `AvgOfCombined_BD`          | JSON number or null                                       |
+| `sourceRecordId` | —                         | Optional. Durable upstream record ID (strategy A); non-empty string or integer, at most 200 chars |
 | `sourceRowHash` | —                           | Optional. If sent, must equal the server-computed hash    |
 
-Every row field except `sourceRowHash` must be present; send `null`
-explicitly for a missing value. Unknown fields are rejected. Values are
+Every row field except `sourceRecordId` and `sourceRowHash` must be present;
+send `null` explicitly for a missing value. Unknown fields are rejected. Values are
 stored exactly as sent: no trimming, case changes, or location
 normalization; JSON numbers are parsed as exact decimals (no float
 rounding); `null` is stored as NULL, never as 0. Numbers are not
 range-checked: there are no specifications, thresholds, or outlier rules.
 
-**Identity and idempotency.** The server computes `source_row_hash`
-(SHA-256 over the canonicalized row; see `compute_source_row_hash`). Rows
-are unique on `(sourceSystem, source_row_hash)`, so re-sending a batch, a
-row, or overlapping batches never creates duplicates. `batchId` is not part
-of the identity. A row whose values change in Access hashes differently and
-is stored as a new row.
+**Idempotency.** The server computes `source_row_hash` (SHA-256 over the
+canonicalized row; see `compute_source_row_hash`). Content versions are
+unique on `(sourceSystem, source_row_hash)`, so re-sending rows or
+overlapping batches never creates duplicates. Re-sending a completed batch
+with the same `batchId` and identical content replays the stored result
+(`replayed: true`) without touching data.
+
+**Corrections.** `qryFINISHING-AVG` is an aggregate. Correcting an
+underlying record changes an existing aggregate row, so the corrected row
+hashes differently. The hash alone cannot tell a correction from a new row.
+The service therefore treats content (`source_row_hash`) and identity
+separately and supports three modes, chosen by the connector per batch or
+row:
+
+| Mode | Triggered by | Behaviour |
+| ---- | ------------ | --------- |
+| A. Record identity | `sourceRecordId` on a row | The row is the current version of that record. A different current version is superseded; an identical one is a duplicate; an earlier version is restored. One record may not appear twice with different values in a batch |
+| B. Authoritative window | `reconciliationWindow` on the batch | The batch is the complete content for that source-date range. Rows outside the range are rejected. Current rows in the range whose content is not in the batch are superseded; earlier versions present in the batch are restored. Applied **only if no row in the batch was rejected** (`windowApplied`); otherwise valid rows are inserted and nothing is superseded |
+| Append (legacy) | neither | Rows are added idempotently and never supersede anything. A changed row becomes an additional current row. Not suitable for corrections |
+
+Safeguards:
+
+- Nothing is deleted. Superseded versions keep `superseded_at` and
+  `superseded_by_batch_id` for history and audit.
+- Batches for one `sourceSystem` are applied one at a time
+  (transaction-scoped advisory lock).
+- Out-of-order delivery is refused with `409 stale_batch`. This applies to a
+  window batch when an overlapping window from a later `extractedAt` has
+  already been applied, and to a keyed row when its record already has a
+  version from a later extraction. Nothing is written, and the audit row
+  records `error_code = stale_batch`.
+- A window batch must contain at least one row, so a faulty empty extract
+  cannot supersede a whole range.
+- No business key is guessed: the same product and lot on different dates
+  or locations are distinct rows.
+
+**Recommended strategy for `qryFINISHING-AVG`: B (authoritative window).**
+The query's output has no durable row identity. Its rows are averages
+grouped by date, campaign, lot, location and product, and identical lots
+can occur across dates and locations. The sync agent should, on each run:
+
+1. Re-run the query for a trailing date range long enough to cover
+   late corrections (for example the last 60 days; agree the length with
+   the Quality owner).
+2. Send all result rows for that range with `reconciliationWindow` set to
+   exactly the range queried. Split by date into consecutive windows if it
+   exceeds 5000 rows, and never split one date across batches.
+3. Use a deterministic `batchId` per run and window, so a retried request
+   replays instead of re-applying.
+4. Treat `windowApplied: false` as an alert: fix the rejected rows at the
+   source and re-send the window with a new `batchId`.
+
+Use strategy A only if the source owner confirms a column that uniquely and
+permanently identifies each output row. Append mode remains only for
+compatibility with the original contract.
+
+**Batch auditing.** Every batch that passes authentication and envelope
+validation gets one row in `core.ingestion_batches`. The row stores
+metadata only: `batch_id`, `source_system`, `connector_id`, `extracted_at`,
+`received_at`, `completed_at`, `status`, row counts (`received`, `inserted`,
+`duplicate`, `rejected`, `restored`, `superseded`), the declared window and
+whether it was applied, `attempt_count`, `error_code`, and `created_at`.
+It also stores `request_digest`, a one-way SHA-256 of the request used to
+recognize resubmissions. The table never holds payloads, row values,
+credentials, or secrets.
+
+- `(source_system, batch_id)` is unique. The same `batchId` in another
+  source system is a different batch.
+- The audit row is written first, in its own transaction, so attempts that
+  later fail are still recorded (`status = failed`, with `error_code`
+  `database_error` or `stale_batch`; nothing is written). It is then
+  completed in the same transaction as the data, so the audit outcome and
+  the stored rows always agree.
+- A failed batch can be retried with the same `batchId` and content.
+  `attempt_count` increases.
+- Reusing a `batchId` with different content, or from a different
+  connector, returns `409 batch_id_conflict` and changes nothing.
+- Not audited: requests rejected before a trusted `batchId` exists (failed
+  authentication, malformed or oversized bodies, invalid envelopes, source
+  systems the connector may not write). Auditing them would let
+  unauthenticated callers fill the table or reserve batch IDs. They are
+  logged instead. If the database is unreachable, no audit row can be
+  written; the failure is logged.
+
+| `status`                   | Meaning                                         |
+| -------------------------- | ----------------------------------------------- |
+| `received`                 | Claimed, processing not finished                |
+| `accepted`                 | All rows valid                                  |
+| `accepted_with_rejections` | Valid rows applied, some rows rejected          |
+| `rejected`                 | Every row invalid; nothing written              |
+| `failed`                   | Not applied; see `error_code`; may be retried   |
 
 **Response** `200` when the batch was processed:
 
@@ -385,6 +544,10 @@ is stored as a new row.
   "insertedRows": 1,
   "duplicateRows": 1,
   "rejectedRows": 1,
+  "restoredRows": 0,
+  "supersededRows": 0,
+  "windowApplied": false,
+  "replayed": false,
   "rejections": [
     { "rowIndex": 2, "errors": [{ "field": "sourceDate", "message": "Value error, is not a valid calendar date" }] }
   ],
@@ -394,8 +557,14 @@ is stored as a new row.
 
 - `status`: `accepted` (no rejections), `accepted_with_rejections`, or
   `rejected` (every row invalid; nothing written).
-- `receivedRows = insertedRows + duplicateRows + rejectedRows`.
+- `receivedRows = insertedRows + restoredRows + duplicateRows + rejectedRows`.
   `duplicateRows` counts rows already stored or repeated within the batch.
+  `restoredRows` counts earlier versions made current again.
+  `supersededRows` counts previously current versions replaced by this batch.
+- `windowApplied`: `null` without a window. Otherwise it says whether the
+  window reconciliation ran.
+- `replayed`: `true` when this is the stored result of an earlier identical
+  submission. Rejections are recomputed and reported again.
 - Rejected rows are reported by zero-based `rowIndex` with field-level
   messages. Submitted values are never echoed back. At most 100 rejections
   are listed (`rejectionsTruncated` tells you whether more exist).
@@ -408,20 +577,29 @@ is stored as a new row.
 | Status | `error`                  | Meaning                                                            |
 | ------ | ------------------------ | ------------------------------------------------------------------ |
 | 400    | `invalid_json`           | Not JSON, duplicate keys, `NaN`/`Infinity`                         |
+| 401    | `invalid_credentials`    | Missing or invalid connector credentials (deliberately unspecific) |
+| 403    | `source_system_not_allowed` | Connector may not write this `sourceSystem`                     |
+| 409    | `batch_id_conflict`      | `batchId` already used with different content or another connector |
+| 409    | `stale_batch`            | Newer data already applied for this scope; nothing written         |
 | 413    | `payload_too_large`      | Body over 5 MiB                                                    |
 | 415    | `unsupported_media_type` | Content-Type is not `application/json`                             |
 | 422    | `validation_error`       | Envelope invalid (metadata, empty batch, too many rows); nothing processed. Includes `errors` |
 | 503    | `ingestion_disabled`     | Ingestion is not enabled on this server                            |
 | 503    | `database_unavailable`   | Database failure. Nothing from the batch was committed; resubmit   |
 
-**Transactions.** All valid rows of a batch are written in one database
-transaction, split into multi-row statements of 1000 rows. A database
-failure at any point rolls back the whole batch.
+**Transactions.** All changes of a batch (inserts, supersessions,
+restorations, and audit completion) are written in one database
+transaction. Inserts are split into multi-row statements of 1000 rows. A
+database failure at any point rolls back the whole batch; only the audit
+row remains, marked `failed`.
 
 **Logging.** One line per batch, for example:
 `event=finishing_ingestion result=accepted batch_id=... source_system=...
-connector=... extracted_at=... received=3 inserted=1 duplicates=1 rejected=1
-rejected_fields=sourceDate:1`. The same fields are attached to the log record
+connector=... attempt=1 extracted_at=... window=2026-09-01..2026-09-30
+window_applied=True received=3 inserted=1 duplicates=1 restored=0
+superseded=0 rejected=1 rejected_fields=sourceDate:1`. Replays, conflicts
+and stale batches log `result=replayed`, `batch_id_conflict` or
+`stale_batch`. The same fields are attached to the log record
 as `record.ingestion`. Row values, request bodies, headers, and database
 error text (which can contain SQL parameters) are never logged. Database
 failures log only the exception type.
