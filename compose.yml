@@ -1,0 +1,70 @@
+name: operations-platform
+
+# Shared container hardening. PostgreSQL is host-managed and intentionally
+# not part of this stack.
+x-hardening: &hardening
+  restart: unless-stopped
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  networks: [app]
+
+services:
+  api:
+    <<: *hardening
+    build:
+      context: ./apps/api
+    image: operations-platform/api:local
+    user: "10001:10001"
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DATABASE_URL: ${DATABASE_URL:-}
+    extra_hosts:
+      # Lets the API reach the host-managed PostgreSQL server.
+      - "host.docker.internal:host-gateway"
+    tmpfs:
+      - /tmp
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=3).status == 200 else 1)"
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+  web:
+    <<: *hardening
+    build:
+      context: ./apps/web
+      args:
+        API_INTERNAL_URL: http://api:8000
+    image: operations-platform/web:local
+    user: "1000:1000"
+    tmpfs:
+      - /tmp
+      - /app/.next/cache
+    ports:
+      - "127.0.0.1:${WEB_PORT:-3000}:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+networks:
+  app:
+    driver: bridge
