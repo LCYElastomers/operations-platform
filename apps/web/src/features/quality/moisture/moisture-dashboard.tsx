@@ -18,6 +18,9 @@ import { RecentMaterialsTable } from "./recent-materials-table";
 import { useMoistureDashboard } from "./use-moisture-dashboard";
 
 const NO_RECORDS: MoistureRecord[] = [];
+// Full-width stacked trend cards; the plot area alone is taller than the card minimum.
+const TREND_PLOT_HEIGHT = 340;
+const TREND_CARD_CLASS = "w-full min-h-[375px]";
 
 function describeError(error: unknown): string {
   if (error instanceof ApiError) return `The API responded with HTTP ${error.status}.`;
@@ -286,12 +289,14 @@ export function MoistureDashboard({ title, description }: MoistureDashboardProps
         />
       </section>
 
-      <section aria-label="Trends" className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+      <section aria-label="Trends" className="flex flex-col gap-5">
         <TrendChart
           title="Moisture Trend"
           description="Average moisture by date, per product"
           series={trends.isError ? [] : moistureSeries}
           precision={MEASUREMENT_PRECISION.avgMoisture}
+          height={TREND_PLOT_HEIGHT}
+          className={TREND_CARD_CLASS}
           loading={trends.isPending && !trends.isError}
           emptyState={chartEmptyState}
         />
@@ -300,6 +305,8 @@ export function MoistureDashboard({ title, description }: MoistureDashboardProps
           description="Average color by date, per product"
           series={trends.isError ? [] : colorSeries}
           precision={MEASUREMENT_PRECISION.avgColor}
+          height={TREND_PLOT_HEIGHT}
+          className={TREND_CARD_CLASS}
           loading={trends.isPending && !trends.isError}
           emptyState={chartEmptyState}
         />
@@ -308,6 +315,8 @@ export function MoistureDashboard({ title, description }: MoistureDashboardProps
           description="Average combined BD by date, per product"
           series={trends.isError ? [] : bdSeries}
           precision={MEASUREMENT_PRECISION.avgCombinedBd}
+          height={TREND_PLOT_HEIGHT}
+          className={TREND_CARD_CLASS}
           loading={trends.isPending && !trends.isError}
           emptyState={chartEmptyState}
         />

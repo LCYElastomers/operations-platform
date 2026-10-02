@@ -79,4 +79,20 @@ describe("buildTrendSeries", () => {
   it("returns no series for no points", () => {
     expect(buildTrendSeries([], "avgMoisture")).toEqual([]);
   });
+
+  it("orders products identically for every measurement so chart colors match", () => {
+    const points = [
+      record({ product: "PRD-C", avgColor: null }),
+      record({ product: "PRD-A", avgCombinedBd: null }),
+      record({ product: "PRD-B", avgMoisture: null }),
+    ];
+    const names = (["avgMoisture", "avgColor", "avgCombinedBd"] as const).map((measurement) =>
+      buildTrendSeries(points, measurement).map((s) => s.name),
+    );
+    expect(names).toEqual([
+      ["PRD-A", "PRD-B", "PRD-C"],
+      ["PRD-A", "PRD-B", "PRD-C"],
+      ["PRD-A", "PRD-B", "PRD-C"],
+    ]);
+  });
 });
