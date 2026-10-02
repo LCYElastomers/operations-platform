@@ -1,0 +1,112 @@
+import datetime as dt
+from typing import Literal, Self
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic.alias_generators import to_camel
+
+
+class CamelModel(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, frozen=True)
+
+
+class MoistureRecord(CamelModel):
+    """One row of the moisture source query, with application-friendly names.
+
+    Identifiers (campaign number, lot, product) are strings and never used for
+    arithmetic. Measurements are passed through at source precision; ``None``
+    means the source value was missing and is distinct from ``0``.
+    """
+
+    date: dt.date
+    campaign_no: str | None
+    lot: str | None
+    location: str | None
+    product: str | None
+    avg_moisture: float | None
+    avg_color: float | None
+    avg_combined_bd: float | None
+
+    @field_validator("campaign_no", "lot", "product", mode="before")
+    @classmethod
+    def _identifier_as_text(cls, value: object) -> object:
+        # Access may type identifiers as numbers; keep them as their exact text.
+        if isinstance(value, int) and not isinstance(value, bool):
+            return str(value)
+        return value
+
+
+class DataSourceInfo(CamelModel):
+    kind: Literal["development-fixture"]
+    is_fixture: bool
+    label: str
+
+
+class MoistureFilterParams(CamelModel):
+    """Query parameters shared by the moisture endpoints."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    product: str | None = Field(default=None, min_length=1, max_length=200)
+    location: str | None = Field(default=None, min_length=1, max_length=200)
+    search: str | None = Field(
+        default=None,
+        max_length=100,
+        description="Case-insensitive substring match against lot or campaign number.",
+    )
+    start_date: dt.date | None = None
+    end_date: dt.date | None = None
+
+    @field_validator("search")
+    @classmethod
+    def _blank_search_is_unset(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
+
+    @model_validator(mode="after")
+    def _date_range_is_ordered(self) -> Self:
+        if self.start_date and self.end_date and self.start_date > self.end_date:
+            raise ValueError("startDate must be on or before endDate")
+        return self
+
+
+class RecentMoistureParams(MoistureFilterParams):
+    limit: int = Field(default=50, ge=1, le=500)
+
+
+class RecentMoistureResponse(CamelModel):
+    data_source: DataSourceInfo
+    total_matching: int
+    limit: int
+    records: list[MoistureRecord]
+
+
+class MoistureSummary(CamelModel):
+    """Unweighted means of non-null values. A mean is null when no values exist."""
+
+    record_count: int
+    avg_moisture: float | None
+    avg_color: float | None
+    avg_combined_bd: float | None
+    moisture_value_count: int
+    color_value_count: int
+    combined_bd_value_count: int
+
+
+class MoistureTrendsResponse(CamelModel):
+    data_source: DataSourceInfo
+    summary: MoistureSummary
+    points: list[MoistureRecord] = Field(description="Matching records, oldest first.")
+
+
+class DateRange(CamelModel):
+    min: dt.date | None
+    max: dt.date | None
+
+
+class MoistureFiltersResponse(CamelModel):
+    data_source: DataSourceInfo
+    products: list[str]
+    locations: list[str]
+    date_range: DateRange

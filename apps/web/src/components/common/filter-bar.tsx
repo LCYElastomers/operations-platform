@@ -19,9 +19,34 @@ export function FilterBar({ children, actions, className }: FilterBarProps) {
         className,
       )}
     >
-      <div className="grid flex-1 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">{children}</div>
+      <div className="grid flex-1 grid-cols-1 gap-3 sm:grid-cols-[repeat(auto-fit,minmax(10rem,1fr))]">
+        {children}
+      </div>
       {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
     </div>
+  );
+}
+
+const controlClasses = cn(
+  "h-9 w-full rounded-md border border-input bg-background px-3 text-sm shadow-xs",
+  "outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40",
+  "disabled:cursor-not-allowed disabled:opacity-60",
+);
+
+function controlId(label: string) {
+  return `filter-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+}
+
+type FilterInputProps = React.ComponentProps<"input"> & { label: string };
+
+export function FilterInput({ label, id, className, ...props }: FilterInputProps) {
+  const inputId = id ?? controlId(label);
+
+  return (
+    <label htmlFor={inputId} className="flex min-w-0 flex-col gap-1">
+      <span className="text-xs font-medium text-muted-foreground">{label}</span>
+      <input id={inputId} className={cn(controlClasses, className)} {...props} />
+    </label>
   );
 }
 
@@ -41,7 +66,7 @@ export function FilterSelect({
   className,
   ...props
 }: FilterSelectProps) {
-  const selectId = id ?? `filter-${label.toLowerCase().replace(/\s+/g, "-")}`;
+  const selectId = id ?? controlId(label);
 
   return (
     <label htmlFor={selectId} className="flex min-w-0 flex-col gap-1">
@@ -49,12 +74,7 @@ export function FilterSelect({
       <span className="relative">
         <select
           id={selectId}
-          className={cn(
-            "h-9 w-full appearance-none rounded-md border border-input bg-background pr-8 pl-3 text-sm shadow-xs",
-            "outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40",
-            "disabled:cursor-not-allowed disabled:opacity-60",
-            className,
-          )}
+          className={cn(controlClasses, "appearance-none pr-8", className)}
           {...props}
         >
           <option value="">{placeholder}</option>

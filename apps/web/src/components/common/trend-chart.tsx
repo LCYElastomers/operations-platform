@@ -42,8 +42,11 @@ type TrendChartProps = {
   description?: string;
   series: TrendSeries[];
   unit?: string;
+  /** Fraction digits for tooltip values. Source values are not modified. */
+  precision?: number;
   height?: number;
   emptyState?: React.ReactNode;
+  loading?: boolean;
   className?: string;
 };
 
@@ -52,8 +55,10 @@ export function TrendChart({
   description,
   series,
   unit,
+  precision,
   height = 280,
   emptyState,
+  loading = false,
   className,
 }: TrendChartProps) {
   const hasData = series.some((s) => s.points.some(([, value]) => value !== null));
@@ -67,8 +72,12 @@ export function TrendChart({
         </div>
         {unit && <span className="shrink-0 text-xs text-muted-foreground">{unit}</span>}
       </header>
-      {hasData ? (
-        <EChart series={series} unit={unit} height={height} />
+      {loading ? (
+        <div style={{ height }} className="p-4" aria-busy>
+          <div className="size-full animate-pulse rounded-md bg-muted/70" />
+        </div>
+      ) : hasData ? (
+        <EChart series={series} unit={unit} precision={precision} height={height} />
       ) : (
         (emptyState ?? (
           <EmptyState
@@ -84,7 +93,17 @@ export function TrendChart({
   );
 }
 
-function EChart({ series, unit, height }: { series: TrendSeries[]; unit?: string; height: number }) {
+function EChart({
+  series,
+  unit,
+  precision,
+  height,
+}: {
+  series: TrendSeries[];
+  unit?: string;
+  precision?: number;
+  height: number;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
 
@@ -105,13 +124,48 @@ function EChart({ series, unit, height }: { series: TrendSeries[]; unit?: string
   }, []);
 
   useEffect(() => {
-    chartRef.current?.setOption(buildOption(series, unit), { notMerge: true });
-  }, [series, unit]);
+    chartRef.current?.setOption(buildOption(series, unit, precision), { notMerge: true });
+  }, [series, unit, precision]);
 
   return <div ref={containerRef} style={{ height }} className="w-full px-2 py-3" />;
 }
 
-function buildOption(series: TrendSeries[], unit?: string): ChartOption {
+const SYMBOL_THRESHOLD = 60;
+
+function formatAxisDate(value: unknown, withYear: boolean): string {
+  const date = new Date(value as number | string);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    ...(withYear ? { year: "numeric" } : {}),
+  });
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+type TooltipParam = { axisValue?: unknown; marker?: unknown; seriesName?: string; value?: unknown };
+
+function buildOption(series: TrendSeries[], unit?: string, precision?: number): ChartOption {
+  const formatValue = (value: unknown) => {
+    if (typeof value !== "number") return "No data";
+    const text =
+      precision === undefined
+        ? String(value)
+        : value.toLocaleString(undefined, {
+            minimumFractionDigits: precision,
+            maximumFractionDigits: precision,
+          });
+    return unit ? `${text} ${unit}` : text;
+  };
+
   return {
     color: PALETTE,
     animation: false,
@@ -119,13 +173,29 @@ function buildOption(series: TrendSeries[], unit?: string): ChartOption {
     legend: series.length > 1 ? { top: 0, icon: "roundRect", itemHeight: 8 } : undefined,
     tooltip: {
       trigger: "axis",
-      valueFormatter: (value) =>
-        value === null || value === undefined ? "No data" : `${value}${unit ? ` ${unit}` : ""}`,
+      // Tooltip content is HTML; series names can come from source data, so escape them.
+      formatter: (raw) => {
+        const params = (Array.isArray(raw) ? raw : [raw]) as TooltipParam[];
+        if (params.length === 0) return "";
+        const header = escapeHtml(formatAxisDate(params[0].axisValue, true));
+        const rows = params.map((param) => {
+          const value = Array.isArray(param.value) ? param.value[1] : param.value;
+          const marker = typeof param.marker === "string" ? param.marker : "";
+          return `<div style="display:flex;justify-content:space-between;gap:16px">
+            <span>${marker}${escapeHtml(param.seriesName ?? "")}</span>
+            <strong>${escapeHtml(formatValue(value))}</strong></div>`;
+        });
+        return `<div style="margin-bottom:4px">${header}</div>${rows.join("")}`;
+      },
     },
     xAxis: {
       type: "time",
       axisLine: { lineStyle: { color: GRID_COLOR } },
-      axisLabel: { color: AXIS_COLOR },
+      axisLabel: {
+        color: AXIS_COLOR,
+        hideOverlap: true,
+        formatter: (value: number) => formatAxisDate(value, false),
+      },
       splitLine: { show: false },
     },
     yAxis: {
@@ -139,7 +209,8 @@ function buildOption(series: TrendSeries[], unit?: string): ChartOption {
       name: s.name,
       data: s.points,
       connectNulls: false,
-      showSymbol: false,
+      showSymbol: s.points.length <= SYMBOL_THRESHOLD,
+      symbolSize: 5,
       lineStyle: { width: 2 },
     })),
   };

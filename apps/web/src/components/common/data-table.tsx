@@ -39,18 +39,32 @@ type DataTableProps<TData extends RowData> = {
   data: TData[];
   /** Shown in place of rows when data is empty. */
   emptyState?: React.ReactNode;
+  /** Renders placeholder rows instead of data or the empty state. */
+  loading?: boolean;
+  /** Allow column-header sorting. Disable when row order is meaningful. */
+  enableSorting?: boolean;
   caption?: string;
   className?: string;
 };
+
+const LOADING_ROWS = 5;
 
 export function DataTable<TData extends RowData>({
   columns,
   data,
   emptyState,
+  loading = false,
+  enableSorting = true,
   caption,
   className,
 }: DataTableProps<TData>) {
-  const table = useTable({ features: dataTableFeatures, columns, data, defaultColumn });
+  const table = useTable({
+    features: dataTableFeatures,
+    columns,
+    data,
+    defaultColumn,
+    enableSorting,
+  });
 
   const rows = table.getRowModel().rows;
   const columnCount = table.getAllLeafColumns().length;
@@ -99,8 +113,18 @@ export function DataTable<TData extends RowData>({
               </tr>
             ))}
           </thead>
-          <tbody>
-            {rows.length === 0 ? (
+          <tbody aria-busy={loading || undefined}>
+            {loading ? (
+              Array.from({ length: LOADING_ROWS }, (_, index) => (
+                <tr key={index} className="border-b last:border-b-0">
+                  {Array.from({ length: columnCount }, (_, cell) => (
+                    <td key={cell} className="h-11 px-4">
+                      <div className="h-3 w-full max-w-24 animate-pulse rounded bg-muted" />
+                    </td>
+                  ))}
+                </tr>
+              ))
+            ) : rows.length === 0 ? (
               <tr>
                 <td colSpan={columnCount} className="p-0">
                   {emptyState ?? <EmptyState variant="plain" title="No records" />}

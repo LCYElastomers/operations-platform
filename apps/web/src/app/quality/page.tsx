@@ -44,8 +44,8 @@ export default function QualityOverviewPage() {
                         {analysis.description}
                       </p>
                     </div>
-                    <StatusBadge tone="pending" className="hidden sm:inline-flex">
-                      Awaiting data source
+                    <StatusBadge tone="warning" className="hidden sm:inline-flex">
+                      Development fixture
                     </StatusBadge>
                     <ChevronRight className="size-4 shrink-0 text-muted-foreground group-hover:text-foreground" />
                   </Link>

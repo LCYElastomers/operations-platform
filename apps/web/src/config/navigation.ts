@@ -41,7 +41,7 @@ export const navigation: NavSection[] = [
                 href: "/quality/raw-materials/moisture",
                 icon: Droplets,
                 status: "in-development",
-                description: "Moisture content of incoming raw materials against specification.",
+                description: "Moisture, color, and combined BD of incoming raw materials.",
               },
             ],
           },

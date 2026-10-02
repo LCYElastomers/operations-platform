@@ -161,6 +161,56 @@ uv run alembic upgrade head
 Use a least-privilege database role for the application. From inside the API
 container, the host database is reachable as `host.docker.internal`.
 
+## Quality > Raw Materials > Moisture Analysis
+
+The dashboard at `/quality/raw-materials/moisture` reads only from the FastAPI
+contract below. Code lives in `apps/api/app/quality/moisture/` and
+`apps/web/src/features/quality/moisture/`.
+
+| Endpoint                              | Returns                                                         |
+| ------------------------------------- | --------------------------------------------------------------- |
+| `GET /api/v1/quality/moisture/recent`  | Newest matching records first (`limit`, default 50, max 500)    |
+| `GET /api/v1/quality/moisture/trends`  | All matching records oldest first, plus summary means           |
+| `GET /api/v1/quality/moisture/filters` | Distinct products and locations, and source date boundaries     |
+
+`/recent` and `/trends` accept `product` and `location` (exact match),
+`search` (case-insensitive substring of lot or campaign number), and
+`startDate` / `endDate` (inclusive, `YYYY-MM-DD`). Unknown or invalid
+parameters return HTTP 422.
+
+Source field mapping (Access query to API):
+
+| Source             | API             |
+| ------------------ | --------------- |
+| `DATE`             | `date`          |
+| `CAMPNO`           | `campaignNo`    |
+| `LOT`              | `lot`           |
+| `Location`         | `location`      |
+| `PRODUCT`          | `product`       |
+| `AvgOfMOISTURE`    | `avgMoisture`   |
+| `AvgOfCOLOR`       | `avgColor`      |
+| `AvgOfCombined_BD` | `avgCombinedBd` |
+
+Data rules:
+
+- `null` measurements mean missing source values and are never treated as `0`.
+  Summary means skip nulls, include zeros, and are `null` when no values exist.
+- Measurements are returned at source precision; the UI rounds for display
+  and shows the full value on hover.
+- Campaign number, lot, and product are identifiers (strings), never numbers.
+- Locations are not normalized (`Silo 1` and `SILO 1` are distinct).
+- No specification limits or in/out-of-spec classifications exist yet.
+
+### Development fixture
+
+Until synchronization exists, the API serves
+`apps/api/app/quality/moisture/fixtures/moisture_development_fixture.json`:
+synthetic rows using the Access field names, including deliberate zeros,
+nulls, and an un-normalized location. Every response includes a
+`dataSource` object with `isFixture: true`, and the dashboard shows a
+"Development fixture" badge and banner. The frontend never imports the
+fixture directly.
+
 ## shadcn/ui
 
 `apps/web/components.json`, the `cn()` helper in `src/lib/utils.ts`, and the

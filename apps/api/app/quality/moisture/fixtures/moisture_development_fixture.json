@@ -1,0 +1,1125 @@
+{
+ "_fixture": "DEVELOPMENT FIXTURE. Synthetic rows shaped like the Access moisture query (DATE, CAMPNO, LOT, Location, PRODUCT, AvgOfMOISTURE, AvgOfCOLOR, AvgOfCombined_BD). Not production data. Includes deliberate zeros, nulls, and an un-normalized location variant ('SILO 1') to exercise source-data handling.",
+ "rows": [
+  {
+   "DATE": "2026-06-29",
+   "CAMPNO": "26100",
+   "LOT": "A260629-01",
+   "Location": "Silo 1",
+   "PRODUCT": "PRD-A",
+   "AvgOfMOISTURE": 0.4017826605930043,
+   "AvgOfCOLOR": 40.88815031328624,
+   "AvgOfCombined_BD": 0.7122336729677707
+  },
+  {
+   "DATE": "2026-06-29",
+   "CAMPNO": "26300",
+   "LOT": "C260629-02",
+   "Location": "Railcar",
+   "PRODUCT": "PRD-C",
+   "AvgOfMOISTURE": 0.22347978018209766,
+   "AvgOfCOLOR": 30.96252682760857,
+   "AvgOfCombined_BD": 0.7616646077354723
+  },
+  {
+   "DATE": "2026-06-30",
+   "CAMPNO": "26200",
+   "LOT": "B260630-03",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-B",
+   "AvgOfMOISTURE": 0.5696110770712958,
+   "AvgOfCOLOR": 46.662159963960455,
+   "AvgOfCombined_BD": 0.6472950323478012
+  },
+  {
+   "DATE": "2026-07-01",
+   "CAMPNO": "26100",
+   "LOT": "A260701-04",
+   "Location": "Silo 1",
+   "PRODUCT": "PRD-A",
+   "AvgOfMOISTURE": 0.3748514117168831,
+   "AvgOfCOLOR": 35.61479739200649,
+   "AvgOfCombined_BD": 0.7165083795492073
+  },
+  {
+   "DATE": "2026-07-01",
+   "CAMPNO": "26200",
+   "LOT": "B260701-05",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-B",
+   "AvgOfMOISTURE": 0.5889578631992561,
+   "AvgOfCOLOR": 44.98081254934754,
+   "AvgOfCombined_BD": 0.6531238927129583
+  },
+  {
+   "DATE": "2026-07-02",
+   "CAMPNO": "26100",
+   "LOT": "A260702-06",
+   "Location": "Silo 1",
+   "PRODUCT": "PRD-A",
+   "AvgOfMOISTURE": 0.0,
+   "AvgOfCOLOR": 36.296948136034054,
+   "AvgOfCombined_BD": 0.7029975259614131
+  },
+  {
+   "DATE": "2026-07-02",
+   "CAMPNO": "26200",
+   "LOT": "B260702-07",
+   "Location": "Railcar",
+   "PRODUCT": "PRD-B",
+   "AvgOfMOISTURE": 0.5931504926764503,
+   "AvgOfCOLOR": 44.71512901309069,
+   "AvgOfCombined_BD": 0.6328718883191694
+  },
+  {
+   "DATE": "2026-07-02",
+   "CAMPNO": "26300",
+   "LOT": "C260702-08",
+   "Location": "Railcar",
+   "PRODUCT": "PRD-C",
+   "AvgOfMOISTURE": 0.27600995278243307,
+   "AvgOfCOLOR": 31.469008872186436,
+   "AvgOfCombined_BD": 0.7665200108366452
+  },
+  {
+   "DATE": "2026-07-03",
+   "CAMPNO": "26200",
+   "LOT": "B260703-09",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-B",
+   "AvgOfMOISTURE": 0.5830015942156349,
+   "AvgOfCOLOR": 44.60001948590178,
+   "AvgOfCombined_BD": 0.6513775819661661
+  },
+  {
+   "DATE": "2026-07-06",
+   "CAMPNO": "26201",
+   "LOT": "B260706-10",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-B",
+   "AvgOfMOISTURE": 0.5822573459531136,
+   "AvgOfCOLOR": 47.30031698297726,
+   "AvgOfCombined_BD": 0.6520882252996582
+  },
+  {
+   "DATE": "2026-07-06",
+   "CAMPNO": "26301",
+   "LOT": "C260706-11",
+   "Location": "Railcar",
+   "PRODUCT": "PRD-C",
+   "AvgOfMOISTURE": 0.1951795653527567,
+   "AvgOfCOLOR": 30.83041058568915,
+   "AvgOfCombined_BD": 0.7572496515898782
+  },
+  {
+   "DATE": "2026-07-07",
+   "CAMPNO": "26100",
+   "LOT": "A260707-12",
+   "Location": "Silo 1",
+   "PRODUCT": "PRD-A",
+   "AvgOfMOISTURE": 0.4395188643088943,
+   "AvgOfCOLOR": 37.28368523341874,
+   "AvgOfCombined_BD": 0.7247142257434617
+  },
+  {
+   "DATE": "2026-07-07",
+   "CAMPNO": "26201",
+   "LOT": "B260707-13",
+   "Location": "Railcar",
+   "PRODUCT": "PRD-B",
+   "AvgOfMOISTURE": 0.6040338073073791,
+   "AvgOfCOLOR": null,
+   "AvgOfCombined_BD": 0.6477787867594803
+  },
+  {
+   "DATE": "2026-07-07",
+   "CAMPNO": "26301",
+   "LOT": "C260707-14",
+   "Location": "Silo 3",
+   "PRODUCT": "PRD-C",
+   "AvgOfMOISTURE": 0.28821409117144475,
+   "AvgOfCOLOR": 30.629912704028282,
+   "AvgOfCombined_BD": 0.7671971131847486
+  },
+  {
+   "DATE": "2026-07-08",
+   "CAMPNO": "26201",
+   "LOT": "B260708-15",
+   "Location": "Railcar",
+   "PRODUCT": "PRD-B",
+   "AvgOfMOISTURE": 0.5348626877561325,
+   "AvgOfCOLOR": 47.88212613286467,
+   "AvgOfCombined_BD": 0.6384809713636747
+  },
+  {
+   "DATE": "2026-07-08",
+   "CAMPNO": "26301",
+   "LOT": "C260708-16",
+   "Location": "Railcar",
+   "PRODUCT": "PRD-C",
+   "AvgOfMOISTURE": 0.247706440367191,
+   "AvgOfCOLOR": 33.78710969965417,
+   "AvgOfCombined_BD": 0.7679031036729317
+  },
+  {
+   "DATE": "2026-07-09",
+   "CAMPNO": "26201",
+   "LOT": "B260709-17",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-B",
+   "AvgOfMOISTURE": 0.5885911522685493,
+   "AvgOfCOLOR": 46.843788851424826,
+   "AvgOfCombined_BD": 0.6263433596217323
+  },
+  {
+   "DATE": "2026-07-10",
+   "CAMPNO": "26100",
+   "LOT": "A260710-18",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-A",
+   "AvgOfMOISTURE": 0.383165256121121,
+   "AvgOfCOLOR": 37.56544839271927,
+   "AvgOfCombined_BD": 0.7241185494218184
+  },
+  {
+   "DATE": "2026-07-10",
+   "CAMPNO": "26301",
+   "LOT": "C260710-19",
+   "Location": "Railcar",
+   "PRODUCT": "PRD-C",
+   "AvgOfMOISTURE": 0.30867011783513304,
+   "AvgOfCOLOR": 31.422113466567968,
+   "AvgOfCombined_BD": 0.7581536603194826
+  },
+  {
+   "DATE": "2026-07-13",
+   "CAMPNO": "26100",
+   "LOT": "A260713-20",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-A",
+   "AvgOfMOISTURE": 0.40653172983883223,
+   "AvgOfCOLOR": 38.536258617612866,
+   "AvgOfCombined_BD": 0.7134747578119902
+  },
+  {
+   "DATE": "2026-07-13",
+   "CAMPNO": "26201",
+   "LOT": "B260713-21",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-B",
+   "AvgOfMOISTURE": 0.5455760336255009,
+   "AvgOfCOLOR": 44.29089507250351,
+   "AvgOfCombined_BD": 0.6183479060193998
+  },
+  {
+   "DATE": "2026-07-13",
+   "CAMPNO": "26301",
+   "LOT": "C260713-22",
+   "Location": "Silo 3",
+   "PRODUCT": "PRD-C",
+   "AvgOfMOISTURE": 0.27225828615649267,
+   "AvgOfCOLOR": 28.700652554541975,
+   "AvgOfCombined_BD": 0.7709269552566446
+  },
+  {
+   "DATE": "2026-07-14",
+   "CAMPNO": "26201",
+   "LOT": "B260714-23",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-B",
+   "AvgOfMOISTURE": 0.627394623436218,
+   "AvgOfCOLOR": 48.082379092661874,
+   "AvgOfCombined_BD": 0.6398865510171494
+  },
+  {
+   "DATE": "2026-07-14",
+   "CAMPNO": "26301",
+   "LOT": "C260714-24",
+   "Location": "Railcar",
+   "PRODUCT": "PRD-C",
+   "AvgOfMOISTURE": 0.31076632034698143,
+   "AvgOfCOLOR": 30.5336317412627,
+   "AvgOfCombined_BD": 0.7720467054481436
+  },
+  {
+   "DATE": "2026-07-15",
+   "CAMPNO": "26100",
+   "LOT": "A260715-25",
+   "Location": "Silo 1",
+   "PRODUCT": "PRD-A",
+   "AvgOfMOISTURE": 0.4205601915425086,
+   "AvgOfCOLOR": 36.51037926375519,
+   "AvgOfCombined_BD": 0.7016582446227253
+  },
+  {
+   "DATE": "2026-07-16",
+   "CAMPNO": "26100",
+   "LOT": "A260716-26",
+   "Location": "Silo 1",
+   "PRODUCT": "PRD-A",
+   "AvgOfMOISTURE": 0.4044334698558572,
+   "AvgOfCOLOR": 40.04426648124164,
+   "AvgOfCombined_BD": 0.7045606981019256
+  },
+  {
+   "DATE": "2026-07-17",
+   "CAMPNO": "26100",
+   "LOT": "A260717-27",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-A",
+   "AvgOfMOISTURE": 0.3969006301430254,
+   "AvgOfCOLOR": 36.923975827185096,
+   "AvgOfCombined_BD": 0.7118488910657573
+  },
+  {
+   "DATE": "2026-07-17",
+   "CAMPNO": "26201",
+   "LOT": "B260717-28",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-B",
+   "AvgOfMOISTURE": 0.5665858371654909,
+   "AvgOfCOLOR": 45.017583100886746,
+   "AvgOfCombined_BD": 0.6285497974911677
+  },
+  {
+   "DATE": "2026-07-17",
+   "CAMPNO": "26301",
+   "LOT": "C260717-29",
+   "Location": "Railcar",
+   "PRODUCT": "PRD-C",
+   "AvgOfMOISTURE": 0.2510846428673725,
+   "AvgOfCOLOR": 31.533788906239963,
+   "AvgOfCombined_BD": 0.7724109195463869
+  },
+  {
+   "DATE": "2026-07-20",
+   "CAMPNO": "26202",
+   "LOT": "B260720-30",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-B",
+   "AvgOfMOISTURE": 0.5756061718129857,
+   "AvgOfCOLOR": 46.31218044597265,
+   "AvgOfCombined_BD": 0.6344296014713308
+  },
+  {
+   "DATE": "2026-07-22",
+   "CAMPNO": "26100",
+   "LOT": "A260722-31",
+   "Location": "Silo 1",
+   "PRODUCT": "PRD-A",
+   "AvgOfMOISTURE": 0.4268422836157984,
+   "AvgOfCOLOR": 37.906874531445986,
+   "AvgOfCombined_BD": 0.7122833253435671
+  },
+  {
+   "DATE": "2026-07-22",
+   "CAMPNO": "26202",
+   "LOT": "B260722-32",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-B",
+   "AvgOfMOISTURE": 0.5559952060346265,
+   "AvgOfCOLOR": 47.48103993748999,
+   "AvgOfCombined_BD": 0.639344871787976
+  },
+  {
+   "DATE": "2026-07-23",
+   "CAMPNO": "26100",
+   "LOT": "A260723-33",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-A",
+   "AvgOfMOISTURE": 0.37047516577302075,
+   "AvgOfCOLOR": 36.26000711177536,
+   "AvgOfCombined_BD": 0.6994713981311863
+  },
+  {
+   "DATE": "2026-07-23",
+   "CAMPNO": "26202",
+   "LOT": "B260723-34",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-B",
+   "AvgOfMOISTURE": 0.5547287558190381,
+   "AvgOfCOLOR": 48.482635792837954,
+   "AvgOfCombined_BD": null
+  },
+  {
+   "DATE": "2026-07-23",
+   "CAMPNO": "26301",
+   "LOT": "C260723-35",
+   "Location": "Railcar",
+   "PRODUCT": "PRD-C",
+   "AvgOfMOISTURE": 0.3012643893018315,
+   "AvgOfCOLOR": 31.537586603495246,
+   "AvgOfCombined_BD": 0.7769136241643069
+  },
+  {
+   "DATE": "2026-07-24",
+   "CAMPNO": "26202",
+   "LOT": "B260724-36",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-B",
+   "AvgOfMOISTURE": 0.5531552181247746,
+   "AvgOfCOLOR": 45.30198242758531,
+   "AvgOfCombined_BD": 0.659239623945245
+  },
+  {
+   "DATE": "2026-07-24",
+   "CAMPNO": "26301",
+   "LOT": "C260724-37",
+   "Location": "Silo 3",
+   "PRODUCT": "PRD-C",
+   "AvgOfMOISTURE": 0.3196327244028039,
+   "AvgOfCOLOR": 32.13179489447945,
+   "AvgOfCombined_BD": 0.7516474959718771
+  },
+  {
+   "DATE": "2026-07-27",
+   "CAMPNO": "26301",
+   "LOT": "C260727-38",
+   "Location": "Railcar",
+   "PRODUCT": "PRD-C",
+   "AvgOfMOISTURE": 0.2744815809087897,
+   "AvgOfCOLOR": 29.710877961168563,
+   "AvgOfCombined_BD": 0.7655572127149292
+  },
+  {
+   "DATE": "2026-07-28",
+   "CAMPNO": "26100",
+   "LOT": "A260728-39",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-A",
+   "AvgOfMOISTURE": 0.43454007306226794,
+   "AvgOfCOLOR": 35.943762921702096,
+   "AvgOfCombined_BD": 0.7121835010978614
+  },
+  {
+   "DATE": "2026-07-29",
+   "CAMPNO": "26100",
+   "LOT": "A260729-40",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-A",
+   "AvgOfMOISTURE": 0.405844187569769,
+   "AvgOfCOLOR": 38.63918437832506,
+   "AvgOfCombined_BD": 0.7007114460302848
+  },
+  {
+   "DATE": "2026-07-29",
+   "CAMPNO": "26202",
+   "LOT": "B260729-41",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-B",
+   "AvgOfMOISTURE": 0.0,
+   "AvgOfCOLOR": 46.38878688882263,
+   "AvgOfCombined_BD": 0.635058156592537
+  },
+  {
+   "DATE": "2026-07-30",
+   "CAMPNO": "26100",
+   "LOT": "A260730-42",
+   "Location": "Silo 1",
+   "PRODUCT": "PRD-A",
+   "AvgOfMOISTURE": 0.4116026192706193,
+   "AvgOfCOLOR": 34.8550330150094,
+   "AvgOfCombined_BD": 0.7051180852227414
+  },
+  {
+   "DATE": "2026-07-30",
+   "CAMPNO": "26202",
+   "LOT": "B260730-43",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-B",
+   "AvgOfMOISTURE": 0.5174715362722676,
+   "AvgOfCOLOR": 47.61779218381298,
+   "AvgOfCombined_BD": 0.6435501612594449
+  },
+  {
+   "DATE": "2026-07-30",
+   "CAMPNO": "26301",
+   "LOT": "C260730-44",
+   "Location": "Railcar",
+   "PRODUCT": "PRD-C",
+   "AvgOfMOISTURE": 0.31272345468173196,
+   "AvgOfCOLOR": 29.558882637235737,
+   "AvgOfCombined_BD": 0.7703056877892541
+  },
+  {
+   "DATE": "2026-07-31",
+   "CAMPNO": "26301",
+   "LOT": "C260731-45",
+   "Location": "Silo 3",
+   "PRODUCT": "PRD-C",
+   "AvgOfMOISTURE": 0.3209528323640522,
+   "AvgOfCOLOR": 33.81897077313181,
+   "AvgOfCombined_BD": 0.7756498428148016
+  },
+  {
+   "DATE": "2026-08-03",
+   "CAMPNO": "26101",
+   "LOT": "A260803-46",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-A",
+   "AvgOfMOISTURE": 0.47879675816713124,
+   "AvgOfCOLOR": 37.52980431460692,
+   "AvgOfCombined_BD": 0.7129421395645581
+  },
+  {
+   "DATE": "2026-08-03",
+   "CAMPNO": "26203",
+   "LOT": "B260803-47",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-B",
+   "AvgOfMOISTURE": 0.6285014363017293,
+   "AvgOfCOLOR": 47.46312822799351,
+   "AvgOfCombined_BD": 0.6481807246234559
+  },
+  {
+   "DATE": "2026-08-04",
+   "CAMPNO": "26101",
+   "LOT": "A260804-48",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-A",
+   "AvgOfMOISTURE": 0.3971409109323587,
+   "AvgOfCOLOR": 38.00554750170185,
+   "AvgOfCombined_BD": 0.7098519681720944
+  },
+  {
+   "DATE": "2026-08-04",
+   "CAMPNO": "26203",
+   "LOT": "B260804-49",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-B",
+   "AvgOfMOISTURE": 0.6145792675486819,
+   "AvgOfCOLOR": 45.37842080815599,
+   "AvgOfCombined_BD": 0.6558260211638723
+  },
+  {
+   "DATE": "2026-08-04",
+   "CAMPNO": "26301",
+   "LOT": "C260804-50",
+   "Location": "Silo 3",
+   "PRODUCT": "PRD-C",
+   "AvgOfMOISTURE": 0.2851436658026296,
+   "AvgOfCOLOR": 31.193814907392184,
+   "AvgOfCombined_BD": 0.7730971000959944
+  },
+  {
+   "DATE": "2026-08-05",
+   "CAMPNO": "26101",
+   "LOT": "A260805-51",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-A",
+   "AvgOfMOISTURE": 0.45402873070008143,
+   "AvgOfCOLOR": 37.67022358615183,
+   "AvgOfCombined_BD": 0.6966137845169676
+  },
+  {
+   "DATE": "2026-08-05",
+   "CAMPNO": "26203",
+   "LOT": "B260805-52",
+   "Location": "Railcar",
+   "PRODUCT": "PRD-B",
+   "AvgOfMOISTURE": 0.6018823399715187,
+   "AvgOfCOLOR": 46.363303661568125,
+   "AvgOfCombined_BD": 0.6402808786639432
+  },
+  {
+   "DATE": "2026-08-05",
+   "CAMPNO": "26301",
+   "LOT": "C260805-53",
+   "Location": "Silo 3",
+   "PRODUCT": "PRD-C",
+   "AvgOfMOISTURE": 0.29467844574319985,
+   "AvgOfCOLOR": 29.668915999630958,
+   "AvgOfCombined_BD": 0.7685666658097876
+  },
+  {
+   "DATE": "2026-08-06",
+   "CAMPNO": "26101",
+   "LOT": "A260806-54",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-A",
+   "AvgOfMOISTURE": 0.42340482579337513,
+   "AvgOfCOLOR": 38.43331575697241,
+   "AvgOfCombined_BD": 0.7145044317203922
+  },
+  {
+   "DATE": "2026-08-06",
+   "CAMPNO": "26203",
+   "LOT": "B260806-55",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-B",
+   "AvgOfMOISTURE": 0.5465040070204483,
+   "AvgOfCOLOR": 46.45734588449856,
+   "AvgOfCombined_BD": 0.6491585692473164
+  },
+  {
+   "DATE": "2026-08-07",
+   "CAMPNO": "26101",
+   "LOT": "A260807-56",
+   "Location": "Silo 1",
+   "PRODUCT": "PRD-A",
+   "AvgOfMOISTURE": 0.42037909593641226,
+   "AvgOfCOLOR": 36.462542633477035,
+   "AvgOfCombined_BD": 0.7181863921878208
+  },
+  {
+   "DATE": "2026-08-10",
+   "CAMPNO": "26101",
+   "LOT": "A260810-57",
+   "Location": "Silo 1",
+   "PRODUCT": "PRD-A",
+   "AvgOfMOISTURE": 0.4305003385161869,
+   "AvgOfCOLOR": 35.135186407764024,
+   "AvgOfCombined_BD": 0.6957170606902837
+  },
+  {
+   "DATE": "2026-08-10",
+   "CAMPNO": "26203",
+   "LOT": "B260810-58",
+   "Location": "Railcar",
+   "PRODUCT": "PRD-B",
+   "AvgOfMOISTURE": 0.5983553225560211,
+   "AvgOfCOLOR": 46.02919495552964,
+   "AvgOfCombined_BD": 0.6426455714382043
+  },
+  {
+   "DATE": "2026-08-10",
+   "CAMPNO": "26301",
+   "LOT": "C260810-59",
+   "Location": "Railcar",
+   "PRODUCT": "PRD-C",
+   "AvgOfMOISTURE": 0.22918276831627557,
+   "AvgOfCOLOR": 29.367584887346823,
+   "AvgOfCombined_BD": 0.7701992689860923
+  },
+  {
+   "DATE": "2026-08-11",
+   "CAMPNO": "26203",
+   "LOT": "B260811-60",
+   "Location": "Railcar",
+   "PRODUCT": "PRD-B",
+   "AvgOfMOISTURE": 0.6241307940270063,
+   "AvgOfCOLOR": 42.86223945359191,
+   "AvgOfCombined_BD": 0.6405236806718596
+  },
+  {
+   "DATE": "2026-08-11",
+   "CAMPNO": "26301",
+   "LOT": "C260811-61",
+   "Location": "Railcar",
+   "PRODUCT": "PRD-C",
+   "AvgOfMOISTURE": 0.22892926765337873,
+   "AvgOfCOLOR": 30.529069635243786,
+   "AvgOfCombined_BD": 0.7757036733757023
+  },
+  {
+   "DATE": "2026-08-12",
+   "CAMPNO": "26203",
+   "LOT": "B260812-62",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-B",
+   "AvgOfMOISTURE": null,
+   "AvgOfCOLOR": 44.10720905591021,
+   "AvgOfCombined_BD": 0.6380483406951536
+  },
+  {
+   "DATE": "2026-08-12",
+   "CAMPNO": "26301",
+   "LOT": "C260812-63",
+   "Location": "Railcar",
+   "PRODUCT": "PRD-C",
+   "AvgOfMOISTURE": 0.33047214374547546,
+   "AvgOfCOLOR": 0.0,
+   "AvgOfCombined_BD": 0.7842997427365317
+  },
+  {
+   "DATE": "2026-08-13",
+   "CAMPNO": "26101",
+   "LOT": "A260813-64",
+   "Location": "Silo 1",
+   "PRODUCT": "PRD-A",
+   "AvgOfMOISTURE": 0.47336231770175,
+   "AvgOfCOLOR": 36.910942650762415,
+   "AvgOfCombined_BD": 0.7261059554297429
+  },
+  {
+   "DATE": "2026-08-13",
+   "CAMPNO": "26203",
+   "LOT": "B260813-65",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-B",
+   "AvgOfMOISTURE": 0.5839490859188937,
+   "AvgOfCOLOR": 45.34548228346919,
+   "AvgOfCombined_BD": 0.6434784289355097
+  },
+  {
+   "DATE": "2026-08-14",
+   "CAMPNO": "26203",
+   "LOT": "B260814-66",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-B",
+   "AvgOfMOISTURE": 0.5826033252881184,
+   "AvgOfCOLOR": 46.066952514239354,
+   "AvgOfCombined_BD": 0.6354202286753655
+  },
+  {
+   "DATE": "2026-08-17",
+   "CAMPNO": "26102",
+   "LOT": "A260817-67",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-A",
+   "AvgOfMOISTURE": 0.4670109343702449,
+   "AvgOfCOLOR": 37.77473530052279,
+   "AvgOfCombined_BD": 0.7035251614824589
+  },
+  {
+   "DATE": "2026-08-17",
+   "CAMPNO": "26204",
+   "LOT": "B260817-68",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-B",
+   "AvgOfMOISTURE": 0.5956643333019227,
+   "AvgOfCOLOR": 47.26105060059127,
+   "AvgOfCombined_BD": 0.6406037809189992
+  },
+  {
+   "DATE": "2026-08-17",
+   "CAMPNO": "26302",
+   "LOT": "C260817-69",
+   "Location": "Railcar",
+   "PRODUCT": "PRD-C",
+   "AvgOfMOISTURE": 0.31538232442928943,
+   "AvgOfCOLOR": 32.56800289204563,
+   "AvgOfCombined_BD": 0.7663303920825628
+  },
+  {
+   "DATE": "2026-08-18",
+   "CAMPNO": "26102",
+   "LOT": "A260818-70",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-A",
+   "AvgOfMOISTURE": 0.4581017664030281,
+   "AvgOfCOLOR": 38.50946820022102,
+   "AvgOfCombined_BD": 0.7110548170405453
+  },
+  {
+   "DATE": "2026-08-19",
+   "CAMPNO": "26102",
+   "LOT": "A260819-71",
+   "Location": "Silo 1",
+   "PRODUCT": "PRD-A",
+   "AvgOfMOISTURE": 0.44064929936811725,
+   "AvgOfCOLOR": 36.68973420095307,
+   "AvgOfCombined_BD": 0.7130962554246624
+  },
+  {
+   "DATE": "2026-08-19",
+   "CAMPNO": "26204",
+   "LOT": "B260819-72",
+   "Location": "Railcar",
+   "PRODUCT": "PRD-B",
+   "AvgOfMOISTURE": 0.5324054164299,
+   "AvgOfCOLOR": 47.07799990197918,
+   "AvgOfCombined_BD": 0.6242826692648362
+  },
+  {
+   "DATE": "2026-08-19",
+   "CAMPNO": "26302",
+   "LOT": "C260819-73",
+   "Location": "Railcar",
+   "PRODUCT": "PRD-C",
+   "AvgOfMOISTURE": 0.22694212761070107,
+   "AvgOfCOLOR": 30.445898276920065,
+   "AvgOfCombined_BD": 0.7788982103309398
+  },
+  {
+   "DATE": "2026-08-20",
+   "CAMPNO": "26204",
+   "LOT": "B260820-74",
+   "Location": "Railcar",
+   "PRODUCT": "PRD-B",
+   "AvgOfMOISTURE": 0.5057717543289021,
+   "AvgOfCOLOR": 47.34191206677716,
+   "AvgOfCombined_BD": 0.6323952978959223
+  },
+  {
+   "DATE": "2026-08-20",
+   "CAMPNO": "26302",
+   "LOT": "C260820-75",
+   "Location": "Silo 3",
+   "PRODUCT": "PRD-C",
+   "AvgOfMOISTURE": 0.24424661142346704,
+   "AvgOfCOLOR": 31.536823174925143,
+   "AvgOfCombined_BD": 0.7755307958048614
+  },
+  {
+   "DATE": "2026-08-21",
+   "CAMPNO": "26102",
+   "LOT": "A260821-76",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-A",
+   "AvgOfMOISTURE": 0.4077352240340531,
+   "AvgOfCOLOR": 38.62122323423079,
+   "AvgOfCombined_BD": 0.7204135785321412
+  },
+  {
+   "DATE": "2026-08-24",
+   "CAMPNO": "26102",
+   "LOT": "A260824-77",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-A",
+   "AvgOfMOISTURE": 0.49917998985377987,
+   "AvgOfCOLOR": 36.54307325208069,
+   "AvgOfCombined_BD": 0.7135733060167615
+  },
+  {
+   "DATE": "2026-08-25",
+   "CAMPNO": "26102",
+   "LOT": "A260825-78",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-A",
+   "AvgOfMOISTURE": 0.4144848311007185,
+   "AvgOfCOLOR": 37.27803839785895,
+   "AvgOfCombined_BD": 0.6997514278977851
+  },
+  {
+   "DATE": "2026-08-26",
+   "CAMPNO": "26102",
+   "LOT": "A260826-79",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-A",
+   "AvgOfMOISTURE": 0.47554566117757463,
+   "AvgOfCOLOR": 36.130157924272346,
+   "AvgOfCombined_BD": 0.7125895855551864
+  },
+  {
+   "DATE": "2026-08-26",
+   "CAMPNO": "26302",
+   "LOT": "C260826-80",
+   "Location": "Railcar",
+   "PRODUCT": "PRD-C",
+   "AvgOfMOISTURE": 0.2665106872499405,
+   "AvgOfCOLOR": 30.15923570682951,
+   "AvgOfCombined_BD": 0.762033142309451
+  },
+  {
+   "DATE": "2026-08-27",
+   "CAMPNO": "26102",
+   "LOT": "A260827-81",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-A",
+   "AvgOfMOISTURE": 0.4157174063834388,
+   "AvgOfCOLOR": 36.904381160309384,
+   "AvgOfCombined_BD": null
+  },
+  {
+   "DATE": "2026-08-27",
+   "CAMPNO": "26204",
+   "LOT": "B260827-82",
+   "Location": "Railcar",
+   "PRODUCT": "PRD-B",
+   "AvgOfMOISTURE": 0.5746904982094733,
+   "AvgOfCOLOR": 45.40891163687519,
+   "AvgOfCombined_BD": 0.6375107643927743
+  },
+  {
+   "DATE": "2026-08-27",
+   "CAMPNO": "26302",
+   "LOT": "C260827-83",
+   "Location": "Silo 3",
+   "PRODUCT": "PRD-C",
+   "AvgOfMOISTURE": 0.3292205887377116,
+   "AvgOfCOLOR": 29.170237359269876,
+   "AvgOfCombined_BD": 0.7767560684664255
+  },
+  {
+   "DATE": "2026-09-01",
+   "CAMPNO": "26302",
+   "LOT": "C260901-84",
+   "Location": "Silo 3",
+   "PRODUCT": "PRD-C",
+   "AvgOfMOISTURE": 0.2669177576511117,
+   "AvgOfCOLOR": 31.174055709683426,
+   "AvgOfCombined_BD": 0.7815099780830653
+  },
+  {
+   "DATE": "2026-09-02",
+   "CAMPNO": "26302",
+   "LOT": "C260902-85",
+   "Location": "Railcar",
+   "PRODUCT": "PRD-C",
+   "AvgOfMOISTURE": 0.27346503060459365,
+   "AvgOfCOLOR": 31.221911749208715,
+   "AvgOfCombined_BD": 0.7678793662956149
+  },
+  {
+   "DATE": "2026-09-03",
+   "CAMPNO": "26102",
+   "LOT": "A260903-86",
+   "Location": "Silo 1",
+   "PRODUCT": "PRD-A",
+   "AvgOfMOISTURE": 0.3927423583397844,
+   "AvgOfCOLOR": 40.71636151896683,
+   "AvgOfCombined_BD": 0.7127411837058445
+  },
+  {
+   "DATE": "2026-09-03",
+   "CAMPNO": "26204",
+   "LOT": "B260903-87",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-B",
+   "AvgOfMOISTURE": 0.5750770366965153,
+   "AvgOfCOLOR": 45.22830970414844,
+   "AvgOfCombined_BD": 0.6479876395186976
+  },
+  {
+   "DATE": "2026-09-04",
+   "CAMPNO": "26102",
+   "LOT": "A260904-88",
+   "Location": "Silo 1",
+   "PRODUCT": "PRD-A",
+   "AvgOfMOISTURE": 0.45446875973112055,
+   "AvgOfCOLOR": 36.9738055845611,
+   "AvgOfCombined_BD": 0.7114011420418104
+  },
+  {
+   "DATE": "2026-09-04",
+   "CAMPNO": "26204",
+   "LOT": "B260904-89",
+   "Location": "Railcar",
+   "PRODUCT": "PRD-B",
+   "AvgOfMOISTURE": 0.6233306067398799,
+   "AvgOfCOLOR": 48.439194854994405,
+   "AvgOfCombined_BD": 0.6392340036069021
+  },
+  {
+   "DATE": "2026-09-08",
+   "CAMPNO": "26102",
+   "LOT": "A260908-90",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-A",
+   "AvgOfMOISTURE": 0.4649325047537661,
+   "AvgOfCOLOR": 40.1053588903694,
+   "AvgOfCombined_BD": 0.7127385795809852
+  },
+  {
+   "DATE": "2026-09-08",
+   "CAMPNO": "26302",
+   "LOT": "C260908-91",
+   "Location": "Silo 3",
+   "PRODUCT": "PRD-C",
+   "AvgOfMOISTURE": 0.2740717790664749,
+   "AvgOfCOLOR": 30.95634952579684,
+   "AvgOfCombined_BD": 0.7653639537411939
+  },
+  {
+   "DATE": "2026-09-09",
+   "CAMPNO": "26102",
+   "LOT": "A260909-92",
+   "Location": "Silo 1",
+   "PRODUCT": "PRD-A",
+   "AvgOfMOISTURE": 0.41084307960500444,
+   "AvgOfCOLOR": 37.67180829092657,
+   "AvgOfCombined_BD": 0.7137408795315675
+  },
+  {
+   "DATE": "2026-09-10",
+   "CAMPNO": "26204",
+   "LOT": "B260910-93",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-B",
+   "AvgOfMOISTURE": 0.6316769635248846,
+   "AvgOfCOLOR": 46.73522303065784,
+   "AvgOfCombined_BD": 0.6290894537595936
+  },
+  {
+   "DATE": "2026-09-11",
+   "CAMPNO": "26102",
+   "LOT": "A260911-94",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-A",
+   "AvgOfMOISTURE": 0.4252541883146627,
+   "AvgOfCOLOR": 35.86743127574061,
+   "AvgOfCombined_BD": 0.7017576879646379
+  },
+  {
+   "DATE": "2026-09-14",
+   "CAMPNO": "26205",
+   "LOT": "B260914-95",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-B",
+   "AvgOfMOISTURE": 0.5853380790662682,
+   "AvgOfCOLOR": 45.466045668948674,
+   "AvgOfCombined_BD": 0.6383199361434374
+  },
+  {
+   "DATE": "2026-09-16",
+   "CAMPNO": "26102",
+   "LOT": "A260916-96",
+   "Location": "SILO 1",
+   "PRODUCT": "PRD-A",
+   "AvgOfMOISTURE": 0.4366555659398064,
+   "AvgOfCOLOR": 36.20740186096699,
+   "AvgOfCombined_BD": 0.7209364750906362
+  },
+  {
+   "DATE": "2026-09-16",
+   "CAMPNO": "26205",
+   "LOT": "B260916-97",
+   "Location": "SILO 1",
+   "PRODUCT": "PRD-B",
+   "AvgOfMOISTURE": 0.6583318918071307,
+   "AvgOfCOLOR": 49.183864762621916,
+   "AvgOfCombined_BD": 0.6347561852033538
+  },
+  {
+   "DATE": "2026-09-17",
+   "CAMPNO": "26102",
+   "LOT": "A260917-98",
+   "Location": "Silo 1",
+   "PRODUCT": "PRD-A",
+   "AvgOfMOISTURE": 0.40503517051018806,
+   "AvgOfCOLOR": 36.48283220561817,
+   "AvgOfCombined_BD": 0.7171260548646835
+  },
+  {
+   "DATE": "2026-09-17",
+   "CAMPNO": "26205",
+   "LOT": "B260917-99",
+   "Location": "Railcar",
+   "PRODUCT": "PRD-B",
+   "AvgOfMOISTURE": 0.5574548926931663,
+   "AvgOfCOLOR": 46.90127692970037,
+   "AvgOfCombined_BD": 0.6269097617558247
+  },
+  {
+   "DATE": "2026-09-17",
+   "CAMPNO": "26302",
+   "LOT": "C260917-00",
+   "Location": "Silo 3",
+   "PRODUCT": "PRD-C",
+   "AvgOfMOISTURE": 0.25117572948747596,
+   "AvgOfCOLOR": 32.23141630899624,
+   "AvgOfCombined_BD": 0.7512134908380478
+  },
+  {
+   "DATE": "2026-09-18",
+   "CAMPNO": "26302",
+   "LOT": "C260918-01",
+   "Location": "Silo 3",
+   "PRODUCT": "PRD-C",
+   "AvgOfMOISTURE": 0.3032042386608779,
+   "AvgOfCOLOR": 31.306086029860683,
+   "AvgOfCombined_BD": 0.7631089931536046
+  },
+  {
+   "DATE": "2026-09-22",
+   "CAMPNO": "26102",
+   "LOT": "A260922-02",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-A",
+   "AvgOfMOISTURE": 0.4218701204641704,
+   "AvgOfCOLOR": 41.66273300548337,
+   "AvgOfCombined_BD": 0.6949022313081666
+  },
+  {
+   "DATE": "2026-09-22",
+   "CAMPNO": "26302",
+   "LOT": "C260922-03",
+   "Location": "Silo 3",
+   "PRODUCT": "PRD-C",
+   "AvgOfMOISTURE": 0.30579767197532304,
+   "AvgOfCOLOR": 29.160296757510427,
+   "AvgOfCombined_BD": 0.7913908039349983
+  },
+  {
+   "DATE": "2026-09-24",
+   "CAMPNO": "26102",
+   "LOT": "A260924-04",
+   "Location": "Silo 1",
+   "PRODUCT": "PRD-A",
+   "AvgOfMOISTURE": 0.43210228303195847,
+   "AvgOfCOLOR": 40.22652377506921,
+   "AvgOfCombined_BD": 0.7153974382170945
+  },
+  {
+   "DATE": "2026-09-25",
+   "CAMPNO": "26205",
+   "LOT": "B260925-05",
+   "Location": "Railcar",
+   "PRODUCT": "PRD-B",
+   "AvgOfMOISTURE": 0.6068362126249998,
+   "AvgOfCOLOR": 48.37759389209605,
+   "AvgOfCombined_BD": 0.6288788691610284
+  },
+  {
+   "DATE": "2026-09-25",
+   "CAMPNO": "26302",
+   "LOT": "C260925-06",
+   "Location": "Railcar",
+   "PRODUCT": "PRD-C",
+   "AvgOfMOISTURE": 0.26235499152054864,
+   "AvgOfCOLOR": 30.839882781627963,
+   "AvgOfCombined_BD": 0.7567195841605096
+  },
+  {
+   "DATE": "2026-09-28",
+   "CAMPNO": "26103",
+   "LOT": "A260928-07",
+   "Location": "Silo 1",
+   "PRODUCT": "PRD-A",
+   "AvgOfMOISTURE": 0.4472122690468144,
+   "AvgOfCOLOR": 40.12683247381291,
+   "AvgOfCombined_BD": 0.7081972590672994
+  },
+  {
+   "DATE": "2026-09-28",
+   "CAMPNO": "26303",
+   "LOT": "C260928-08",
+   "Location": "Silo 3",
+   "PRODUCT": "PRD-C",
+   "AvgOfMOISTURE": 0.3321779433046682,
+   "AvgOfCOLOR": 33.27661261517415,
+   "AvgOfCombined_BD": 0.7759174398665724
+  },
+  {
+   "DATE": "2026-09-29",
+   "CAMPNO": "26205",
+   "LOT": "B260929-09",
+   "Location": "Silo 2",
+   "PRODUCT": "PRD-B",
+   "AvgOfMOISTURE": 0.6167836132553401,
+   "AvgOfCOLOR": 47.607537981491475,
+   "AvgOfCombined_BD": 0.633499192412246
+  },
+  {
+   "DATE": "2026-09-29",
+   "CAMPNO": "26303",
+   "LOT": "C260929-10",
+   "Location": "Silo 3",
+   "PRODUCT": "PRD-C",
+   "AvgOfMOISTURE": 0.213666735672404,
+   "AvgOfCOLOR": 30.603109904093117,
+   "AvgOfCombined_BD": 0.7702371138454897
+  },
+  {
+   "DATE": "2026-09-30",
+   "CAMPNO": "26103",
+   "LOT": null,
+   "Location": "Silo 1",
+   "PRODUCT": "PRD-A",
+   "AvgOfMOISTURE": 0.4214237260706644,
+   "AvgOfCOLOR": 37.26520819206065,
+   "AvgOfCombined_BD": 0.7179904656076218
+  },
+  {
+   "DATE": "2026-09-30",
+   "CAMPNO": "26205",
+   "LOT": "B260930-12",
+   "Location": "Railcar",
+   "PRODUCT": "PRD-B",
+   "AvgOfMOISTURE": 0.5715489599034252,
+   "AvgOfCOLOR": 45.95825867006993,
+   "AvgOfCombined_BD": 0.6354879951317036
+  }
+ ]
+}
