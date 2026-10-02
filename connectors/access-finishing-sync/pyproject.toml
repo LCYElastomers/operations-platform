@@ -1,0 +1,45 @@
+[project]
+name = "access-finishing-sync"
+version = "0.1.0"
+description = "Windows sync agent: Microsoft Access qryFINISHING-AVG to the Operations Platform ingestion API"
+requires-python = ">=3.12"
+# Runtime dependencies (exact versions are pinned in uv.lock):
+#   httpx      - HTTP client with separate connect/read timeouts
+#   truststore - verifies TLS against the Windows certificate store
+#   pyodbc     - Microsoft Access ODBC access
+dependencies = [
+    "httpx>=0.28.1",
+    "pyodbc>=5.2.0",
+    "truststore>=0.10.1",
+]
+
+[project.scripts]
+access-finishing-sync = "access_finishing_sync.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "ruff>=0.11",
+]
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/access_finishing_sync"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tests"]
+addopts = "-ra --strict-markers"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106"]

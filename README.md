@@ -13,9 +13,16 @@ authentication, no data synchronization, and no module dashboards yet.
 apps/
   web/      Next.js (App Router, TypeScript, Tailwind, TanStack Query, shadcn/ui-ready)
   api/      FastAPI (Pydantic, SQLAlchemy 2, Alembic, pytest), managed with uv
+connectors/
+  access-finishing-sync/  Windows agent: Access qryFINISHING-AVG -> ingestion API
 compose.yml Docker Compose stack for web + api
 docs/       Project guidelines
 ```
+
+Connectors are independent applications that run on source-system hosts and
+talk to the API only over HTTPS. They are not imported by the API and not
+part of any Docker image. See
+[`connectors/access-finishing-sync/README.md`](connectors/access-finishing-sync/README.md).
 
 PostgreSQL is host-managed and is **not** part of the Compose stack.
 

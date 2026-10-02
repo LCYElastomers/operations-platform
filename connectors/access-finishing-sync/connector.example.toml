@@ -1,0 +1,42 @@
+# Example configuration for access-finishing-sync. Copy to connector.toml
+# (git-ignored) next to the virtual environment and adjust.
+#
+# This file must NEVER contain the connector secret. The connector refuses to
+# start if it finds a secret-like setting here. The secret lives in Windows
+# Credential Manager under CREDENTIAL_TARGET (see README).
+#
+# Any setting can also be supplied as an environment variable of the same
+# name; environment variables override this file.
+
+API_BASE_URL = "https://operations.example.internal"
+
+CONNECTOR_ID = "lcy-access-sync"
+SOURCE_SYSTEM = "access-qryFINISHING-AVG"
+
+# Use literal (single-quoted) strings for Windows paths. Use UNC paths for
+# network shares: mapped drive letters do not exist for scheduled tasks.
+ACCESS_DATABASE_PATH = '\\fileserver.example.internal\Quality\Finishing\Finishing.accdb'
+ACCESS_ODBC_DRIVER = "Microsoft Access Driver (*.mdb, *.accdb)"
+ACCESS_QUERY_NAME = "qryFINISHING-AVG"
+
+# Authoritative window: the last N calendar days, ending today (local time).
+RECONCILIATION_DAYS = 60
+# Maximum rows in the one request that carries the whole window (1-5000).
+BATCH_SIZE = 5000
+
+HTTP_CONNECT_TIMEOUT_SECONDS = 10
+HTTP_READ_TIMEOUT_SECONDS = 120
+HTTP_MAX_ATTEMPTS = 5
+
+LOG_DIRECTORY = 'C:\OperationsPlatform\access-finishing-sync\logs'
+LOCK_DIRECTORY = 'C:\OperationsPlatform\access-finishing-sync\locks'
+LOG_MAX_BYTES = 10485760
+LOG_BACKUP_COUNT = 10
+
+# Optional. Defaults to operations-platform/<CONNECTOR_ID>.
+# CREDENTIAL_TARGET = "operations-platform/lcy-access-sync"
+
+# Production values. DEVELOPMENT_MODE=true is only for a developer workstation:
+# it allows http://localhost / http://127.0.0.1 and SECRET_SOURCE=environment.
+DEVELOPMENT_MODE = false
+SECRET_SOURCE = "credential-manager"

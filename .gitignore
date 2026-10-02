@@ -40,3 +40,20 @@ htmlcov/
 
 # Logs
 *.log
+*.log.[0-9]*
+
+# Access finishing sync connector: local configuration and runtime artifacts
+connectors/access-finishing-sync/connector.toml
+connectors/access-finishing-sync/*.local.toml
+connectors/access-finishing-sync/logs/
+connectors/access-finishing-sync/locks/
+access-finishing-sync.*.lock
+venv/
+*.payload.json
+payloads/
+
+# Microsoft Access databases and their lock files
+*.accdb
+*.mdb
+*.laccdb
+*.ldb
