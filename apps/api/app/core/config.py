@@ -43,7 +43,8 @@ class Settings(BaseSettings):
     database_url: SecretStr | None = None
 
     # Where the moisture API reads from. "fixture" serves the labeled
-    # development fixture; "database" reads quality.finishing_measurements.
+    # development fixture (refused in production); "database" reads current
+    # versions from quality.finishing_measurements.
     moisture_data_source: Literal["fixture", "database"] = "fixture"
 
     # Machine ingestion endpoints:
@@ -72,7 +73,11 @@ class Settings(BaseSettings):
         return value
 
     @model_validator(mode="after")
-    def _database_source_requires_url(self) -> Self:
+    def _moisture_source_is_safe(self) -> Self:
+        if self.moisture_data_source == "fixture" and self.environment == "production":
+            raise ValueError(
+                "MOISTURE_DATA_SOURCE=fixture is not allowed in production; use database"
+            )
         if self.moisture_data_source == "database" and self.database_url is None:
             raise ValueError("MOISTURE_DATA_SOURCE=database requires DATABASE_URL")
         return self

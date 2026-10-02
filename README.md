@@ -159,7 +159,7 @@ from Docker build contexts. Never commit real credentials.
 | `ENVIRONMENT`  | api     | `development` | `production` disables API docs          |
 | `LOG_LEVEL`    | api     | `INFO`        |                                         |
 | `DATABASE_URL` | api     | _(unset)_     | SQLAlchemy URL for host PostgreSQL      |
-| `MOISTURE_DATA_SOURCE` | api | `fixture` | `fixture` or `database`; `database` requires `DATABASE_URL` |
+| `MOISTURE_DATA_SOURCE` | api | `fixture` | `fixture` or `database`; `database` requires `DATABASE_URL`. Production must use `database` (`fixture` is refused when `ENVIRONMENT=production`) |
 | `INGESTION_AUTH_MODE` | api | `disabled` | `disabled`, `connector`, or `development-unauthenticated` (refused in production); see Ingestion API |
 | `INGESTION_CONNECTORS` | api | _(empty)_ | JSON connector registry holding secret **digests** only; see Ingestion API |
 
@@ -314,12 +314,34 @@ Float measurements are stored via their shortest round-trip representation
 The API reads from the fixture or the database depending on
 `MOISTURE_DATA_SOURCE`. Both implement the same repository interface
 (`repository.py`), so the HTTP contract is identical; only
-`dataSource.kind` / `isFixture` / `label` change. No historical data has
-been imported yet, so keep `MOISTURE_DATA_SOURCE=fixture` until it has.
+`dataSource.kind` / `isFixture` / `label` change.
+
+Production uses `MOISTURE_DATA_SOURCE=database`; the API refuses to start
+with `fixture` when `ENVIRONMENT=production`. In database mode:
+
+- `/recent` returns current versions newest first (`source_date`, then
+  insertion order), at most `limit` records (default 50, maximum 500), with
+  `totalMatching`.
+- `/trends` returns current versions oldest first, with unweighted means of
+  non-null Moisture, Color and Combined BD values and their value counts.
+- `/filters` returns the distinct non-null products and locations and the
+  earliest/latest `source_date` of current versions.
+- Product and location filters match raw stored values exactly; `search` is
+  a case-insensitive substring match on lot or campaign number; the date
+  filter is inclusive.
+- Values are returned as stored: identifiers as strings, locations
+  un-normalized, `null` distinct from `0`, no specifications or
+  classifications.
+- Reads include every source system in the table. Each request uses its own
+  session, so a committed ingestion batch is visible on the next request.
+
+The database read path is covered end to end (ingestion endpoint, then the
+real read dependency) by `apps/api/tests/test_moisture_database_read_path.py`.
 
 ### Development fixture
 
-Until synchronization exists, the API serves
+For development and tests (`MOISTURE_DATA_SOURCE=fixture`, the default
+outside production), the API serves
 `apps/api/app/quality/moisture/fixtures/moisture_development_fixture.json`:
 synthetic rows using the Access field names, including deliberate zeros,
 nulls, and an un-normalized location. Every response includes a

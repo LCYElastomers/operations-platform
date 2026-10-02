@@ -129,8 +129,8 @@ def test_disabled_ingestion_rejects_before_reading_the_body() -> None:
 
 
 def test_development_mode_is_refused_in_production_settings() -> None:
-    with pytest.raises(ValueError, match="not allowed in production"):
-        enabled_settings(environment="production")
+    with pytest.raises(ValueError, match="INGESTION_AUTH_MODE=development-unauthenticated"):
+        enabled_settings(environment="production", moisture_data_source="database")
 
 
 def test_dependency_fails_closed_in_production_even_if_settings_bypass_validation() -> None:

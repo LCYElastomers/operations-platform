@@ -26,6 +26,36 @@ def test_database_moisture_source_requires_database_url(monkeypatch: pytest.Monk
         Settings(_env_file=None)
 
 
+def test_fixture_moisture_source_is_refused_in_production(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.delenv("MOISTURE_DATA_SOURCE", raising=False)
+
+    with pytest.raises(ValueError, match="MOISTURE_DATA_SOURCE=fixture is not allowed"):
+        Settings(_env_file=None)
+
+
+def test_production_reads_moisture_from_the_database(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("MOISTURE_DATA_SOURCE", "database")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://u:placeholder-pw@db/x")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.moisture_data_source == "database"
+
+
+@pytest.mark.parametrize("environment", ["development", "test"])
+def test_fixture_remains_available_outside_production(
+    monkeypatch: pytest.MonkeyPatch, environment: str
+) -> None:
+    monkeypatch.setenv("ENVIRONMENT", environment)
+    monkeypatch.setenv("MOISTURE_DATA_SOURCE", "fixture")
+
+    assert Settings(_env_file=None).moisture_data_source == "fixture"
+
+
 def test_unknown_moisture_source_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MOISTURE_DATA_SOURCE", "access")
 
@@ -38,6 +68,7 @@ def test_settings_errors_do_not_echo_database_credentials(
 ) -> None:
     monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://u:hunter2-placeholder@db/x")
     monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("MOISTURE_DATA_SOURCE", "database")
     monkeypatch.setenv("INGESTION_AUTH_MODE", "development-unauthenticated")
 
     with pytest.raises(ValueError) as error:

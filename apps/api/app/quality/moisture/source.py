@@ -1,7 +1,8 @@
 """Moisture source data.
 
-The production source is an Access query. Until synchronization exists the
-API can serve a development fixture with the same field names.
+The production source is the Access query, synchronized into PostgreSQL.
+For development and tests the API can serve a fixture with the same field
+names.
 """
 
 import json

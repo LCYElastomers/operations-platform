@@ -31,6 +31,7 @@ def connector_settings(**overrides: Any) -> Settings:
         "_env_file": None,
         "environment": "production",
         "database_url": UNREACHABLE_DB,
+        "moisture_data_source": "database",
         "ingestion_auth_mode": "connector",
         "ingestion_connectors": {
             "lcy-access-sync": {
@@ -247,6 +248,7 @@ def test_connectors_load_from_environment_json(monkeypatch: pytest.MonkeyPatch) 
     digest = secret_digest(CURRENT_SECRET)
     monkeypatch.setenv("ENVIRONMENT", "production")
     monkeypatch.setenv("DATABASE_URL", UNREACHABLE_DB)
+    monkeypatch.setenv("MOISTURE_DATA_SOURCE", "database")
     monkeypatch.setenv("INGESTION_AUTH_MODE", "connector")
     monkeypatch.setenv(
         "INGESTION_CONNECTORS",
