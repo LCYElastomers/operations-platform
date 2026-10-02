@@ -155,6 +155,20 @@ def test_other_database_types_are_rejected(tmp_path: Path) -> None:
         make_config(tmp_path, ACCESS_DATABASE_PATH=str(tmp_path / "Finishing.xlsx"))
 
 
+@pytest.mark.parametrize("name", ["odd;x.accdb", "odd{x.accdb", "odd}x.accdb"])
+def test_database_path_cannot_alter_the_connection_string(tmp_path: Path, name: str) -> None:
+    with pytest.raises(ConfigError, match="must not contain"):
+        make_config(tmp_path, ACCESS_DATABASE_PATH=str(tmp_path / name))
+
+
+def test_unc_database_path_is_accepted(tmp_path: Path) -> None:
+    unc = r"\\fileserver\Quality Share\Finishing.accdb"
+
+    config = make_config(tmp_path, ACCESS_DATABASE_PATH=unc)
+
+    assert config.access_database_path.name == "Finishing.accdb"
+
+
 @pytest.mark.parametrize("name", ["qry]X", "qry[X", "a`b"])
 def test_query_name_cannot_break_out_of_brackets(tmp_path: Path, name: str) -> None:
     with pytest.raises(ConfigError, match="ACCESS_QUERY_NAME"):

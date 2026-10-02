@@ -184,7 +184,7 @@ and the connector refuses to start if it finds a secret-like key in it.
 | ------- | ------- | ----- |
 | `API_BASE_URL` | required | `https://...`. No credentials, query, or fragment in the URL |
 | `CONNECTOR_ID` | `lcy-access-sync` | Sent as `X-Connector-Id` |
-| `ACCESS_DATABASE_PATH` | required | Absolute `.accdb`/`.mdb` path; use UNC paths for shares |
+| `ACCESS_DATABASE_PATH` | required | Absolute `.accdb`/`.mdb` path; use UNC paths for shares. Must not contain `;`, `{` or `}` |
 | `ACCESS_ODBC_DRIVER` | required | Exact driver name |
 | `ACCESS_QUERY_NAME` | `qryFINISHING-AVG` | Saved query to select from |
 | `SOURCE_SYSTEM` | `access-qryFINISHING-AVG` | Must be allowed for the connector on the server |
@@ -402,10 +402,30 @@ contents / Read** on its folder (and share-level read access for UNC paths).
 Mapped drive letters are not available to scheduled tasks, so use the UNC
 path.
 
-The connector connects with `ReadOnly=1` and requests a read-only ODBC
-connection. If the driver does not support the read-only attribute, it logs
-`readonly_attribute: false` and relies on `ReadOnly=1`. It only ever runs
-`SELECT`, so tables, queries, and records are never modified.
+The connection string is always exactly:
+
+```text
+DRIVER={<ACCESS_ODBC_DRIVER>};DBQ=<ACCESS_DATABASE_PATH>;ReadOnly=1;
+```
+
+There is no code path that opens the database without `ReadOnly=1`. On top
+of that, the connector first also requests the ODBC read-only access-mode
+connection attribute (`SQL_ATTR_ACCESS_MODE`, pyodbc `readonly=True`):
+
+1. If that succeeds, `odbc_connection_opened` logs `readonly_attribute: true`.
+2. If the driver rejects the attribute as unsupported or invalid (SQLSTATE
+   `HY024`, `HYC00`, `HY092` or `IM001`; the 32-bit Access driver on some
+   hosts returns `HY024`), the connector logs
+   `odbc_access_mode_attribute_rejected` with that SQLSTATE and retries
+   **exactly once** with the same `ReadOnly=1` connection string and no
+   attribute. On success, `odbc_connection_opened` logs
+   `readonly_attribute: false` and `access_mode_sqlstate`.
+3. Any other SQLSTATE on the first attempt (for example a locked, missing
+   or corrupt database) is reported as-is and is never retried.
+
+The connector only ever executes single `SELECT` statements. Anything else
+is refused before it reaches the driver, so tables, queries and records are
+never modified.
 
 Access normally creates a `.laccdb` / `.ldb` lock file next to the database
 when it is opened. A reader that cannot create that file can affect how
@@ -462,6 +482,9 @@ events are:
 | ----- | ------ |
 | `run_started` | action, API host, database file name, query name |
 | `window_calculated` | `window_start`, `window_end`, `days`, `query_upper_bound_exclusive` |
+| `odbc_access_mode_attribute_rejected` | `sqlstate` of the rejected read-only attribute (a single retry follows) |
+| `odbc_connection_opened` | `readonly_attribute`, `readonly_connection_string` (always true), `access_mode_sqlstate`, database file name |
+| `odbc_probe` | `python_architecture`, `readonly_attribute`, `column_count`, `missing_columns`, `test_row_retrieved` |
 | `extraction_finished` | `extracted_rows`, `readonly_attribute` |
 | `row_invalid` | `row_index`, source `field`, `reason` (first 100) |
 | `request_prepared` | `batch_id`, `row_count`, `body_bytes`, `extracted_at` |
@@ -491,7 +514,9 @@ only as configured metadata: the database **file name**, not its full path.
 | Exit 4, `driver_not_found` | Driver not installed for this Python architecture; see section 3 |
 | Exit 4, `architecture_mismatch` (SQLSTATE IM002/IM014) | Python and driver architectures differ |
 | Exit 4, `database_not_found` | Wrong path, mapped drive letter instead of UNC, or no read/list permission |
-| Exit 4, `connection_failed` | Database locked exclusively by a user, corrupt, or unsupported format (`.accdb` with the legacy driver) |
+| Exit 4, `connection_failed`, `attempt: access_mode_attribute` | The first open failed for a reason other than the read-only attribute (no retry). Check `sqlstate`: database locked exclusively by a user, corrupt, or unsupported format (`.accdb` with the legacy driver) |
+| Exit 4, `connection_failed`, `attempt: connection_string_only` | The driver rejected the read-only attribute (`access_mode_sqlstate`, often `HY024`), and the single retry with only `ReadOnly=1` also failed with `sqlstate`. The attribute is not the cause. Test `DRIVER={...};DBQ=<UNC path>;ReadOnly=1;` directly with pyodbc as the service account, check share and folder permissions (including creating the `.laccdb` lock file, section 14), and check whether a user holds the file exclusively |
+| `readonly_attribute: false` in `odbc_connection_opened` / `odbc_probe` | Expected with drivers that reject the ODBC access-mode attribute, for example `HY024` from the 32-bit Access driver. The connection is still opened with `ReadOnly=1` and only `SELECT` is executed. No action needed |
 | Exit 4, `query_unavailable` / `missing_columns` | Query renamed, or columns changed |
 | Exit 5, `empty_window` | Access returned no rows for the window. Check the source and the PC clock/date. Nothing was sent (section 22) |
 | Exit 5, `local_validation_failed` | `row_invalid` events name the row index, field, and reason. Fix the source data |

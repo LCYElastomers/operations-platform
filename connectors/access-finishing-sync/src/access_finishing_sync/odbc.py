@@ -1,7 +1,10 @@
 """Read-only access to the Access saved query through pyodbc.
 
 Only SELECT statements are executed; nothing in the Access database is
-modified. pyodbc is imported lazily so the rest of the connector (and its
+modified. Every connection string carries ReadOnly=1. The connection first
+also requests the ODBC read-only access-mode attribute; if the driver rejects
+that attribute, it is retried exactly once without it (ReadOnly=1 still
+applies). pyodbc is imported lazily so the rest of the connector (and its
 tests) work without an ODBC driver manager.
 """
 
@@ -15,6 +18,7 @@ from types import ModuleType
 from typing import Any, Protocol
 
 from access_finishing_sync.errors import ExtractionError, OdbcUnavailableError
+from access_finishing_sync.logs import RunLogger
 from access_finishing_sync.window import DateWindow
 
 EXPECTED_COLUMNS = (
@@ -28,8 +32,13 @@ EXPECTED_COLUMNS = (
     "AvgOfCombined_BD",
 )
 FETCH_CHUNK = 1000
-# SQLSTATEs meaning "the driver does not support this connection attribute".
-_UNSUPPORTED_ATTRIBUTE = frozenset({"HYC00", "HY092", "HY024", "IM001"})
+# SQLSTATEs meaning the driver rejected or does not support the ODBC
+# access-mode attribute: optional feature not implemented, invalid attribute
+# identifier, invalid attribute value, driver does not support this function.
+ACCESS_MODE_REJECTED = frozenset({"HYC00", "HY092", "HY024", "IM001"})
+# Characters that would need ODBC brace quoting in DBQ; refused instead, so the
+# connection string keeps the plain form the Access driver is known to accept.
+UNSAFE_PATH_CHARACTERS = frozenset(";{}")
 _ARCHITECTURE_MISMATCH = frozenset({"IM002", "IM014"})
 _SQLSTATE = re.compile(r"[0-9A-Z]{5}")
 
@@ -49,12 +58,19 @@ def _sqlstate(error: BaseException) -> str:
     return "unknown"
 
 
-def _braced(value: str) -> str:
-    return "{" + value.replace("}", "}}") + "}"
-
-
 def connection_string(driver: str, database_path: Path) -> str:
-    return f"DRIVER={_braced(driver)};DBQ={_braced(str(database_path))};ReadOnly=1;Exclusive=0;"
+    """Always includes ReadOnly=1; there is no variant without it."""
+    path = str(database_path)
+    if any(c in UNSAFE_PATH_CHARACTERS for c in path) or any(c in "{};" for c in driver):
+        raise ValueError("driver name or database path contains ';', '{' or '}'")
+    return f"DRIVER={{{driver}}};DBQ={path};ReadOnly=1;"
+
+
+def _require_select(sql: str) -> str:
+    # The repository never issues anything but a single SELECT statement.
+    if not sql.startswith("SELECT ") or ";" in sql:
+        raise RuntimeError("only single SELECT statements may be executed against Access")
+    return sql
 
 
 def _columns_sql() -> str:
@@ -103,11 +119,13 @@ class AccessRepository:
         database_path: Path,
         query_name: str,
         odbc_module: ModuleType | Any | None = None,
+        log: RunLogger | None = None,
     ) -> None:
         self._driver = driver
         self._path = database_path
         self._query = query_name
         self._odbc = odbc_module
+        self._log = log
 
     def _module(self) -> Any:
         if self._odbc is None:
@@ -153,43 +171,80 @@ class AccessRepository:
         self.check_driver()
         self.check_database_file()
         conn_str = connection_string(self._driver, self._path)
-        readonly_attribute = True
+
         try:
-            try:
-                connection = odbc.connect(conn_str, autocommit=True, readonly=True)
-            except odbc.Error as error:
-                if _sqlstate(error) not in _UNSUPPORTED_ATTRIBUTE:
-                    raise
-                # ReadOnly=1 in the connection string still applies.
-                readonly_attribute = False
-                connection = odbc.connect(conn_str, autocommit=True)
+            connection = odbc.connect(conn_str, autocommit=True, readonly=True)
+            readonly_attribute = True
+            rejected_state = None
         except odbc.Error as error:
-            state = _sqlstate(error)
-            mismatch = state in _ARCHITECTURE_MISMATCH
-            hint = (
-                f" This usually means the driver and Python architectures differ "
-                f"(Python is {python_architecture()})."
-                if mismatch
-                else ""
+            rejected_state = _sqlstate(error)
+            if rejected_state not in ACCESS_MODE_REJECTED:
+                raise self._open_failed(rejected_state, attempt="access_mode_attribute") from None
+            self._event(
+                "odbc_access_mode_attribute_rejected",
+                sqlstate=rejected_state,
+                retrying_with="ReadOnly=1 connection string only",
             )
-            # Driver messages can include paths, so only the SQLSTATE is reported.
-            raise OdbcUnavailableError(
-                f"Could not open the Access database (SQLSTATE {state}).{hint}",
-                reason="architecture_mismatch" if mismatch else "connection_failed",
-                sqlstate=state,
-                python_architecture=python_architecture(),
-            ) from None
+            # Exactly one retry, with the same connection string (ReadOnly=1).
+            try:
+                connection = odbc.connect(conn_str, autocommit=True)
+            except odbc.Error as retry_error:
+                raise self._open_failed(
+                    _sqlstate(retry_error),
+                    attempt="connection_string_only",
+                    access_mode_sqlstate=rejected_state,
+                ) from None
+            readonly_attribute = False
+
+        self._event(
+            "odbc_connection_opened",
+            readonly_attribute=readonly_attribute,
+            readonly_connection_string=True,
+            access_mode_sqlstate=rejected_state,
+            database_file=self._path.name,
+        )
         try:
             yield connection, readonly_attribute
         finally:
             connection.close()
+
+    def _event(self, event: str, **fields: Any) -> None:
+        if self._log is not None:
+            self._log.info(event, **fields)
+
+    def _open_failed(self, state: str, *, attempt: str, **fields: Any) -> OdbcUnavailableError:
+        mismatch = state in _ARCHITECTURE_MISMATCH
+        hint = (
+            f" This usually means the driver and Python architectures differ "
+            f"(Python is {python_architecture()})."
+            if mismatch
+            else ""
+        )
+        retried = (
+            f" The first attempt, with the ODBC read-only access-mode attribute, was "
+            f"rejected (SQLSTATE {fields['access_mode_sqlstate']}); the retry with only "
+            f"ReadOnly=1 in the connection string also failed."
+            if attempt == "connection_string_only"
+            else ""
+        )
+        # Driver messages can include paths, so only SQLSTATEs and the file name are reported.
+        return OdbcUnavailableError(
+            f"Could not open the Access database '{self._path.name}' "
+            f"(SQLSTATE {state}).{retried}{hint}",
+            reason="architecture_mismatch" if mismatch else "connection_failed",
+            sqlstate=state,
+            attempt=attempt,
+            database_file=self._path.name,
+            python_architecture=python_architecture(),
+            **fields,
+        )
 
     def probe(self) -> ProbeResult:
         odbc = self._module()
         with self._connect() as (connection, readonly_attribute):
             try:
                 cursor = connection.cursor()
-                cursor.execute(probe_sql(self._query))
+                cursor.execute(_require_select(probe_sql(self._query)))
                 columns = tuple(column[0] for column in cursor.description or ())
                 row_retrieved = cursor.fetchone() is not None
                 cursor.close()
@@ -216,7 +271,9 @@ class AccessRepository:
             try:
                 cursor = connection.cursor()
                 cursor.execute(
-                    extraction_sql(self._query), window.query_start, window.query_end_exclusive
+                    _require_select(extraction_sql(self._query)),
+                    window.query_start,
+                    window.query_end_exclusive,
                 )
                 _check_columns(cursor.description or ())
                 rows: list[tuple[Any, ...]] = []

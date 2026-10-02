@@ -231,6 +231,8 @@ def _validate(raw: Mapping[str, str]) -> Config:
     database_path = _absolute_path(raw, "ACCESS_DATABASE_PATH", problems)
     if database_path.suffix.lower() not in {".accdb", ".mdb"}:
         problems.add("ACCESS_DATABASE_PATH must name an .accdb or .mdb file")
+    if any(c in str(database_path) for c in ";{}"):
+        problems.add("ACCESS_DATABASE_PATH must not contain ';', '{' or '}'")
 
     driver = _text(raw, "ACCESS_ODBC_DRIVER", problems, max_length=200)
     if any(c in driver for c in "{};"):

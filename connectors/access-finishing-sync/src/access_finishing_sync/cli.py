@@ -69,7 +69,10 @@ def default_service(
         redactor=redactor,
         credential_provider_factory=lambda: create_credential_provider(config, environ),
         repository_factory=lambda: AccessRepository(
-            config.access_odbc_driver, config.access_database_path, config.access_query_name
+            config.access_odbc_driver,
+            config.access_database_path,
+            config.access_query_name,
+            log=log,
         ),
         transport_factory=lambda: HttpxTransport(
             config.http_connect_timeout_seconds, config.http_read_timeout_seconds

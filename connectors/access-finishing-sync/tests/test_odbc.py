@@ -1,16 +1,21 @@
 """AccessRepository against a fake pyodbc module (no driver needed)."""
 
 import datetime as dt
-from pathlib import Path
+import re
+from decimal import Decimal
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
 import pytest
-from support import DRIVER, source_row
+from support import DRIVER, Forbidden, LogCapture, make_config, make_service, source_row
 
+from access_finishing_sync import odbc as odbc_module
 from access_finishing_sync.errors import ExitCode, ExtractionError, OdbcUnavailableError
+from access_finishing_sync.logs import RunLogger
 from access_finishing_sync.odbc import (
     EXPECTED_COLUMNS,
     AccessRepository,
+    _require_select,
     connection_string,
     extraction_sql,
     python_architecture,
@@ -93,17 +98,26 @@ def database(tmp_path: Path) -> Path:
     return path
 
 
-def repository(database: Path, odbc: FakeOdbc) -> AccessRepository:
-    return AccessRepository(DRIVER, database, "qryFINISHING-AVG", odbc_module=odbc)
+def repository(database: Path, odbc: FakeOdbc, log: RunLogger | None = None) -> AccessRepository:
+    return AccessRepository(DRIVER, database, "qryFINISHING-AVG", odbc_module=odbc, log=log)
 
 
-def test_connection_string_is_read_only_and_escaped() -> None:
-    conn_str = connection_string(DRIVER, Path("C:/Data/odd}name;x.accdb"))
+def test_connection_string_matches_the_proven_read_only_form() -> None:
+    path = PureWindowsPath(r"\\fileserver\Quality Share\Finishing.accdb")
 
-    assert conn_str.startswith("DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};")
-    assert "DBQ={C:" in conn_str
-    assert "odd}}name;x.accdb}" in conn_str
-    assert "ReadOnly=1;" in conn_str
+    conn_str = connection_string(DRIVER, path)  # type: ignore[arg-type]
+
+    assert conn_str == (
+        "DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};"
+        r"DBQ=\\fileserver\Quality Share\Finishing.accdb;"
+        "ReadOnly=1;"
+    )
+
+
+@pytest.mark.parametrize("name", ["odd;x.accdb", "odd{x.accdb", "odd}x.accdb"])
+def test_connection_string_refuses_characters_needing_quoting(name: str) -> None:
+    with pytest.raises(ValueError):
+        connection_string(DRIVER, Path("C:/Data") / name)
 
 
 def test_extraction_sql_is_parameterized_with_an_exclusive_upper_bound() -> None:
@@ -133,19 +147,188 @@ def test_extract_queries_the_window_read_only(database: Path) -> None:
     assert odbc.closed == 1
 
 
-def test_read_only_attribute_fallback_keeps_the_read_only_connection_string(
-    database: Path,
-) -> None:
-    odbc = FakeOdbc(connect_errors=[FakeOdbcError("HYC00", "Optional feature not implemented")])
+def hy024(database: Path) -> FakeOdbcError:
+    # Driver messages may echo the path; it must never reach errors or logs.
+    return FakeOdbcError("HY024", f"[Microsoft][ODBC] Invalid attribute value {database}")
 
-    extraction = repository(database, odbc).extract(WINDOW)
+
+def test_access_mode_attribute_success_is_logged(database: Path) -> None:
+    capture = LogCapture()
+    odbc = FakeOdbc()
+
+    probe = repository(database, odbc, log=capture.log).probe()
+
+    assert probe.readonly_attribute is True
+    assert [kwargs for _, kwargs in odbc.connects] == [{"autocommit": True, "readonly": True}]
+    (opened,) = capture.named("odbc_connection_opened")
+    assert opened["readonly_attribute"] is True
+    assert opened["readonly_connection_string"] is True
+    assert opened["access_mode_sqlstate"] is None
+    assert opened["database_file"] == "Finishing.accdb"
+    assert capture.named("odbc_access_mode_attribute_rejected") == []
+
+
+@pytest.mark.parametrize("state", ["HY024", "HYC00", "HY092", "IM001"])
+def test_rejected_access_mode_attribute_falls_back_once(database: Path, state: str) -> None:
+    capture = LogCapture()
+    odbc = FakeOdbc(connect_errors=[FakeOdbcError(state, f"rejected {database}")])
+
+    extraction = repository(database, odbc, log=capture.log).extract(WINDOW)
 
     assert extraction.readonly_attribute is False
     assert [kwargs for _, kwargs in odbc.connects] == [
         {"autocommit": True, "readonly": True},
         {"autocommit": True},
     ]
-    assert all("ReadOnly=1" in conn_str for conn_str, _ in odbc.connects)
+    (rejected,) = capture.named("odbc_access_mode_attribute_rejected")
+    assert rejected["sqlstate"] == state
+    (opened,) = capture.named("odbc_connection_opened")
+    assert opened["readonly_attribute"] is False
+    assert opened["readonly_connection_string"] is True
+    assert opened["access_mode_sqlstate"] == state
+
+
+def test_fallback_retains_the_identical_read_only_connection_string(database: Path) -> None:
+    odbc = FakeOdbc(connect_errors=[hy024(database)])
+
+    repository(database, odbc).probe()
+
+    (first, _), (second, _) = odbc.connects
+    assert second == first
+    assert second.endswith(";ReadOnly=1;")
+    assert "Exclusive" not in second
+
+
+def test_fallback_failure_reports_both_sqlstates_without_retrying_again(database: Path) -> None:
+    capture = LogCapture()
+    odbc = FakeOdbc(
+        connect_errors=[hy024(database), FakeOdbcError("HY000", f"Could not use '{database}'")]
+    )
+
+    with pytest.raises(OdbcUnavailableError) as caught:
+        repository(database, odbc, log=capture.log).probe()
+
+    error = caught.value
+    assert len(odbc.connects) == 2
+    assert error.reason == "connection_failed"
+    assert error.exit_code == ExitCode.ODBC_UNAVAILABLE
+    assert error.fields["sqlstate"] == "HY000"
+    assert error.fields["access_mode_sqlstate"] == "HY024"
+    assert error.fields["attempt"] == "connection_string_only"
+    assert error.fields["database_file"] == "Finishing.accdb"
+    assert "HY024" in error.message and "HY000" in error.message
+    assert str(database.parent) not in error.message
+    assert str(database.parent) not in repr(error.fields)
+    assert capture.named("odbc_connection_opened") == []
+    assert odbc.executed == []
+
+
+@pytest.mark.parametrize("state", ["HY000", "08001", "28000", "IM002"])
+def test_unrelated_open_failures_do_not_fall_back(database: Path, state: str) -> None:
+    capture = LogCapture()
+    odbc = FakeOdbc(connect_errors=[FakeOdbcError(state, f"failure for {database}")])
+
+    with pytest.raises(OdbcUnavailableError) as caught:
+        repository(database, odbc, log=capture.log).probe()
+
+    assert len(odbc.connects) == 1
+    assert caught.value.fields["sqlstate"] == state
+    assert caught.value.fields["attempt"] == "access_mode_attribute"
+    assert "access_mode_sqlstate" not in caught.value.fields
+    assert capture.named("odbc_access_mode_attribute_rejected") == []
+
+
+def test_query_is_validated_after_fallback(database: Path) -> None:
+    odbc = FakeOdbc(
+        connect_errors=[hy024(database)],
+        query_error=FakeOdbcError("42S02", "no such query"),
+    )
+
+    with pytest.raises(OdbcUnavailableError) as caught:
+        repository(database, odbc).probe()
+
+    assert caught.value.reason == "query_unavailable"
+    assert len(odbc.connects) == 2
+
+
+def test_columns_are_validated_after_fallback(database: Path) -> None:
+    odbc = FakeOdbc(connect_errors=[hy024(database)], columns=("DATE", "LOT"))
+
+    probe = repository(database, odbc).probe()
+
+    assert probe.readonly_attribute is False
+    assert probe.missing_columns == EXPECTED_COLUMNS[1:2] + EXPECTED_COLUMNS[3:]
+
+
+def test_extraction_columns_are_validated_after_fallback(database: Path) -> None:
+    odbc = FakeOdbc(connect_errors=[hy024(database)], columns=("DATE", "LOT"))
+
+    with pytest.raises(ExtractionError) as caught:
+        repository(database, odbc).extract(WINDOW)
+
+    assert caught.value.reason == "unexpected_columns"
+
+
+def check_odbc(tmp_path: Path, database: Path, odbc: FakeOdbc) -> tuple[ExitCode, LogCapture]:
+    capture = LogCapture()
+    config = make_config(tmp_path, ACCESS_DATABASE_PATH=str(database))
+    service = make_service(
+        config,
+        capture,
+        repository=repository(database, odbc, log=capture.log),
+        transport=Forbidden("HTTP transport"),
+        credentials=Forbidden("credential provider"),
+        lock=Forbidden("lock"),
+    )
+    return service.execute("check-odbc"), capture
+
+
+def test_check_odbc_succeeds_through_the_fallback(tmp_path: Path, database: Path) -> None:
+    odbc = FakeOdbc(
+        connect_errors=[hy024(database)],
+        rows=[source_row(lot="LOT-VALUE-SECRETIVE", moisture=Decimal("0.123456789"))] * 3,
+    )
+
+    code, capture = check_odbc(tmp_path, database, odbc)
+
+    assert code == ExitCode.SUCCESS
+    assert odbc.fetchone_calls == 1
+    ((sql, _),) = odbc.executed
+    assert sql == "SELECT TOP 1 * FROM [qryFINISHING-AVG]"
+    (probe,) = capture.named("odbc_probe")
+    assert probe["readonly_attribute"] is False
+    assert (probe["column_count"], probe["missing_columns"]) == (8, [])
+    assert probe["test_row_retrieved"] is True
+    assert "LOT-VALUE-SECRETIVE" not in capture.text
+    assert "0.123456789" not in capture.text
+    assert str(database.parent) not in capture.text
+    assert str(database.parent).replace("\\", "\\\\") not in capture.text
+
+
+def test_check_odbc_reports_missing_columns_after_fallback(tmp_path: Path, database: Path) -> None:
+    odbc = FakeOdbc(connect_errors=[hy024(database)], columns=EXPECTED_COLUMNS[:7])
+
+    code, capture = check_odbc(tmp_path, database, odbc)
+
+    assert code == ExitCode.ODBC_UNAVAILABLE
+    assert capture.named("run_error")[0]["missing_columns"] == ["AvgOfCombined_BD"]
+
+
+def test_check_odbc_fallback_failure_is_logged_without_the_path(
+    tmp_path: Path, database: Path
+) -> None:
+    odbc = FakeOdbc(
+        connect_errors=[hy024(database), FakeOdbcError("HY000", f"Could not use '{database}'")]
+    )
+
+    code, capture = check_odbc(tmp_path, database, odbc)
+
+    assert code == ExitCode.ODBC_UNAVAILABLE
+    (error,) = capture.named("run_error")
+    assert error["reason"] == "connection_failed"
+    assert (error["sqlstate"], error["access_mode_sqlstate"]) == ("HY000", "HY024")
+    assert str(database.parent) not in capture.text
+    assert str(database.parent).replace("\\", "\\\\") not in capture.text
 
 
 def test_only_select_statements_are_executed(database: Path) -> None:
@@ -156,6 +339,32 @@ def test_only_select_statements_are_executed(database: Path) -> None:
     repo.extract(WINDOW)
 
     assert all(sql.startswith("SELECT ") for sql, _ in odbc.executed)
+
+
+@pytest.mark.parametrize(
+    "sql",
+    ["DELETE FROM [x]", "UPDATE [x] SET a = 1", "SELECT 1; DROP TABLE [x]", "select 1"],
+)
+def test_non_select_statements_are_refused(sql: str) -> None:
+    with pytest.raises(RuntimeError):
+        _require_select(sql)
+
+
+def test_source_contains_no_modifying_sql() -> None:
+    package = Path(odbc_module.__file__).parent
+    modifying = re.compile(
+        r"\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE|MERGE|GRANT|REVOKE|EXEC)\b"
+        r"|\.commit\(|\.rollback\("
+    )
+
+    offenders = [
+        f"{path.name}:{number}"
+        for path in package.glob("*.py")
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+        if modifying.search(line) and "_require_select" not in line
+    ]
+
+    assert offenders == []
 
 
 def test_unexpected_columns_fail_extraction(database: Path) -> None:
