@@ -95,7 +95,9 @@ uv run ruff format --check .
 
 # Optional: PostgreSQL integration tests (migrations, persistence, repository).
 # Point at a disposable database whose name contains "test"; the tests run
-# migrations up and down against it. Skipped when unset.
+# migrations up and down against it. Set it up like production: the `core`
+# and `quality` schemas exist and the role has USAGE, CREATE on them.
+# Skipped when unset.
 TEST_DATABASE_URL=postgresql+psycopg://<user>:<password>@localhost:5432/operations_platform_test uv run pytest
 
 # Web
@@ -175,16 +177,41 @@ startup. Autogenerate only inspects application-owned schemas (`quality`).
 Use a least-privilege database role for the application. From inside the API
 container, the host database is reachable as `host.docker.internal`.
 
-Privileges needed by the role that runs migrations:
+### Schemas
 
-- `CREATE` on the database, unless a DBA pre-creates the `quality` schema
-  and grants the role `USAGE, CREATE` on it.
-- `CREATE` on schema `public` for Alembic's `alembic_version` table (or
-  pre-create that table).
+The database uses one PostgreSQL schema per area. The schemas are created
+by a DBA, not by the application:
 
-Downgrading revision `0001` drops `quality.finishing_measurements` and its
-data. It drops the `quality` schema only when that schema is empty and owned
-by the migrating role.
+| Schema                 | Contents                                         |
+| ---------------------- | ------------------------------------------------ |
+| `core`                 | Platform tables, including `core.alembic_version` |
+| `quality`              | Quality module tables                            |
+| `mechanical_integrity` | Reserved                                         |
+| `safety`               | Reserved                                         |
+| `environmental`        | Reserved                                         |
+
+Alembic stores its revision in `core.alembic_version` (configured in
+`alembic/env.py` from `app/db/base.py`), not in `public.alembic_version`.
+The application role intentionally has no `CREATE` privilege on `public`,
+so nothing is created there. Every model and migration names its schema
+explicitly; Quality tables always go in `quality`.
+
+Privileges the migrating role (`operations_api`) needs:
+
+- `USAGE, CREATE` on `core` (Alembic creates `core.alembic_version` on the
+  first upgrade).
+- `USAGE, CREATE` on `quality`.
+- No `CREATE` on `public` and no `CREATE` on the database.
+
+```sql
+-- Run as a DBA. Schemas already exist in production.
+GRANT USAGE, CREATE ON SCHEMA core, quality TO operations_api;
+```
+
+Migration `0001` produces `core.alembic_version` and
+`quality.finishing_measurements`. Downgrading it drops
+`quality.finishing_measurements` and its data. DBA-owned schemas are never
+dropped, and `core.alembic_version` remains (empty).
 
 Current revisions:
 

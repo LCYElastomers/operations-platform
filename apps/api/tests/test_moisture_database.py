@@ -3,6 +3,9 @@
 Run with TEST_DATABASE_URL pointing at a disposable database whose name
 contains "test", e.g.
 postgresql+psycopg://user:password@localhost:5432/operations_platform_test
+
+As in production, the `core` schema must already exist and the role needs
+USAGE and CREATE on it (and on `quality`, or CREATE on the database).
 """
 
 import datetime as dt
@@ -25,7 +28,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Settings
-from app.db.base import MANAGED_SCHEMAS
+from app.db.base import ALEMBIC_VERSION_SCHEMA, ALEMBIC_VERSION_TABLE, MANAGED_SCHEMAS
 from app.main import create_app
 from app.models import Base
 from app.quality.moisture import repository as repository_module
@@ -59,6 +62,17 @@ def alembic_config(connection: Connection | None = None) -> Config:
     return config
 
 
+def current_revision(connection: Connection) -> str | None:
+    context = MigrationContext.configure(
+        connection,
+        opts={
+            "version_table": ALEMBIC_VERSION_TABLE,
+            "version_table_schema": ALEMBIC_VERSION_SCHEMA,
+        },
+    )
+    return context.get_current_revision()
+
+
 @pytest.fixture(scope="module")
 def engine() -> Iterator[Engine]:
     assert TEST_DATABASE_URL
@@ -66,6 +80,12 @@ def engine() -> Iterator[Engine]:
     if "test" not in (url.database or ""):
         pytest.exit("TEST_DATABASE_URL database name must contain 'test'", returncode=2)
     engine = create_engine(url)
+    if ALEMBIC_VERSION_SCHEMA not in inspect(engine).get_schema_names():
+        engine.dispose()
+        pytest.exit(
+            f"Test database needs schema '{ALEMBIC_VERSION_SCHEMA}'; create it as in production",
+            returncode=2,
+        )
     with engine.begin() as connection:
         command.downgrade(alembic_config(connection), "base")
         command.upgrade(alembic_config(connection), "head")
@@ -157,7 +177,17 @@ def test_upgrade_head_creates_table(engine: Engine) -> None:
         )
     ]
     with engine.connect() as connection:
-        assert MigrationContext.configure(connection).get_current_revision() == "0001"
+        assert current_revision(connection) == "0001"
+
+
+def test_version_table_is_in_core_not_public(engine: Engine) -> None:
+    inspector = inspect(engine)
+
+    assert inspector.has_table(ALEMBIC_VERSION_TABLE, schema="core")
+    assert not inspector.has_table(ALEMBIC_VERSION_TABLE, schema="public")
+    with engine.connect() as connection:
+        versions = connection.execute(text("SELECT version_num FROM core.alembic_version"))
+        assert versions.scalars().all() == ["0001"]
 
 
 def test_model_matches_migration(engine: Engine) -> None:
@@ -177,8 +207,8 @@ def test_downgrade_removes_table_and_upgrade_restores_it(engine: Engine) -> None
         command.downgrade(alembic_config(connection), "-1")
         inspector = inspect(connection)
         assert not inspector.has_table("finishing_measurements", schema="quality")
-        assert "quality" not in inspector.get_schema_names()
-        assert MigrationContext.configure(connection).get_current_revision() is None
+        assert inspector.has_table(ALEMBIC_VERSION_TABLE, schema="core")
+        assert current_revision(connection) is None
 
         command.upgrade(alembic_config(connection), "head")
         assert inspect(connection).has_table("finishing_measurements", schema="quality")

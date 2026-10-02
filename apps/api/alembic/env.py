@@ -4,7 +4,7 @@ from alembic import context
 from sqlalchemy import create_engine, pool
 
 from app.core.config import get_settings
-from app.db.base import MANAGED_SCHEMAS
+from app.db.base import ALEMBIC_VERSION_SCHEMA, ALEMBIC_VERSION_TABLE, MANAGED_SCHEMAS
 from app.models import Base
 
 config = context.config
@@ -36,6 +36,8 @@ def _configure(**kwargs: object) -> None:
         include_schemas=True,
         include_name=include_name,
         compare_type=True,
+        version_table=ALEMBIC_VERSION_TABLE,
+        version_table_schema=ALEMBIC_VERSION_SCHEMA,
         **kwargs,
     )
 

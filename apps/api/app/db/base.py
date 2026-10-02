@@ -14,6 +14,11 @@ NAMING_CONVENTION = {
 # PostgreSQL schemas owned by this application (used by Alembic autogenerate).
 MANAGED_SCHEMAS = frozenset({"quality"})
 
+# Alembic records the applied revision in core.alembic_version. The schema must
+# already exist; the application role has no CREATE privilege on public.
+ALEMBIC_VERSION_SCHEMA = "core"
+ALEMBIC_VERSION_TABLE = "alembic_version"
+
 
 class Base(DeclarativeBase):
     metadata = MetaData(naming_convention=NAMING_CONVENTION)
