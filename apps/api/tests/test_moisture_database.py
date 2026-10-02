@@ -9,26 +9,28 @@ USAGE and CREATE on it (and on `quality`, or CREATE on the database).
 """
 
 import datetime as dt
-import os
 from collections.abc import Iterator
 from decimal import Decimal
-from pathlib import Path
 from typing import Any
 
 import pytest
 from alembic import command
 from alembic.autogenerate import compare_metadata
-from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, create_engine, func, inspect, select, text
-from sqlalchemy.engine import Connection, make_url
+from postgres_support import (
+    TEST_DATABASE_URL,
+    alembic_config,
+    current_revision,
+    requires_postgres,
+)
+from sqlalchemy import Engine, func, inspect, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Settings
-from app.db.base import ALEMBIC_VERSION_SCHEMA, ALEMBIC_VERSION_TABLE, MANAGED_SCHEMAS
+from app.db.base import ALEMBIC_VERSION_TABLE, MANAGED_SCHEMAS
 from app.main import create_app
 from app.models import Base
 from app.quality.moisture import repository as repository_module
@@ -42,57 +44,11 @@ from app.quality.moisture.repository import (
 from app.quality.moisture.schemas import MoistureFilterParams
 from app.quality.moisture.source import record_from_source_row
 
-TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
+pytestmark = requires_postgres
 
-pytestmark = pytest.mark.skipif(
-    not TEST_DATABASE_URL, reason="TEST_DATABASE_URL not set; PostgreSQL tests skipped"
-)
-
-ALEMBIC_INI = Path(__file__).resolve().parents[1] / "alembic.ini"
 SYNCED_AT = dt.datetime(2026, 10, 2, 12, 0, tzinfo=dt.UTC)
 SOURCE = "access-test"
 BASE = "/api/v1/quality/moisture"
-
-
-def alembic_config(connection: Connection | None = None) -> Config:
-    config = Config(str(ALEMBIC_INI))
-    config.attributes["configure_logger"] = False
-    if connection is not None:
-        config.attributes["connection"] = connection
-    return config
-
-
-def current_revision(connection: Connection) -> str | None:
-    context = MigrationContext.configure(
-        connection,
-        opts={
-            "version_table": ALEMBIC_VERSION_TABLE,
-            "version_table_schema": ALEMBIC_VERSION_SCHEMA,
-        },
-    )
-    return context.get_current_revision()
-
-
-@pytest.fixture(scope="module")
-def engine() -> Iterator[Engine]:
-    assert TEST_DATABASE_URL
-    url = make_url(TEST_DATABASE_URL)
-    if "test" not in (url.database or ""):
-        pytest.exit("TEST_DATABASE_URL database name must contain 'test'", returncode=2)
-    engine = create_engine(url)
-    if ALEMBIC_VERSION_SCHEMA not in inspect(engine).get_schema_names():
-        engine.dispose()
-        pytest.exit(
-            f"Test database needs schema '{ALEMBIC_VERSION_SCHEMA}'; create it as in production",
-            returncode=2,
-        )
-    with engine.begin() as connection:
-        command.downgrade(alembic_config(connection), "base")
-        command.upgrade(alembic_config(connection), "head")
-    yield engine
-    with engine.begin() as connection:
-        command.downgrade(alembic_config(connection), "base")
-    engine.dispose()
 
 
 @pytest.fixture

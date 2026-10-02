@@ -17,6 +17,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 
 QUALITY_SCHEMA = "quality"
+# Persistence identity of a source row (named by the metadata naming convention).
+SOURCE_IDENTITY_CONSTRAINT = "uq_finishing_measurements_source_system_source_row_hash"
 
 
 class FinishingMeasurement(Base):

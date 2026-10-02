@@ -1,22 +1,23 @@
-"""Read access to moisture records.
+"""Access to moisture records.
 
-Both implementations return the same domain records, so the HTTP contract is
-identical whether data comes from the development fixture or PostgreSQL.
+Both read implementations return the same domain records, so the HTTP contract
+is identical whether data comes from the development fixture or PostgreSQL.
 """
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Annotated, Protocol
+from typing import Annotated, Any, Protocol
 
 from fastapi import Depends
 from sqlalchemy import ColumnElement, func, or_, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
 from app.db.session import get_sessionmaker
 from app.quality.moisture import service
-from app.quality.moisture.models import FinishingMeasurement
+from app.quality.moisture.models import SOURCE_IDENTITY_CONSTRAINT, FinishingMeasurement
 from app.quality.moisture.schemas import (
     DataSourceInfo,
     DateRange,
@@ -152,6 +153,36 @@ class DatabaseMoistureRepository:
             locations=service.distinct_values(locations),
             date_range=DateRange(min=earliest, max=latest),
         )
+
+
+class FinishingMeasurementWriter:
+    """Inserts measurement rows, skipping rows whose source identity is already stored.
+
+    The caller owns the transaction, so a batch split across several
+    statements still commits or rolls back as a whole.
+    """
+
+    # PostgreSQL allows 65535 bind parameters per statement; 12 columns per row.
+    chunk_size = 1000
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def insert_new(self, values: Sequence[Mapping[str, Any]]) -> int:
+        """Insert rows and return how many were new."""
+        inserted = 0
+        for start in range(0, len(values), self.chunk_size):
+            inserted += self._insert_chunk(values[start : start + self.chunk_size])
+        return inserted
+
+    def _insert_chunk(self, chunk: Sequence[Mapping[str, Any]]) -> int:
+        statement = (
+            insert(FinishingMeasurement)
+            .values(list(chunk))
+            .on_conflict_do_nothing(constraint=SOURCE_IDENTITY_CONSTRAINT)
+            .returning(FinishingMeasurement.id)
+        )
+        return len(self._session.execute(statement).scalars().all())
 
 
 def get_moisture_repository(

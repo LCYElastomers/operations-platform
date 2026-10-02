@@ -13,16 +13,14 @@ from collections.abc import Iterable, Mapping
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from app.quality.moisture.models import FinishingMeasurement
+from app.quality.moisture.repository import FinishingMeasurementWriter
 from app.quality.moisture.source import SOURCE_FIELD_MAP
 
 logger = logging.getLogger(__name__)
 
 HASH_VERSION = 1
-UNIQUE_CONSTRAINT = "uq_finishing_measurements_source_system_source_row_hash"
 
 IDENTIFIER_FIELDS = ("CAMPNO", "LOT", "Location", "PRODUCT")
 MEASUREMENT_FIELDS = ("AvgOfMOISTURE", "AvgOfCOLOR", "AvgOfCombined_BD")
@@ -144,13 +142,7 @@ def insert_source_rows(
     ]
     if not values:
         return 0
-    statement = (
-        insert(FinishingMeasurement)
-        .values(values)
-        .on_conflict_do_nothing(constraint=UNIQUE_CONSTRAINT)
-        .returning(FinishingMeasurement.id)
-    )
-    inserted = len(session.execute(statement).scalars().all())
+    inserted = FinishingMeasurementWriter(session).insert_new(values)
     logger.info(
         "Finishing measurements ingested: source_system=%s received=%d inserted=%d skipped=%d",
         source_system,

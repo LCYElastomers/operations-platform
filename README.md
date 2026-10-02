@@ -153,6 +153,7 @@ from Docker build contexts. Never commit real credentials.
 | `LOG_LEVEL`    | api     | `INFO`        |                                         |
 | `DATABASE_URL` | api     | _(unset)_     | SQLAlchemy URL for host PostgreSQL      |
 | `MOISTURE_DATA_SOURCE` | api | `fixture` | `fixture` or `database`; `database` requires `DATABASE_URL` |
+| `INGESTION_AUTH_MODE` | api | `disabled` | `disabled` or `development-unauthenticated` (refused in production); see Ingestion API |
 
 ## Database migrations
 
@@ -301,6 +302,129 @@ nulls, and an un-normalized location. Every response includes a
 `dataSource` object with `isFixture: true`, and the dashboard shows a
 "Development fixture" badge and banner. The frontend never imports the
 fixture directly.
+
+### Ingestion API
+
+`POST /api/v1/ingestion/quality/finishing/batches` receives calculated
+results of the Access query `qryFINISHING-AVG` from a machine connector, in
+batches. Code: `ingestion_router.py`, `ingestion_service.py`,
+`ingestion_schemas.py`, and `FinishingMeasurementWriter` in `repository.py`.
+
+**Authentication.** Connector credentials are not implemented yet, so the
+endpoint fails closed: with `INGESTION_AUTH_MODE=disabled` (the default)
+every request gets `503 ingestion_disabled` before the body is read.
+`INGESTION_AUTH_MODE=development-unauthenticated` opens it for local
+development only. The API refuses to start with that mode when
+`ENVIRONMENT=production`, and each request through it logs a warning. Real
+connector credentials will replace it behind the same dependency
+(`app/core/machine_auth.py`).
+
+**Request** (`Content-Type: application/json`, at most 5 MiB):
+
+```json
+{
+  "sourceSystem": "access-qryFINISHING-AVG",
+  "batchId": "2026-10-02T16-40-00Z-0001",
+  "extractedAt": "2026-10-02T16:40:00Z",
+  "rows": [
+    {
+      "sourceDate": "2026-09-01",
+      "campaignNo": "26101",
+      "lot": "A260901-01",
+      "location": "Silo 1",
+      "product": "PRD-A",
+      "avgMoisture": 0,
+      "avgColor": null,
+      "avgCombinedBd": 0.7123456789012345678
+    }
+  ]
+}
+```
+
+| Field          | Rules                                                                    |
+| -------------- | ------------------------------------------------------------------------ |
+| `sourceSystem` | 1-100 chars: letters, digits, `.` `_` `:` `-`; starts with letter/digit   |
+| `batchId`      | Same rules. Chosen by the connector; used for tracing, not identity      |
+| `extractedAt`  | ISO 8601 date-time **with** a timezone offset                             |
+| `rows`         | 1 to 5000 row objects                                                    |
+
+| Row field       | Source (`qryFINISHING-AVG`) | Rules                                                     |
+| --------------- | --------------------------- | --------------------------------------------------------- |
+| `sourceDate`    | `DATE`                      | Required, non-null, `YYYY-MM-DD`                          |
+| `campaignNo`    | `CAMPNO`                    | String or null (integers accepted, stored as exact text)  |
+| `lot`           | `LOT`                       | String or null, at most 200 chars                         |
+| `location`      | `Location`                  | String or null, at most 200 chars                         |
+| `product`       | `PRODUCT`                   | String or null, at most 200 chars                         |
+| `avgMoisture`   | `AvgOfMOISTURE`             | JSON number or null                                       |
+| `avgColor`      | `AvgOfCOLOR`                | JSON number or null                                       |
+| `avgCombinedBd` | `AvgOfCombined_BD`          | JSON number or null                                       |
+| `sourceRowHash` | —                           | Optional. If sent, must equal the server-computed hash    |
+
+Every row field except `sourceRowHash` must be present; send `null`
+explicitly for a missing value. Unknown fields are rejected. Values are
+stored exactly as sent: no trimming, case changes, or location
+normalization; JSON numbers are parsed as exact decimals (no float
+rounding); `null` is stored as NULL, never as 0. Numbers are not
+range-checked: there are no specifications, thresholds, or outlier rules.
+
+**Identity and idempotency.** The server computes `source_row_hash`
+(SHA-256 over the canonicalized row; see `compute_source_row_hash`). Rows
+are unique on `(sourceSystem, source_row_hash)`, so re-sending a batch, a
+row, or overlapping batches never creates duplicates. `batchId` is not part
+of the identity. A row whose values change in Access hashes differently and
+is stored as a new row.
+
+**Response** `200` when the batch was processed:
+
+```json
+{
+  "batchId": "2026-10-02T16-40-00Z-0001",
+  "sourceSystem": "access-qryFINISHING-AVG",
+  "status": "accepted_with_rejections",
+  "receivedRows": 3,
+  "insertedRows": 1,
+  "duplicateRows": 1,
+  "rejectedRows": 1,
+  "rejections": [
+    { "rowIndex": 2, "errors": [{ "field": "sourceDate", "message": "Value error, is not a valid calendar date" }] }
+  ],
+  "rejectionsTruncated": false
+}
+```
+
+- `status`: `accepted` (no rejections), `accepted_with_rejections`, or
+  `rejected` (every row invalid; nothing written).
+- `receivedRows = insertedRows + duplicateRows + rejectedRows`.
+  `duplicateRows` counts rows already stored or repeated within the batch.
+- Rejected rows are reported by zero-based `rowIndex` with field-level
+  messages. Submitted values are never echoed back. At most 100 rejections
+  are listed (`rejectionsTruncated` tells you whether more exist).
+- Valid rows in the batch are stored even when other rows are rejected.
+  Fixing the rejected rows and re-sending the whole batch is safe.
+
+**Errors.** Bodies have the form
+`{"detail": {"error": "<code>", "message": "..."}}`.
+
+| Status | `error`                  | Meaning                                                            |
+| ------ | ------------------------ | ------------------------------------------------------------------ |
+| 400    | `invalid_json`           | Not JSON, duplicate keys, `NaN`/`Infinity`                         |
+| 413    | `payload_too_large`      | Body over 5 MiB                                                    |
+| 415    | `unsupported_media_type` | Content-Type is not `application/json`                             |
+| 422    | `validation_error`       | Envelope invalid (metadata, empty batch, too many rows); nothing processed. Includes `errors` |
+| 503    | `ingestion_disabled`     | Ingestion is not enabled on this server                            |
+| 503    | `database_unavailable`   | Database failure. Nothing from the batch was committed; resubmit   |
+
+**Transactions.** All valid rows of a batch are written in one database
+transaction, split into multi-row statements of 1000 rows. A database
+failure at any point rolls back the whole batch.
+
+**Logging.** One line per batch, for example:
+`event=finishing_ingestion result=accepted batch_id=... source_system=...
+connector=... extracted_at=... received=3 inserted=1 duplicates=1 rejected=1
+rejected_fields=sourceDate:1`. The same fields are attached to the log record
+as `record.ingestion`. Row values, request bodies, headers, and database
+error text (which can contain SQL parameters) are never logged. Database
+failures log only the exception type.
 
 ## shadcn/ui
 

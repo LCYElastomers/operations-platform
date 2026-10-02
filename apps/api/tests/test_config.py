@@ -33,6 +33,20 @@ def test_unknown_moisture_source_is_rejected(monkeypatch: pytest.MonkeyPatch) ->
         Settings(_env_file=None)
 
 
+def test_settings_errors_do_not_echo_database_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://u:hunter2-placeholder@db/x")
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("INGESTION_AUTH_MODE", "development-unauthenticated")
+
+    with pytest.raises(ValueError) as error:
+        Settings(_env_file=None)
+
+    assert "not allowed in production" in str(error.value)
+    assert "hunter2-placeholder" not in str(error.value)
+
+
 def test_database_url_is_not_exposed_in_repr(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://user:fixture-pw@localhost/db")
 
