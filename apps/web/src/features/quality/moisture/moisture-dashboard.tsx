@@ -8,7 +8,7 @@ import { FilterBar, FilterInput, FilterSelect } from "@/components/common/filter
 import { MetricCard } from "@/components/common/metric-card";
 import { PageHeader } from "@/components/common/page-header";
 import { StatusBadge } from "@/components/common/status-badge";
-import { TrendChart } from "@/components/common/trend-chart";
+import { TrendChart, type YAxisRange } from "@/components/common/trend-chart";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
 
@@ -21,6 +21,8 @@ const NO_RECORDS: MoistureRecord[] = [];
 // Full-width stacked trend cards; the plot area alone is taller than the card minimum.
 const TREND_PLOT_HEIGHT = 340;
 const TREND_CARD_CLASS = "w-full min-h-[375px]";
+// Visible scale only; values above 1.0 stay in the data and the tooltip but are clipped.
+const UNIT_INTERVAL_AXIS: YAxisRange = { min: 0, max: 1, interval: 0.2, labelDigits: 1 };
 
 function describeError(error: unknown): string {
   if (error instanceof ApiError) return `The API responded with HTTP ${error.status}.`;
@@ -296,6 +298,7 @@ export function MoistureDashboard({ title, description }: MoistureDashboardProps
           series={trends.isError ? [] : moistureSeries}
           precision={MEASUREMENT_PRECISION.avgMoisture}
           height={TREND_PLOT_HEIGHT}
+          yAxisRange={UNIT_INTERVAL_AXIS}
           className={TREND_CARD_CLASS}
           loading={trends.isPending && !trends.isError}
           emptyState={chartEmptyState}
@@ -316,6 +319,7 @@ export function MoistureDashboard({ title, description }: MoistureDashboardProps
           series={trends.isError ? [] : bdSeries}
           precision={MEASUREMENT_PRECISION.avgCombinedBd}
           height={TREND_PLOT_HEIGHT}
+          yAxisRange={UNIT_INTERVAL_AXIS}
           className={TREND_CARD_CLASS}
           loading={trends.isPending && !trends.isError}
           emptyState={chartEmptyState}

@@ -32,6 +32,15 @@ export type TrendSeries = {
   points: TrendPoint[];
 };
 
+/** Fixed visible y-axis scale. Data is unchanged; points outside the range are clipped. */
+export type YAxisRange = {
+  min: number;
+  max: number;
+  interval: number;
+  /** Fraction digits for tick labels. */
+  labelDigits: number;
+};
+
 // Canvas rendering needs concrete colors. The first five mirror the --chart-*
 // tokens; the rest keep more products distinguishable before colors repeat.
 export const PALETTE = [
@@ -67,6 +76,8 @@ type TrendChartProps = {
   precision?: number;
   /** Height of the plot area in pixels. */
   height?: number;
+  /** Fixed y-axis scale; when omitted the axis fits the data. */
+  yAxisRange?: YAxisRange;
   emptyState?: React.ReactNode;
   loading?: boolean;
   className?: string;
@@ -79,6 +90,7 @@ export function TrendChart({
   unit,
   precision,
   height = 280,
+  yAxisRange,
   emptyState,
   loading = false,
   className,
@@ -101,7 +113,13 @@ export function TrendChart({
           <div className="size-full animate-pulse rounded-md bg-muted/70" />
         </div>
       ) : hasData ? (
-        <ChartBody series={series} unit={unit} precision={precision} height={height} />
+        <ChartBody
+          series={series}
+          unit={unit}
+          precision={precision}
+          height={height}
+          yAxisRange={yAxisRange}
+        />
       ) : (
         <div className="flex flex-1 items-center justify-center">
           {emptyState ?? (
@@ -124,11 +142,13 @@ function ChartBody({
   unit,
   precision,
   height,
+  yAxisRange,
 }: {
   series: TrendSeries[];
   unit?: string;
   precision?: number;
   height: number;
+  yAxisRange?: YAxisRange;
 }) {
   const [hidden, setHidden] = useState<ReadonlySet<string>>(() => new Set());
 
@@ -148,6 +168,7 @@ function ChartBody({
         unit={unit}
         precision={precision}
         height={height}
+        yAxisRange={yAxisRange}
       />
     </div>
   );
@@ -198,12 +219,14 @@ function EChart({
   unit,
   precision,
   height,
+  yAxisRange,
 }: {
   series: TrendSeries[];
   hidden: ReadonlySet<string>;
   unit?: string;
   precision?: number;
   height: number;
+  yAxisRange?: YAxisRange;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
@@ -229,10 +252,11 @@ function EChart({
   }, []);
 
   useEffect(() => {
-    chartRef.current?.setOption(buildOption(series, { hidden, unit, precision, width }), {
-      notMerge: true,
-    });
-  }, [series, hidden, unit, precision, width]);
+    chartRef.current?.setOption(
+      buildOption(series, { hidden, unit, precision, width, yAxisRange }),
+      { notMerge: true },
+    );
+  }, [series, hidden, unit, precision, width, yAxisRange]);
 
   return <div ref={containerRef} style={{ height }} className="w-full" />;
 }
@@ -271,11 +295,12 @@ type OptionSettings = {
   precision?: number;
   /** Plot width in pixels; 0 before the first measurement. */
   width?: number;
+  yAxisRange?: YAxisRange;
 };
 
 export function buildOption(
   series: TrendSeries[],
-  { hidden = new Set(), unit, precision, width = 0 }: OptionSettings = {},
+  { hidden = new Set(), unit, precision, width = 0, yAxisRange }: OptionSettings = {},
 ): ChartOption {
   const formatValue = (value: unknown) => {
     if (typeof value !== "number") return "No data";
@@ -337,17 +362,31 @@ export function buildOption(
       },
       splitLine: { show: false },
     },
-    yAxis: {
-      type: "value",
-      scale: true,
-      axisLabel: { color: AXIS_LABEL_COLOR, fontSize: 12 },
-      splitLine: { lineStyle: { color: GRID_COLOR } },
-    },
+    yAxis: yAxisRange
+      ? {
+          type: "value",
+          min: yAxisRange.min,
+          max: yAxisRange.max,
+          interval: yAxisRange.interval,
+          axisLabel: {
+            color: AXIS_LABEL_COLOR,
+            fontSize: 12,
+            formatter: (value: number) => value.toFixed(yAxisRange.labelDigits),
+          },
+          splitLine: { lineStyle: { color: GRID_COLOR } },
+        }
+      : {
+          type: "value",
+          scale: true,
+          axisLabel: { color: AXIS_LABEL_COLOR, fontSize: 12 },
+          splitLine: { lineStyle: { color: GRID_COLOR } },
+        },
     series: series.map((s) => ({
       type: "line",
       name: s.name,
       data: s.points,
       connectNulls: false,
+      clip: true,
       showSymbol: true,
       symbol: "circle",
       symbolSize: markerSize(s.points.length),

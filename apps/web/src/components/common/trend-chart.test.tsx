@@ -36,6 +36,32 @@ describe("buildOption", () => {
     expect(yAxis).toMatchObject({ type: "value", scale: true });
   });
 
+  it("applies a fixed 0.0 to 1.0 axis without changing the data", () => {
+    const outlier: TrendSeries = { name: "A", points: [["2026-09-01", 1.8], ["2026-09-02", 0.4]] };
+    const option = buildOption([outlier], {
+      yAxisRange: { min: 0, max: 1, interval: 0.2, labelDigits: 1 },
+    });
+    const yAxis = option.yAxis as {
+      min: number;
+      max: number;
+      interval: number;
+      scale?: boolean;
+      axisLabel: { formatter: (value: number) => string };
+    };
+    expect([yAxis.min, yAxis.max, yAxis.interval, yAxis.scale]).toEqual([0, 1, 0.2, undefined]);
+    expect([0, 0.2, 0.4, 0.6, 0.8, 1].map(yAxis.axisLabel.formatter)).toEqual([
+      "0.0",
+      "0.2",
+      "0.4",
+      "0.6",
+      "0.8",
+      "1.0",
+    ]);
+    const [line] = option.series as { data: TrendSeries["points"]; clip: boolean }[];
+    expect(line.data).toEqual([["2026-09-01", 1.8], ["2026-09-02", 0.4]]);
+    expect(line.clip).toBe(true);
+  });
+
   it("always shows markers and shrinks them on dense series", () => {
     const option = buildOption([series("sparse", 30), series("dense", 400)]);
     const [sparse, dense] = lines(option);
