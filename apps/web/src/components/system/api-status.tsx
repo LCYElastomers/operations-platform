@@ -2,8 +2,8 @@
 
 import { useQuery } from "@tanstack/react-query";
 
+import { StatusBadge, type StatusTone } from "@/components/common/status-badge";
 import { apiGet } from "@/lib/api-client";
-import { cn } from "@/lib/utils";
 
 type HealthResponse = {
   status: "ok";
@@ -11,36 +11,57 @@ type HealthResponse = {
   version: string;
 };
 
-export function ApiStatus() {
-  const { data, isPending, isError } = useQuery({
+type ApiState = "checking" | "online" | "unreachable";
+
+const stateTone: Record<ApiState, StatusTone> = {
+  checking: "pending",
+  online: "success",
+  unreachable: "danger",
+};
+
+const stateLabel: Record<ApiState, string> = {
+  checking: "Checking",
+  online: "Online",
+  unreachable: "Unreachable",
+};
+
+export function useApiHealth() {
+  const query = useQuery({
     queryKey: ["system", "health"],
     queryFn: ({ signal }) => apiGet<HealthResponse>("/api/v1/health", { signal }),
     refetchInterval: 30_000,
     retry: 1,
   });
 
-  const state = isPending ? "checking" : isError ? "unreachable" : "online";
+  const state: ApiState = query.isPending ? "checking" : query.isError ? "unreachable" : "online";
+  return { ...query, state };
+}
+
+export function ApiStatusIndicator() {
+  const { state } = useApiHealth();
 
   return (
-    <div className="flex items-center justify-between rounded-lg border bg-card px-4 py-3 text-card-foreground">
-      <div>
-        <p className="text-sm font-medium">API</p>
-        <p className="text-xs text-muted-foreground">
+    <StatusBadge tone={stateTone[state]} pulse={state === "checking"}>
+      API {stateLabel[state].toLowerCase()}
+    </StatusBadge>
+  );
+}
+
+export function ApiStatusCard() {
+  const { state, data, dataUpdatedAt } = useApiHealth();
+
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-lg border bg-card px-4 py-3 text-card-foreground">
+      <div className="min-w-0">
+        <p className="text-sm font-medium">API service</p>
+        <p className="truncate text-xs text-muted-foreground">
           {data ? `${data.service} v${data.version}` : "/api/v1/health"}
+          {dataUpdatedAt > 0 && ` · checked ${new Date(dataUpdatedAt).toLocaleTimeString()}`}
         </p>
       </div>
-      <span className="flex items-center gap-2 text-sm">
-        <span
-          aria-hidden
-          className={cn(
-            "size-2 rounded-full",
-            state === "online" && "bg-success",
-            state === "unreachable" && "bg-destructive",
-            state === "checking" && "animate-pulse bg-warning",
-          )}
-        />
-        <span className="capitalize">{state}</span>
-      </span>
+      <StatusBadge tone={stateTone[state]} pulse={state === "checking"}>
+        {stateLabel[state]}
+      </StatusBadge>
     </div>
   );
 }

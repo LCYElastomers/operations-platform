@@ -97,8 +97,40 @@ uv run ruff format --check .
 cd apps/web
 npm run lint
 npm run typecheck
+npm test
 npm run build
 ```
+
+## Frontend structure
+
+```
+apps/web/src/
+  app/                    Routes (App Router). Every page renders inside AppShell.
+  config/navigation.ts    Single source of truth for the sidebar, breadcrumbs,
+                          module cards, and module descriptions.
+  components/layout/      AppShell, AppSidebar, AppHeader
+  components/common/      PageHeader, MetricCard, FilterBar, DataTable,
+                          TrendChart, StatusBadge, EmptyState
+  components/modules/     ModuleNotConfigured (standard page for modules
+                          without a connected data source)
+  components/system/      API health status
+  components/ui/          shadcn/ui primitives
+  lib/                    API client, navigation helpers, utilities
+```
+
+To add a module page: register it in `config/navigation.ts`, then create the
+route under `src/app`. Until real data is connected, render
+`<ModuleNotConfigured href="..." />` rather than sample data.
+
+Data conventions used by the shared components:
+
+- `MetricCard` takes `value: number | null`. `null` renders as "no data";
+  `0` renders as `0`.
+- `DataTable` renders `null`/`undefined` cells as an explicit dash.
+- `TrendChart` points with a `null` value are drawn as gaps, not zeros.
+
+The sidebar is persistent at `lg` (1024px) and wider. Below that it becomes a
+drawer opened from the header menu button.
 
 ## Configuration
 
