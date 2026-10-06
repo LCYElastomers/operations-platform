@@ -1,0 +1,69 @@
+{
+  "source": "TEMPLATE - replace with workbook file name and sheet, e.g. 2026 LCY EHS Dashboard.xlsx, sheet <name>",
+  "metricSet": "incidents",
+  "year": 2026,
+  "notes": [
+    "TEMPLATE - no source values transcribed. Each months array is January..December.",
+    "null = unreported in the source (never written). 0 = a reported zero. Do not replace null with 0.",
+    "Incident and Near Miss are the explicit monthly totals from the source. Do not sum Incident Classification; classifications can overlap.",
+    "Before apply: record how the Incident total discrepancy (monthly grid 41 vs Total EHS Incidents 2026 = 40) was resolved, and add the agreed figure to expectedYtd."
+  ],
+  "sections": [
+    {
+      "section": "incident_near_miss_totals",
+      "name": "Incident & Near Miss Totals",
+      "categories": [
+        { "category": "incident", "name": "Incident", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "near_miss", "name": "Near Miss", "months": [null, null, null, null, null, null, null, null, null, null, null, null] }
+      ]
+    },
+    {
+      "section": "incident_classification",
+      "name": "Incident Classification",
+      "categories": [
+        { "category": "first_aid", "name": "First Aid", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "recordable_injury", "name": "Recordable Injury", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "lost_time_injury", "name": "Lost Time Injury", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "restricted", "name": "Restricted", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "occupational_illness", "name": "Occupational Illness", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "hazardous_condition", "name": "Hazardous Condition", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "spill_release", "name": "Spill / Release", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "fire", "name": "Fire", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "pit_accident", "name": "PIT Accident", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "property_damage", "name": "Property Damage", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "equipment_damage_failure", "name": "Equipment Damage / Failure", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "non_work_related", "name": "Non-Work Related", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "regulatory", "name": "Regulatory", "months": [null, null, null, null, null, null, null, null, null, null, null, null] }
+      ]
+    },
+    {
+      "section": "lopc",
+      "name": "LOPC",
+      "categories": [
+        { "category": "lopc", "name": "LOPC", "months": [null, null, null, null, null, null, null, null, null, null, null, null] }
+      ]
+    },
+    {
+      "section": "property_equipment_damage",
+      "name": "Property / Equipment Damage",
+      "categories": [
+        { "category": "property_equipment_damage", "name": "Property / Equipment Damage", "months": [null, null, null, null, null, null, null, null, null, null, null, null] }
+      ]
+    },
+    {
+      "section": "pit",
+      "name": "PIT",
+      "categories": [
+        { "category": "pit", "name": "PIT", "months": [null, null, null, null, null, null, null, null, null, null, null, null] }
+      ]
+    },
+    {
+      "section": "psif",
+      "name": "PSIF",
+      "categories": [
+        { "category": "psif", "name": "PSIF", "months": [null, null, null, null, null, null, null, null, null, null, null, null] }
+      ]
+    }
+  ],
+  "expectedYtd": []
+}

@@ -45,9 +45,27 @@ def test_ingestion_batches_is_created_in_core(upgrade_sql: str) -> None:
 def test_no_objects_are_created_in_public(upgrade_sql: str) -> None:
     created = re.findall(r"CREATE (?:TABLE|INDEX \S+ ON) (\S+)", upgrade_sql)
     assert created
-    assert all(name.split(".")[0] in {"core", "quality"} for name in created), created
+    assert all(name.split(".")[0] in {"core", "quality", "safety"} for name in created), created
     assert "public." not in upgrade_sql
 
 
 def test_migrations_never_create_the_core_schema(upgrade_sql: str) -> None:
     assert "CREATE SCHEMA core" not in upgrade_sql
+
+
+def test_audit_events_is_created_in_core(upgrade_sql: str) -> None:
+    assert "CREATE TABLE core.audit_events" in upgrade_sql
+
+
+def test_safety_tables_are_created_in_safety(upgrade_sql: str) -> None:
+    for table in ("metric_sections", "metric_categories", "monthly_metric_values"):
+        assert f"CREATE TABLE safety.{table}" in upgrade_sql
+    assert "uq_monthly_metric_values_category_year_month" in upgrade_sql
+    assert "value >= 0" in upgrade_sql
+
+
+def test_safety_seeds_definitions_but_no_values(upgrade_sql: str) -> None:
+    assert "INSERT INTO safety.metric_sections" in upgrade_sql
+    assert "INSERT INTO safety.metric_categories" in upgrade_sql
+    assert "'Lost Time Injury'" in upgrade_sql
+    assert "INSERT INTO safety.monthly_metric_values" not in upgrade_sql

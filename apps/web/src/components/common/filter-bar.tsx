@@ -55,7 +55,8 @@ type FilterSelectOption = { value: string; label: string };
 type FilterSelectProps = Omit<React.ComponentProps<"select">, "children"> & {
   label: string;
   options: FilterSelectOption[];
-  placeholder?: string;
+  /** Label of the empty "not filtered" option; false when a value is always required. */
+  placeholder?: string | false;
 };
 
 export function FilterSelect({
@@ -77,7 +78,7 @@ export function FilterSelect({
           className={cn(controlClasses, "appearance-none pr-8", className)}
           {...props}
         >
-          <option value="">{placeholder}</option>
+          {placeholder !== false && <option value="">{placeholder}</option>}
           {options.map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}

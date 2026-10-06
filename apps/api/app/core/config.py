@@ -4,6 +4,8 @@ from typing import Annotated, Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.core.permissions import Permission
+
 # Identifiers that appear in logs (connector IDs, source systems, batch IDs)
 # are restricted to characters that cannot break log lines.
 SAFE_NAME_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._:\-]{0,99}$"
@@ -58,6 +60,17 @@ class Settings(BaseSettings):
     # JSON object: connector ID -> {"secret_sha256": [...], "source_systems": [...]}
     ingestion_connectors: dict[SafeName, ConnectorCredentials] = {}
 
+    # Interactive user endpoints (for example Safety data entry). No login exists yet:
+    #   disabled                     requests are anonymous; protected endpoints answer 401
+    #   development-unauthenticated  requests act as a fixed development user holding
+    #                                DEVELOPMENT_USER_PERMISSIONS; refused in production
+    user_auth_mode: Literal["disabled", "development-unauthenticated"] = "disabled"
+    # JSON list of permission names granted to the development user.
+    development_user_permissions: list[Permission] = [
+        Permission.SAFETY_VIEW,
+        Permission.SAFETY_EDIT,
+    ]
+
     @field_validator("database_url", mode="before")
     @classmethod
     def _blank_database_url_is_unset(cls, value: object) -> object:
@@ -71,6 +84,24 @@ class Settings(BaseSettings):
         if isinstance(value, str) and not value.strip():
             return {}
         return value
+
+    @field_validator("development_user_permissions", mode="before")
+    @classmethod
+    def _blank_permissions_are_empty(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return []
+        return value
+
+    @model_validator(mode="after")
+    def _user_auth_mode_is_safe(self) -> Self:
+        if (
+            self.user_auth_mode == "development-unauthenticated"
+            and self.environment == "production"
+        ):
+            raise ValueError(
+                "USER_AUTH_MODE=development-unauthenticated is not allowed in production"
+            )
+        return self
 
     @model_validator(mode="after")
     def _moisture_source_is_safe(self) -> Self:

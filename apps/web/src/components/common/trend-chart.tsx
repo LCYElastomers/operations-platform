@@ -178,13 +178,15 @@ export function ChartLegend({
   series,
   hidden,
   onToggle,
+  label = "Products",
 }: {
-  series: TrendSeries[];
+  series: { name: string }[];
   hidden: ReadonlySet<string>;
   onToggle: (name: string) => void;
+  label?: string;
 }) {
   return (
-    <ul aria-label="Products" className="flex flex-wrap gap-x-4 gap-y-1.5">
+    <ul aria-label={label} className="flex flex-wrap gap-x-4 gap-y-1.5">
       {series.map((s, index) => {
         const visible = !hidden.has(s.name);
         return (

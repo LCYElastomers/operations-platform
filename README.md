@@ -1,7 +1,7 @@
 # Operations Platform
 
-Modular operations management platform (Quality, Mechanical Integrity, and
-future modules). See [`docs/AGENTS.md`](docs/AGENTS.md) for architecture,
+Modular operations management platform (Quality, Mechanical Integrity,
+Safety, and future modules). See [`docs/AGENTS.md`](docs/AGENTS.md) for architecture,
 security, and engineering principles.
 
 This repository currently contains the project skeleton only: no
@@ -102,9 +102,12 @@ uv run ruff format --check .
 
 # Optional: PostgreSQL integration tests (migrations, persistence, repository).
 # Point at a disposable database whose name contains "test"; the tests run
-# migrations up and down against it. Set it up like production: the `core`
-# and `quality` schemas exist and the role has USAGE, CREATE on them.
-# Skipped when unset.
+# migrations up and down against it. Set it up like production: the `core`,
+# `quality` and `safety` schemas exist and the role has USAGE, CREATE on them
+# (the `core` schema is required; the tests refuse to run without it).
+# The session ends at base, so run `alembic upgrade head` against it afterwards
+# if you use it for local development. The 0003 downgrade refuses while Safety
+# values or audit events exist, so clear those first. Skipped when unset.
 TEST_DATABASE_URL=postgresql+psycopg://<user>:<password>@localhost:5432/operations_platform_test uv run pytest
 
 # Web
@@ -124,7 +127,8 @@ apps/web/src/
                           module cards, and module descriptions.
   components/layout/      AppShell, AppSidebar, AppHeader
   components/common/      PageHeader, MetricCard, FilterBar, DataTable,
-                          TrendChart, StatusBadge, EmptyState
+                          TrendChart, BarChart, MonthlyGrid, StatusBadge,
+                          EmptyState
   components/modules/     ModuleNotConfigured (standard page for modules
                           without a connected data source)
   components/system/      API health status
@@ -162,6 +166,8 @@ from Docker build contexts. Never commit real credentials.
 | `MOISTURE_DATA_SOURCE` | api | `fixture` | `fixture` or `database`; `database` requires `DATABASE_URL`. Production must use `database` (`fixture` is refused when `ENVIRONMENT=production`) |
 | `INGESTION_AUTH_MODE` | api | `disabled` | `disabled`, `connector`, or `development-unauthenticated` (refused in production); see Ingestion API |
 | `INGESTION_CONNECTORS` | api | _(empty)_ | JSON connector registry holding secret **digests** only; see Ingestion API |
+| `USER_AUTH_MODE` | api | `disabled` | `disabled` or `development-unauthenticated` (refused in production); see Authorization |
+| `DEVELOPMENT_USER_PERMISSIONS` | api | `["safety.view","safety.edit"]` | JSON list of permissions held by the development user |
 
 ## Database migrations
 
@@ -181,8 +187,8 @@ docker compose exec api alembic upgrade head
 ```
 
 Schema changes happen only through Alembic; the API never creates tables at
-startup. Autogenerate only inspects application-owned schemas (`core` and
-`quality`; `core.alembic_version` itself is excluded).
+startup. Autogenerate only inspects application-owned schemas (`core`,
+`quality` and `safety`; `core.alembic_version` itself is excluded).
 
 Use a least-privilege database role for the application. From inside the API
 container, the host database is reachable as `host.docker.internal`.
@@ -197,7 +203,7 @@ by a DBA, not by the application:
 | `core`                 | Platform tables, including `core.alembic_version` |
 | `quality`              | Quality module tables                            |
 | `mechanical_integrity` | Reserved                                         |
-| `safety`               | Reserved                                         |
+| `safety`               | Safety module tables                             |
 | `environmental`        | Reserved                                         |
 
 Alembic stores its revision in `core.alembic_version` (configured in
@@ -211,11 +217,12 @@ Privileges the migrating role (`operations_api`) needs:
 - `USAGE, CREATE` on `core` (Alembic creates `core.alembic_version` on the
   first upgrade).
 - `USAGE, CREATE` on `quality`.
+- `USAGE, CREATE` on `safety`.
 - No `CREATE` on `public` and no `CREATE` on the database.
 
 ```sql
 -- Run as a DBA. Schemas already exist in production.
-GRANT USAGE, CREATE ON SCHEMA core, quality TO operations_api;
+GRANT USAGE, CREATE ON SCHEMA core, quality, safety TO operations_api;
 ```
 
 Migration `0001` produces `core.alembic_version` and
@@ -229,10 +236,18 @@ Current revisions:
 | -------- | ----------------------------------------------------------------------- |
 | `0001`   | Creates `quality.finishing_measurements`                                |
 | `0002`   | Creates `core.ingestion_batches`; adds record identity and versioning columns to `quality.finishing_measurements` |
+| `0003`   | Creates `core.audit_events`; creates `safety.metric_sections`, `safety.metric_categories`, `safety.monthly_metric_values`; seeds the Incident & Near Miss section and category definitions (no values) |
 
 Downgrading `0002` drops `core.ingestion_batches` and the versioning
 columns. It refuses to run while superseded measurement versions exist,
 because they would otherwise become indistinguishable from current rows.
+
+Downgrading `0003` refuses to run while any Safety monthly value or audit
+event exists, so entered data and its history are never dropped silently.
+
+Explicit constraint names in migrations are wrapped in `op.f()`; otherwise the
+`ck_%(table_name)s_%(constraint_name)s` naming convention prefixes them a
+second time.
 
 ## Quality > Raw Materials > Moisture Analysis
 
@@ -632,6 +647,164 @@ and stale batches log `result=replayed`, `batch_id_conflict` or
 as `record.ingestion`. Row values, request bodies, headers, and database
 error text (which can contain SQL parameters) are never logged. Database
 failures log only the exception type.
+
+## Authorization
+
+There is no login yet. Interactive endpoints are protected by
+`require_permission(...)` (`app/core/authorization.py`), which resolves the
+user through `get_user_principal`. Adding authentication later replaces only
+`get_user_principal`; endpoints and permission checks stay unchanged.
+
+Permissions are defined once in `app/core/permissions.py` as
+`<module>[.<function>].<action>`. A grant covers its scope and every function
+under it, and `edit` implies `view`:
+
+| Granted                 | Satisfies                                                       |
+| ----------------------- | --------------------------------------------------------------- |
+| `safety.view`           | `safety.view`, `safety.incidents.view`                          |
+| `safety.edit`           | everything above plus `safety.edit`, `safety.incidents.edit`    |
+| `safety.incidents.view` | `safety.incidents.view` only                                    |
+| `safety.incidents.edit` | `safety.incidents.view`, `safety.incidents.edit`                |
+
+Endpoints always require the most specific permission
+(`safety.incidents.view` / `safety.incidents.edit`), so function-level grants
+such as `safety.observations.edit` can be added later without changing
+existing endpoints.
+
+| `USER_AUTH_MODE`              | Behaviour                                                       |
+| ----------------------------- | --------------------------------------------------------------- |
+| `disabled` (default)          | Requests are anonymous; protected endpoints return `401 authentication_required` |
+| `development-unauthenticated` | Local development only (refused in production). Requests act as `development-user` with `DEVELOPMENT_USER_PERMISSIONS` |
+
+A user lacking a permission receives `403 permission_denied`. Denials are
+logged as `event=authorization result=denied`.
+
+## Audit trail
+
+`core.audit_events` is the platform audit trail for user data changes. One
+row per changed entity records `actor_id`, `occurred_at`, `action`
+(`create`/`update`/`delete`), `entity_type`, `entity_key`, `old_value` and
+`new_value` (JSONB), and a `change_set_id` grouping all rows of one save.
+Audit rows are written in the same transaction as the change. Write them with
+`app.audit.recorder.record_changes`. The Audit Log page does not display them
+yet.
+
+## Safety > Incident & Near Miss
+
+Routes: `/safety` (overview), `/safety/incidents/data-entry`,
+`/safety/incidents/dashboard`. Code lives in `apps/api/app/safety/` and
+`apps/web/src/features/safety/incidents/`; the spreadsheet grid
+(`MonthlyGrid`) and `BarChart` are shared components in
+`apps/web/src/components/common/`.
+
+| Endpoint                                   | Permission              | Purpose |
+| ------------------------------------------ | ----------------------- | ------- |
+| `GET /api/v1/safety/incidents/metrics?year=` | `safety.incidents.view` | Sections, categories, 12 monthly values and calculated YTD per category, `canEdit`, `yearsWithData` |
+| `PATCH /api/v1/safety/incidents/metrics`   | `safety.incidents.edit` | Set or clear cells: `{"year": 2026, "changes": [{"categoryId", "month", "value", "previousValue"}]}` |
+
+Data Entry and Dashboard read the same endpoint and the same stored rows.
+
+### Data model
+
+| Table                          | Contents |
+| ------------------------------ | -------- |
+| `safety.metric_sections`       | Blocks of a Safety function: `metric_set` (`incidents`), `code`, `name`, `display_order`, `active` |
+| `safety.metric_categories`     | Rows of a block: `section_id`, `code`, `name`, `display_order`, `active` |
+| `safety.monthly_metric_values` | One row per `(category_id, reporting_year, reporting_month)` (unique): `value` (integer, `>= 0`), `created_at/by`, `updated_at/by` |
+
+- There are no month columns. Jan–Dec is presentation only.
+- **No row means unreported**, which is distinct from a stored `0`. Clearing a
+  cell deletes its row; the previous value remains in `core.audit_events`.
+- YTD is calculated per category (sum of its reported months; null when
+  nothing is reported) and never stored. Categories are never summed into a
+  section total.
+- Inactive sections and categories are hidden from the grid and the dashboard.
+- There is no site dimension: the platform has no site entity yet. When one
+  exists, add a `site_id` reference and include it in the unique constraint.
+
+Seeded blocks (`metric_set = incidents`), in order: Incident & Near Miss
+Totals (Near Miss, Incident), Incident Classification (13 categories), LOPC,
+Property / Equipment Damage, PIT, PSIF. LOPC, Property / Equipment Damage, PIT
+and PSIF currently have one category each, pending confirmation of the
+workbook's row breakdown for those blocks. Further categories are added by
+migration.
+
+**Incident and Near Miss are explicit source metrics.** The monthly Incident
+total is entered as its own value, never derived from Incident
+Classification. Classifications are a separate breakdown and are not mutually
+exclusive (one incident may carry several), so their sum can differ from
+Incident. Dashboard Incident and Near Miss KPIs and trends read only the
+explicit metrics.
+
+### Saving
+
+- A save is all-or-nothing and serialized per metric set and year
+  (transaction-scoped advisory lock).
+- Each change carries `previousValue`, the value the client loaded. If any
+  stored value differs, nothing is written and the API returns
+  `409 edit_conflict` with the conflicting cells. The page offers to reload
+  the latest values while keeping the user's edits.
+- Counts are strict JSON integers from 0 to 100,000; strings, fractions and
+  booleans are rejected (`422`). Unknown or inactive categories return
+  `422 unknown_category`.
+- Unchanged cells are ignored. Every changed cell produces one audit event
+  (`entity_type = safety.monthly_metric_value`, `entity_key =
+  incidents/<section>/<category>/<year>-<month>`).
+- Saves log `event=safety_metrics_saved` with counts only, never values.
+
+### Importing the 2026 EHS workbook
+
+Historical values are loaded with a separate CLI, never by the pages:
+
+```bash
+cd apps/api
+uv run python -m app.safety.legacy_import check mapping.json   # validate file, no database
+uv run python -m app.safety.legacy_import plan  mapping.json   # compare with stored values
+uv run python -m app.safety.legacy_import apply mapping.json   # write, audited as "legacy-import"
+```
+
+Start from the template
+[`apps/api/import_templates/safety_incidents.template.json`](apps/api/import_templates/safety_incidents.template.json),
+copy it outside the repository, transcribe the workbook into the copy and have
+it reviewed before use. The template lists every seeded section and category
+with all months `null`; it contains no source values. Shape (illustrative, not
+real data):
+
+```json
+{
+  "source": "2026 LCY EHS Dashboard.xlsx, sheet <name>",
+  "metricSet": "incidents",
+  "year": 2026,
+  "notes": ["How the Incident total discrepancy was resolved"],
+  "sections": [
+    {
+      "section": "incident_near_miss_totals",
+      "categories": [
+        { "category": "incident", "months": [0, null, null, null, null, null, null, null, null, null, null, null] }
+      ]
+    }
+  ],
+  "expectedYtd": [
+    { "section": "incident_near_miss_totals", "category": "incident", "value": 0, "statedIn": "<cell or label>" }
+  ]
+}
+```
+
+- `months` is January to December. `null` means unreported and is never
+  written; `0` is a reported zero. Never replace `null` with `0`.
+- `expectedYtd` records per-category totals stated elsewhere in the workbook
+  (for example the stated Incident total). Any difference from the monthly
+  values is printed and blocks `apply`.
+- `apply` never overwrites or clears: a stored value that differs from the
+  file, including one the file marks `null`, blocks it.
+
+**Known reconciliation issue.** In the 2026 workbook the monthly Incident
+source grid totals 41 for the populated months, while "Total EHS Incidents
+2026" shows 40. The application does not adjust either figure. Resolve it
+with the Safety owner, record the decision in the mapping file's `notes`, and
+add the agreed Incident figure to `expectedYtd` before running `apply`.
+Incident is the explicit metric, so Incident Classification totals are not
+used to reconcile it.
 
 ## shadcn/ui
 

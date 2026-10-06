@@ -1,12 +1,9 @@
 import datetime as dt
 from typing import Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from pydantic.alias_generators import to_camel
+from pydantic import ConfigDict, Field, field_validator, model_validator
 
-
-class CamelModel(BaseModel):
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, frozen=True)
+from app.core.schemas import CamelModel
 
 
 class MoistureRecord(CamelModel):

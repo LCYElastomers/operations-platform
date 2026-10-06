@@ -10,6 +10,8 @@ const requiredRoutes = [
   "/quality/raw-materials/moisture",
   "/mechanical-integrity",
   "/safety",
+  "/safety/incidents/data-entry",
+  "/safety/incidents/dashboard",
   "/environmental",
   "/procurement",
   "/sales",
@@ -30,6 +32,26 @@ describe("navigation config", () => {
       "Raw Materials",
       "Moisture Analysis",
     ]);
+  });
+
+  it.each([
+    ["/safety/incidents/data-entry", "Data Entry"],
+    ["/safety/incidents/dashboard", "Dashboard"],
+  ])("nests %s under Safety > Incident & Near Miss", (route, label) => {
+    const trail = findNavTrail(navigation, route);
+    expect(trail.map((item) => item.label)).toEqual(["Safety", "Incident & Near Miss", label]);
+  });
+
+  it("does not mark Safety Overview active on Safety function pages", () => {
+    const trail = findNavTrail(navigation, "/safety");
+    expect(trail.map((item) => item.id)).toEqual(["safety", "safety-overview"]);
+    expect(findNavTrail(navigation, "/safety/incidents/dashboard").at(-1)?.id).toBe(
+      "safety-incidents-dashboard",
+    );
+  });
+
+  it("keeps Safety a top-level module alongside Quality", () => {
+    expect(moduleItems.map((item) => item.id)).toContain("safety");
   });
 
   it("keeps Quality and Mechanical Integrity as top-level modules", () => {

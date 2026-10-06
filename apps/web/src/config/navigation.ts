@@ -1,4 +1,5 @@
 import {
+  ChartColumn,
   Database,
   Droplets,
   FlaskConical,
@@ -8,6 +9,7 @@ import {
   Leaf,
   RefreshCw,
   ScrollText,
+  TableProperties,
   Truck,
   Wrench,
 } from "lucide-react";
@@ -58,10 +60,35 @@ export const navigation: NavSection[] = [
       {
         id: "safety",
         label: "Safety",
-        href: "/safety",
         icon: HardHat,
-        status: "not-configured",
+        status: "in-development",
         description: "Incidents, observations, and safety performance tracking.",
+        children: [
+          { id: "safety-overview", label: "Overview", href: "/safety", exact: true },
+          {
+            id: "safety-incidents",
+            label: "Incident & Near Miss",
+            description: "Monthly incident classification, near miss, LOPC, damage, PIT, and PSIF counts.",
+            children: [
+              {
+                id: "safety-incidents-data-entry",
+                label: "Data Entry",
+                href: "/safety/incidents/data-entry",
+                icon: TableProperties,
+                status: "in-development",
+                description: "Enter monthly Incident & Near Miss counts in the familiar spreadsheet layout.",
+              },
+              {
+                id: "safety-incidents-dashboard",
+                label: "Dashboard",
+                href: "/safety/incidents/dashboard",
+                icon: ChartColumn,
+                status: "in-development",
+                description: "Year-to-date Incident & Near Miss totals and monthly trends.",
+              },
+            ],
+          },
+        ],
       },
       {
         id: "environmental",
