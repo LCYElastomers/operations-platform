@@ -373,6 +373,6 @@ def contact_dashboard(
 ) -> ContactDashboardResponse:
     """Year totals, monthly contacts and participation, and the supervisor x month counts."""
     try:
-        return service.dashboard(repository, year=year, today=_now().date())
+        return service.dashboard(repository, year=year, today=service.site_today(_now()))
     except SQLAlchemyError:
         raise _database_unavailable() from None

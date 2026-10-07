@@ -14,6 +14,27 @@ import type {
 export const EARLIEST_DATE = "2000-01-01";
 export const MAX_DISPLAY_NAME_LENGTH = 100;
 
+/**
+ * "Today" is the Baytown site's calendar date, as in the API, whatever the
+ * device's own time zone. The platform has one site; move this into site
+ * configuration if it becomes multi-site.
+ */
+export const SITE_TIME_ZONE = "America/Chicago";
+
+const siteDateParts = new Intl.DateTimeFormat("en-US", {
+  timeZone: SITE_TIME_ZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+/** The site's calendar date (YYYY-MM-DD) at the given instant. */
+export function siteIsoDate(instant: Date): string {
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    siteDateParts.formatToParts(instant).find((p) => p.type === type)!.value;
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
 export function isIsoDate(text: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return false;
   const [year, month, day] = text.split("-").map(Number);

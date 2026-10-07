@@ -17,7 +17,7 @@ import { ApiError } from "@/lib/api-client";
 
 import { defaultReportingYear, MONTH_LABELS } from "../incidents/grid";
 import { ReportingYearSelect } from "../incidents/reporting-year-select";
-import { localIsoDate, monthName } from "../observations/observation-data";
+import { monthName } from "../observations/observation-data";
 import { describeContactError, type ContactDashboardResponse } from "./api";
 import {
   contactsByMonth,
@@ -27,6 +27,7 @@ import {
   headlineMonth,
   participationByMonth,
   runningContactTotal,
+  siteIsoDate,
 } from "./contact-data";
 import { useContactDashboard } from "./use-contacts";
 
@@ -59,7 +60,7 @@ export const supervisorMonthColumns: DataTableColumn<SupervisorRow>[] = [
 type ContactDashboardProps = { title: string; description?: string };
 
 export function ContactDashboard({ title, description }: ContactDashboardProps) {
-  const today = localIsoDate(new Date());
+  const today = siteIsoDate(new Date());
   const [year, setYear] = useState(() => defaultReportingYear(Number(today.slice(0, 4))));
   const dashboard = useContactDashboard(year);
   const data = dashboard.data;

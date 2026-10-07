@@ -10,7 +10,6 @@ import { StatusBadge } from "@/components/common/status-badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
 
-import { localIsoDate } from "../observations/observation-data";
 import { describeContactError, type Contact, type Supervisor } from "./api";
 import {
   contactDateError,
@@ -22,6 +21,7 @@ import {
   formatDate,
   newRequestId,
   periodOf,
+  siteIsoDate,
   tallyTiles,
   toSupervisorInput,
   validateSupervisorDraft,
@@ -54,12 +54,12 @@ type ContactsPageProps = { title: string; description?: string };
 
 export function ContactsPage({ title, description }: ContactsPageProps) {
   const dateId = useId();
-  const [today, setToday] = useState(() => localIsoDate(new Date()));
+  const [today, setToday] = useState(() => siteIsoDate(new Date()));
   const [contactDate, setContactDate] = useState(today);
 
   // A tablet left open overnight should not keep offering yesterday as "today".
   useEffect(() => {
-    const timer = window.setInterval(() => setToday(localIsoDate(new Date())), 60_000);
+    const timer = window.setInterval(() => setToday(siteIsoDate(new Date())), 60_000);
     return () => window.clearInterval(timer);
   }, []);
 

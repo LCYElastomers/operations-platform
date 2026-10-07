@@ -906,6 +906,46 @@ def test_create_rejects_future_dates_but_accepts_today(
     assert editor.post(URL, json=contact_payload(contactDate="2026-10-07")).status_code == 201
 
 
+# 22:00 CDT on 7 October in Baytown is already 8 October in UTC.
+BAYTOWN_EVENING = dt.datetime(2026, 10, 8, 3, 0, tzinfo=dt.UTC)
+
+
+@pytest.mark.parametrize(
+    ("instant", "expected"),
+    [
+        (dt.datetime(2026, 10, 8, 4, 59, tzinfo=dt.UTC), dt.date(2026, 10, 7)),  # 23:59 CDT
+        (dt.datetime(2026, 10, 8, 5, 0, tzinfo=dt.UTC), dt.date(2026, 10, 8)),  # midnight CDT
+        (dt.datetime(2026, 1, 1, 5, 59, tzinfo=dt.UTC), dt.date(2025, 12, 31)),  # 23:59 CST
+        (dt.datetime(2026, 1, 1, 6, 0, tzinfo=dt.UTC), dt.date(2026, 1, 1)),  # midnight CST
+        (dt.datetime(2026, 3, 9, 4, 59, tzinfo=dt.UTC), dt.date(2026, 3, 8)),  # DST began 8 March
+        (dt.datetime(2026, 3, 9, 5, 0, tzinfo=dt.UTC), dt.date(2026, 3, 9)),
+        (
+            dt.datetime(2026, 10, 7, 23, 0, tzinfo=dt.timezone(dt.timedelta(hours=5))),
+            dt.date(2026, 10, 7),
+        ),
+    ],
+)
+def test_site_today_is_the_baytown_calendar_date(instant: dt.datetime, expected: dt.date) -> None:
+    assert service.site_today(instant) == expected
+
+
+def test_create_uses_the_baytown_date_not_the_utc_date(
+    editor: TestClient,
+    repository: InMemoryRepository,
+    team: list[int],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(contacts_router, "_now", lambda: BAYTOWN_EVENING)
+
+    response = editor.post(URL, json=contact_payload(contactDate="2026-10-08"))
+    assert response.status_code == 422
+    assert response.json()["detail"]["error"] == "contact_date_in_future"
+    assert response.json()["detail"]["today"] == "2026-10-07"
+    assert repository.contact_rows == {}
+
+    assert editor.post(URL, json=contact_payload(contactDate="2026-10-07")).status_code == 201
+
+
 @pytest.mark.parametrize(
     "bad",
     [
@@ -1085,6 +1125,20 @@ def test_update_rejects_future_dates(editor: TestClient, listed: list[int]) -> N
     assert response.json()["detail"]["error"] == "contact_date_in_future"
 
 
+def test_update_uses_the_baytown_date_not_the_utc_date(
+    editor: TestClient, listed: list[int], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(contacts_router, "_now", lambda: BAYTOWN_EVENING)
+
+    response = contact_put(editor, 3, contactDate="2026-10-08")
+    assert response.status_code == 422
+    assert response.json()["detail"]["today"] == "2026-10-07"
+
+    response = contact_put(editor, 3, contactDate="2026-10-07")
+    assert response.status_code == 200
+    assert response.json()["contactDate"] == "2026-10-07"
+
+
 def test_stale_contact_update_is_a_conflict(
     editor: TestClient, repository: InMemoryRepository, listed: list[int]
 ) -> None:
@@ -1153,6 +1207,20 @@ def test_dashboard_endpoint_is_alphabetical_with_null_future_months(
     assert data["months"][11] == {"month": 12, "contacts": None, "participation": None}
     assert data["yearsWithData"] == [2026]
     assert "target" not in str(data).lower()
+
+
+def test_dashboard_months_started_follow_the_baytown_date(
+    editor: TestClient, listed: list[int], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 22:00 CDT on 31 October is 1 November in UTC; November has not started in Baytown.
+    monkeypatch.setattr(
+        contacts_router, "_now", lambda: dt.datetime(2026, 11, 1, 3, 0, tzinfo=dt.UTC)
+    )
+
+    data = editor.get(URL + "/dashboard", params={"year": 2026}).json()
+
+    assert data["throughMonth"] == 10
+    assert data["months"][10] == {"month": 11, "contacts": None, "participation": None}
 
 
 def test_dashboard_requires_a_year(editor: TestClient) -> None:

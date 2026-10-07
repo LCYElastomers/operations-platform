@@ -9,6 +9,11 @@ one contact in the month, out of the supervisors eligible for that month. A
 supervisor is eligible for a month when they are marked participation
 eligible and their effective period overlaps the month. No target is applied:
 the figures describe the program, they do not rate individuals.
+
+"Today" is the Baytown site's calendar date (``SITE_TIME_ZONE``): contacts are
+recorded on the plant floor, so a contact made this evening in Baytown is
+dated today even after UTC midnight. The platform has one site; move this
+into site configuration if it becomes multi-site.
 """
 
 import calendar
@@ -17,6 +22,7 @@ import logging
 import uuid
 from collections.abc import Sequence
 from typing import Any, Literal
+from zoneinfo import ZoneInfo
 
 from app.audit.recorder import AuditChange
 from app.safety.contacts.repository import (
@@ -50,6 +56,12 @@ logger = logging.getLogger(__name__)
 CONTACT_ENTITY_TYPE = "safety.contact"
 SUPERVISOR_ENTITY_TYPE = "safety.contact_supervisor"
 MONTHS = range(1, 13)
+SITE_TIME_ZONE = ZoneInfo("America/Chicago")
+
+
+def site_today(now: dt.datetime) -> dt.date:
+    """The Baytown site's calendar date at the instant ``now`` (timezone-aware)."""
+    return now.astimezone(SITE_TIME_ZONE).date()
 
 
 class ContactRuleError(ValueError):
@@ -353,8 +365,7 @@ def _reload_supervisor(repository: ContactRepository, supervisor_id: int) -> Sup
 
 
 def _check_contact_date(contact_date: dt.date, now: dt.datetime) -> None:
-    # The UTC date is never behind the plant's local date, so a local "today" is accepted.
-    today = now.astimezone(dt.UTC).date()
+    today = site_today(now)
     if contact_date > today:
         raise ContactRuleError(
             "contact_date_in_future",

@@ -897,8 +897,16 @@ not an employee directory or user accounts.
 | `GET /api/v1/safety/contacts/summary?year=&month=`      | `safety.contacts.view` | Contacts per supervisor; participation when a month is given |
 | `GET /api/v1/safety/contacts/dashboard?year=`           | `safety.contacts.view` | Year total, monthly contacts and participation (months not yet started are `null`), supervisor × month counts |
 
-- `contactDate` is a `YYYY-MM-DD` date from 2000-01-01 up to today (UTC).
-  A contact must fall within its supervisor's effective period. New contacts
+- `contactDate` is a `YYYY-MM-DD` date from 2000-01-01 up to today. A
+  contact must fall within its supervisor's effective period.
+- "Today" is the Baytown site's calendar date in `America/Chicago`, not the
+  UTC date or the device's time zone. The API (create, update, dashboard
+  months started) and the web app (default date, future-date check) use the
+  same rule. The time zone is a single constant (`SITE_TIME_ZONE` in
+  `app/safety/contacts/service.py` and `contact-data.ts`) because the platform
+  has one site; move it into site configuration if it becomes multi-site.
+  Incident & Near Miss and Safety Observations are unchanged and still use
+  their own date rules. New contacts
   cannot be credited to an inactive supervisor; an existing contact keeps its
   supervisor when edited.
 - Supervisor names are trimmed and whitespace-collapsed, at most 100
