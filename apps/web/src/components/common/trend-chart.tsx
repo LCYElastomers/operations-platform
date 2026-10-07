@@ -180,7 +180,7 @@ export function ChartLegend({
   onToggle,
   label = "Products",
 }: {
-  series: { name: string }[];
+  series: { name: string; color?: string }[];
   hidden: ReadonlySet<string>;
   onToggle: (name: string) => void;
   label?: string;
@@ -204,7 +204,7 @@ export function ChartLegend({
               <span
                 aria-hidden
                 className="inline-block h-2 w-3 rounded-sm"
-                style={{ backgroundColor: seriesColor(index) }}
+                style={{ backgroundColor: s.color ?? seriesColor(index) }}
               />
               {s.name}
             </button>

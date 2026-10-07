@@ -37,6 +37,10 @@ type MonthlyGridProps = {
 };
 
 const LOADING_ROWS = 3;
+const GRID_LINE = "border-l border-border/60";
+// Shadows, not borders: collapsed table borders do not stay with sticky cells.
+const STICKY_EDGE = "shadow-[inset_-1px_0_0_var(--color-border)]";
+const STICKY_TOTAL = "sticky right-0 z-10 shadow-[inset_1px_0_0_var(--color-border)]";
 
 function NoValue() {
   return (
@@ -124,13 +128,11 @@ export function MonthlyGrid({
       aria-labelledby={headingId}
       className={cn("overflow-hidden rounded-lg border bg-card", className)}
     >
-      <h2
-        id={headingId}
-        className="border-b bg-muted/40 px-4 py-2.5 text-xs font-semibold tracking-wider uppercase"
-      >
+      <h2 id={headingId} className="border-b bg-muted/40 px-4 py-2.5 text-sm font-semibold">
         {title}
       </h2>
-      <div className="overflow-x-auto">
+      {/* relative: keeps absolutely positioned screen-reader text inside the scroll area. */}
+      <div className="relative overflow-x-auto">
         <table ref={tableRef} className="w-full min-w-[1040px] table-fixed border-collapse text-sm">
           <colgroup>
             <col className="w-56" />
@@ -143,15 +145,21 @@ export function MonthlyGrid({
             <tr className="border-b">
               <th
                 scope="col"
-                className="sticky left-0 z-10 h-9 bg-muted px-4 text-left text-xs font-semibold tracking-wide text-muted-foreground uppercase"
+                className={cn(
+                  "sticky left-0 z-10 h-9 bg-muted px-4 text-left text-xs font-semibold tracking-wide text-muted-foreground uppercase",
+                  STICKY_EDGE,
+                )}
               >
                 Category
               </th>
-              {columns.map((column) => (
+              {columns.map((column, index) => (
                 <th
                   key={column}
                   scope="col"
-                  className="h-9 px-2 text-right text-xs font-semibold tracking-wide text-muted-foreground uppercase"
+                  className={cn(
+                    "h-9 px-2.5 text-right text-xs font-semibold tracking-wide text-muted-foreground uppercase",
+                    index > 0 && GRID_LINE,
+                  )}
                 >
                   {column}
                 </th>
@@ -159,7 +167,10 @@ export function MonthlyGrid({
               <th
                 scope="col"
                 title="Calculated from the monthly values; not editable"
-                className="h-9 border-l bg-muted px-3 text-right text-xs font-semibold tracking-wide text-foreground uppercase"
+                className={cn(
+                  "h-9 bg-muted px-3 text-right text-xs font-semibold tracking-wide text-foreground uppercase",
+                  STICKY_TOTAL,
+                )}
               >
                 {totalLabel}
               </th>
@@ -180,13 +191,16 @@ export function MonthlyGrid({
                   <tr key={row.id} className="border-b last:border-b-0 hover:bg-muted/30">
                     <th
                       scope="row"
-                      className="sticky left-0 z-10 truncate bg-card px-4 text-left font-medium"
+                      className={cn(
+                        "sticky left-0 z-10 truncate bg-card px-4 text-left font-medium",
+                        STICKY_EDGE,
+                      )}
                       title={row.label}
                     >
                       {row.label}
                     </th>
                     {row.cells.map((cell, column) => (
-                      <td key={column} className="h-10 p-0.5">
+                      <td key={column} className={cn("h-10 p-0.5", column > 0 && GRID_LINE)}>
                         {editable ? (
                           <input
                             data-cell={`${rowIndex}:${column}`}
@@ -204,9 +218,9 @@ export function MonthlyGrid({
                             onKeyDown={(event) => handleKeyDown(event, rowIndex, column, row.id)}
                             className={cn(
                               "h-9 w-full rounded-sm border border-transparent bg-transparent px-2 text-right tabular-nums outline-none",
-                              "placeholder:text-muted-foreground/40 hover:border-input",
+                              "placeholder:text-muted-foreground/45 hover:border-input",
                               "focus:border-ring focus:bg-background focus:ring-2 focus:ring-ring/40",
-                              cell.dirty && "bg-info/10",
+                              cell.dirty && "bg-warning/20 font-semibold",
                               cell.invalid &&
                                 "border-destructive bg-destructive/10 focus:border-destructive focus:ring-destructive/30",
                             )}
@@ -218,7 +232,12 @@ export function MonthlyGrid({
                         )}
                       </td>
                     ))}
-                    <td className="h-10 border-l bg-muted/60 px-3 text-right font-semibold tabular-nums">
+                    <td
+                      className={cn(
+                        "h-10 bg-muted px-3 text-right font-semibold tabular-nums",
+                        STICKY_TOTAL,
+                      )}
+                    >
                       {formatTotal(row.total)}
                     </td>
                   </tr>
@@ -229,16 +248,27 @@ export function MonthlyGrid({
               <tr>
                 <th
                   scope="row"
-                  className="sticky left-0 z-10 h-10 bg-muted px-4 text-left text-xs font-semibold tracking-wide uppercase"
+                  className={cn(
+                    "sticky left-0 z-10 h-10 bg-muted px-4 text-left text-xs font-semibold tracking-wide uppercase",
+                    STICKY_EDGE,
+                  )}
                 >
                   {footer.label}
                 </th>
                 {footer.values.map((value, column) => (
-                  <td key={column} className="h-10 px-2.5 text-right font-medium tabular-nums">
+                  <td
+                    key={column}
+                    className={cn(
+                      "h-10 px-2.5 text-right font-medium tabular-nums",
+                      column > 0 && GRID_LINE,
+                    )}
+                  >
                     {formatTotal(value)}
                   </td>
                 ))}
-                <td className="h-10 border-l bg-muted px-3 text-right font-semibold tabular-nums">
+                <td
+                  className={cn("h-10 bg-muted px-3 text-right font-semibold tabular-nums", STICKY_TOTAL)}
+                >
                   {formatTotal(footer.total)}
                 </td>
               </tr>

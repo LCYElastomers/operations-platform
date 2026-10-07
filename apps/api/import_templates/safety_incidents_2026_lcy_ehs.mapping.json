@@ -1,0 +1,481 @@
+{
+  "source": "docs/2026 LCY EHS Dash Board.xlsx (SHA-256 0B94C09BEDF3C343D3250496780A2D3B66671B55741ABA0391FDE81BE8B51C10), sheet 'Incident Data' (Near Miss traced to Dash!C7:N21, Incident to Dash!C27:N40)",
+  "metricSet": "incidents",
+  "year": 2026,
+  "notes": [
+    "Generated read-only from the workbook; each months array is January..December. null = no source entry; 0 = a typed zero in the source. Values were traced to their source cells, not retyped.",
+    "A month is null when the workbook shows 0 only because a formula sums or references blank cells: Near Miss Feb, Mar, Oct-Dec (Incident Data!B6:M6 = Dash!C22:N22, sums of blank area cells); Incident Oct-Dec (Dash!L41:N41); LOPC May (Incident Data!F59 = F17, blank); PIT Aug (Incident Data!I129 = I20, blank).",
+    "Incident and Near Miss are the explicit monthly rows Incident Data!A6:M7. Incident is not derived from Incident Classification and no classification was adjusted.",
+    "SOURCE CORRECTION (approved 2026-10-06): Incident May = 3, not the workbook's displayed 2. Dash!G41 (May) is =SUM(G27:G38) and omits the Mundy and 3rd Party rows; the May area cells Dash!G27:G40 sum to 3 (G36 WHSE 2 + G40 3rd Party 1). Every other month sums rows 27-40. With May = 3 the monthly Incident values sum to 41 = Incident Data!N7 (Dash!O41). The workbook was not modified.",
+    "Superseded workbook figures after the May correction: Incident Data!F7 and AM72 show May = 2, and 'Total EHS Incidents' 2026 (Incident Data!AU72) shows 40. Approved Incident 2026 YTD = 41.",
+    "Property / Equipment Damage: the workbook keeps Property Damage (Incident Data row 21) and Equipment Damage (row 22) as separate rows, mapped to the separate classification categories. The combined 'PROPERTY/ EQUIP. DAMAGE YTD' block (row 123) has only January = 1 entered; it is mapped as is (approved: January = 1, February-December unreported) and not reconstructed from rows 21 and 22.",
+    "Not mapped: Incident Data row 14 'Recordable ' (entirely blank; no seeded category; may duplicate 'Recordable Injury'). Process Safety Incidents (Incident Data!AH92:AU94, 2026 Feb-Apr = 1 each; no seeded category). Rows with a stated total of 0 that is a sum of blank cells (Lost Time Injury, Restricted, Occupational Illness, Regulatory) have no expectedYtd entry.",
+    "Other sources disagree and were not used: Rates!E29:J37 (typed 2026 counts) gives LTI Aug = 1 (Incident Data has none), First Aid YTD 4 (vs 5; Sep), Equipment Failure YTD 1 (vs 8), Property Damage YTD 11 (vs 6), LOC May = 0 (Incident Data blank). Area Data!C7:P23 gives Property/Equipment Damage 12, Equipment Failure 0, Non-Work Related 5 (vs 4)."
+  ],
+  "sections": [
+    {
+      "section": "incident_near_miss_totals",
+      "name": "Incident & Near Miss Totals",
+      "categories": [
+        {
+          "category": "near_miss",
+          "name": "Near Miss <- Incident Data!B6:M6 (row label 'Near Miss')",
+          "months": [
+            3,
+            null,
+            null,
+            11,
+            2,
+            4,
+            4,
+            5,
+            2,
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "category": "incident",
+          "name": "Incident <- Incident Data!B7:M7 (row label 'Incident'); May corrected to 3 from Dash!G27:G40, see notes",
+          "months": [
+            5,
+            6,
+            5,
+            6,
+            3,
+            4,
+            5,
+            3,
+            4,
+            null,
+            null,
+            null
+          ]
+        }
+      ]
+    },
+    {
+      "section": "incident_classification",
+      "name": "Incident Classification",
+      "categories": [
+        {
+          "category": "first_aid",
+          "name": "First Aid <- Incident Data!B11:M11 (row label 'First Aid')",
+          "months": [
+            1,
+            null,
+            1,
+            2,
+            null,
+            null,
+            null,
+            null,
+            1,
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "category": "recordable_injury",
+          "name": "Recordable Injury <- Incident Data!B12:M12 (row label 'Recordable Injury')",
+          "months": [
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            1,
+            null,
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "category": "lost_time_injury",
+          "name": "Lost Time Injury <- Incident Data!B13:M13 (row label 'Lost time injury')",
+          "months": [
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "category": "restricted",
+          "name": "Restricted <- Incident Data!B15:M15 (row label 'Restricted')",
+          "months": [
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "category": "occupational_illness",
+          "name": "Occupational Illness <- Incident Data!B16:M16 (row label 'Occupational Ilness')",
+          "months": [
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "category": "hazardous_condition",
+          "name": "Hazardous Condition <- Incident Data!B19:M19 (row label 'Hazardous Condition')",
+          "months": [
+            1,
+            2,
+            null,
+            null,
+            1,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "category": "spill_release",
+          "name": "Spill / Release <- Incident Data!B17:M17 (row label 'Spill/  Release')",
+          "months": [
+            1,
+            2,
+            2,
+            1,
+            null,
+            2,
+            3,
+            2,
+            1,
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "category": "fire",
+          "name": "Fire <- Incident Data!B18:M18 (row label 'Fire')",
+          "months": [
+            null,
+            null,
+            1,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "category": "pit_accident",
+          "name": "PIT Accident <- Incident Data!B20:M20 (row label 'Powered Industrial Vehicle Accident')",
+          "months": [
+            null,
+            1,
+            null,
+            3,
+            1,
+            2,
+            1,
+            null,
+            1,
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "category": "property_damage",
+          "name": "Property Damage <- Incident Data!B21:M21 (row label 'Property Damage')",
+          "months": [
+            1,
+            1,
+            null,
+            null,
+            2,
+            null,
+            2,
+            null,
+            null,
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "category": "equipment_damage_failure",
+          "name": "Equipment Damage / Failure <- Incident Data!B22:M22 (row label 'Equipment Damage')",
+          "months": [
+            0,
+            null,
+            1,
+            4,
+            null,
+            2,
+            null,
+            null,
+            1,
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "category": "non_work_related",
+          "name": "Non-Work Related <- Incident Data!B23:M23 (row label 'Non-Work-Related')",
+          "months": [
+            1,
+            1,
+            null,
+            null,
+            1,
+            null,
+            null,
+            null,
+            1,
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "category": "regulatory",
+          "name": "Regulatory <- Incident Data!B24:M24 (row label 'Regulatory')",
+          "months": [
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+          ]
+        }
+      ]
+    },
+    {
+      "section": "lopc",
+      "name": "LOPC",
+      "categories": [
+        {
+          "category": "lopc",
+          "name": "LOPC <- Incident Data!B59:M59 (Incident Data!A55 'LOPC YTD' block, 2026 row 59)",
+          "months": [
+            1,
+            2,
+            2,
+            1,
+            null,
+            2,
+            3,
+            2,
+            1,
+            null,
+            null,
+            null
+          ]
+        }
+      ]
+    },
+    {
+      "section": "property_equipment_damage",
+      "name": "Property / Equipment Damage",
+      "categories": [
+        {
+          "category": "property_equipment_damage",
+          "name": "Property / Equipment Damage <- Incident Data!B123:M123 (Incident Data!A119 'PROPERTY/ EQUIP. DAMAGE YTD' block, 2026 row 123)",
+          "months": [
+            1,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+          ]
+        }
+      ]
+    },
+    {
+      "section": "pit",
+      "name": "PIT",
+      "categories": [
+        {
+          "category": "pit",
+          "name": "PIT <- Incident Data!B129:M129 (Incident Data!A126 'PIT Incidents' block, 2026 row 129)",
+          "months": [
+            null,
+            1,
+            null,
+            3,
+            1,
+            2,
+            1,
+            null,
+            1,
+            null,
+            null,
+            null
+          ]
+        }
+      ]
+    },
+    {
+      "section": "psif",
+      "name": "PSIF",
+      "categories": [
+        {
+          "category": "psif",
+          "name": "PSIF <- Incident Data!B25:M25 (row label 'PSIF')",
+          "months": [
+            2,
+            null,
+            null,
+            2,
+            null,
+            null,
+            null,
+            1,
+            null,
+            null,
+            null,
+            null
+          ]
+        }
+      ]
+    }
+  ],
+  "expectedYtd": [
+    {
+      "section": "incident_near_miss_totals",
+      "category": "near_miss",
+      "value": 31,
+      "statedIn": "Incident Data!N6 =SUM(B6:M6)"
+    },
+    {
+      "section": "incident_near_miss_totals",
+      "category": "incident",
+      "value": 41,
+      "statedIn": "Incident Data!N7 =Dash!$O$41 (approved 2026 YTD)"
+    },
+    {
+      "section": "incident_classification",
+      "category": "first_aid",
+      "value": 5,
+      "statedIn": "Incident Data!N11 =SUM(B11:M11)"
+    },
+    {
+      "section": "incident_classification",
+      "category": "recordable_injury",
+      "value": 1,
+      "statedIn": "Incident Data!N12 =SUM(B12:M12)"
+    },
+    {
+      "section": "incident_classification",
+      "category": "hazardous_condition",
+      "value": 4,
+      "statedIn": "Incident Data!N19 =SUM(B19:M19)"
+    },
+    {
+      "section": "incident_classification",
+      "category": "spill_release",
+      "value": 14,
+      "statedIn": "Incident Data!N17 =SUM(B17:M17)"
+    },
+    {
+      "section": "incident_classification",
+      "category": "fire",
+      "value": 1,
+      "statedIn": "Incident Data!N18 =SUM(B18:M18)"
+    },
+    {
+      "section": "incident_classification",
+      "category": "pit_accident",
+      "value": 9,
+      "statedIn": "Incident Data!N20 =SUM(B20:M20)"
+    },
+    {
+      "section": "incident_classification",
+      "category": "property_damage",
+      "value": 6,
+      "statedIn": "Incident Data!N21 =SUM(B21:M21)"
+    },
+    {
+      "section": "incident_classification",
+      "category": "equipment_damage_failure",
+      "value": 8,
+      "statedIn": "Incident Data!N22 =SUM(B22:M22)"
+    },
+    {
+      "section": "incident_classification",
+      "category": "non_work_related",
+      "value": 4,
+      "statedIn": "Incident Data!N23 =SUM(B23:M23)"
+    },
+    {
+      "section": "lopc",
+      "category": "lopc",
+      "value": 14,
+      "statedIn": "Incident Data!N59 =SUM(B59:M59)"
+    },
+    {
+      "section": "pit",
+      "category": "pit",
+      "value": 9,
+      "statedIn": "Incident Data!N129 =SUM(B129:M129)"
+    },
+    {
+      "section": "psif",
+      "category": "psif",
+      "value": 5,
+      "statedIn": "Incident Data!N25 =SUM(B25:M25)"
+    }
+  ]
+}

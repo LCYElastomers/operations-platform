@@ -10,6 +10,36 @@ describe("buildBarOption", () => {
     expect(series.data).toEqual([0, null]);
   });
 
+  it("labels bars only when asked and applies series colors", () => {
+    const plain = buildBarOption(["Jan"], [{ name: "A", values: [0] }]);
+    expect((plain.series as { label: { show: boolean } }[])[0].label.show).toBe(false);
+    const labelled = buildBarOption(["Jan", "Feb"], [{ name: "A", color: "#123456", values: [0, null] }], {
+      showValues: true,
+    });
+    const [series] = labelled.series as {
+      data: (number | null)[];
+      label: { show: boolean };
+      itemStyle: { color?: string };
+    }[];
+    expect(series.label.show).toBe(true);
+    expect(series.data).toEqual([0, null]);
+    expect(series.itemStyle.color).toBe("#123456");
+  });
+
+  it("dims category labels only where no series is reported", () => {
+    const option = buildBarOption(
+      ["Jan", "Feb", "Mar"],
+      [
+        { name: "A", values: [0, null, null] },
+        { name: "B", values: [null, 2, null] },
+      ],
+    );
+    const color = (option.xAxis as { axisLabel: { color: (v: string, i: number) => string } })
+      .axisLabel.color;
+    expect(color("Jan", 0)).toBe(color("Feb", 1));
+    expect(color("Mar", 2)).not.toBe(color("Jan", 0));
+  });
+
   it("puts categories on the y axis for horizontal charts", () => {
     const option = buildBarOption(["First Aid"], [{ name: "YTD", values: [1] }], {
       orientation: "horizontal",

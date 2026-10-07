@@ -7,8 +7,10 @@ import {
   Forklift,
   OctagonAlert,
   Siren,
+  TableProperties,
   TriangleAlert,
 } from "lucide-react";
+import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import { BarChart } from "@/components/common/bar-chart";
@@ -17,7 +19,7 @@ import { FilterBar } from "@/components/common/filter-bar";
 import { MetricCard } from "@/components/common/metric-card";
 import { PageHeader } from "@/components/common/page-header";
 import { StatusBadge } from "@/components/common/status-badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
 
 import { describeSafetyError } from "./api";
@@ -26,7 +28,7 @@ import {
   findMetric,
   incidentsVsNearMisses,
   KPI_METRICS,
-  reportedPeriod,
+  reportedCaption,
   type KpiCategoryCode,
 } from "./dashboard-data";
 import { MONTH_LABELS } from "./grid";
@@ -42,7 +44,9 @@ const KPI_ICONS: Record<KpiCategoryCode, React.ComponentType<{ className?: strin
   psif: OctagonAlert,
 };
 
-const CHART_HEIGHT = 320;
+const CHART_HEIGHT = 360;
+/** Incident and Near Miss lead the page; the rest follow in a smaller row. */
+const HEADLINE_KPIS = 2;
 
 type IncidentDashboardProps = {
   title: string;
@@ -78,8 +82,21 @@ export function IncidentDashboard({ title, description }: IncidentDashboardProps
   );
 
   return (
-    <div className="space-y-6">
-      <PageHeader eyebrow="Safety · Incident & Near Miss" title={title} description={description} />
+    <div className="space-y-5">
+      <PageHeader
+        eyebrow="Safety · Incident & Near Miss"
+        title={title}
+        description={description}
+        actions={
+          <Link
+            href="/safety/incidents/data-entry"
+            className={buttonVariants({ variant: "outline" })}
+          >
+            <TableProperties />
+            Open data entry
+          </Link>
+        }
+      />
 
       <FilterBar
         actions={
@@ -90,46 +107,55 @@ export function IncidentDashboard({ title, description }: IncidentDashboardProps
           ) : undefined
         }
       >
-        <ReportingYearSelect year={year} onChange={setYear} yearsWithData={data?.yearsWithData} />
+        <div className="w-full sm:w-44">
+          <ReportingYearSelect year={year} onChange={setYear} yearsWithData={data?.yearsWithData} />
+        </div>
       </FilterBar>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
-        {KPI_METRICS.map((kpi) => {
-          const metric = findMetric(data, kpi.sectionCode, kpi.categoryCode);
-          return (
-            <MetricCard
-              key={kpi.categoryCode}
-              label={kpi.label}
-              value={metric?.ytd ?? null}
-              caption={metrics.isError ? "Unavailable" : reportedPeriod(metric, year)}
-              icon={KPI_ICONS[kpi.categoryCode]}
-              loading={loading}
-            />
-          );
-        })}
-      </div>
-      <p className="-mt-3 px-1 text-xs text-muted-foreground">
-        YTD values are the sum of reported months. Incident and Near Miss are the reported monthly
-        totals, not sums of Incident Classification; classifications can overlap.
-      </p>
+      <section aria-label="Year to date" className="space-y-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {KPI_METRICS.map((kpi, index) => {
+            const metric = findMetric(data, kpi.sectionCode, kpi.categoryCode);
+            const headline = index < HEADLINE_KPIS;
+            return (
+              <MetricCard
+                key={kpi.categoryCode}
+                label={kpi.label}
+                value={metric?.ytd ?? null}
+                caption={metrics.isError ? "Unavailable" : reportedCaption(metric, year)}
+                icon={KPI_ICONS[kpi.categoryCode]}
+                emphasis={headline}
+                loading={loading}
+                className={headline ? "lg:col-span-2" : undefined}
+              />
+            );
+          })}
+        </div>
+        <p className="px-1 text-xs text-muted-foreground">
+          YTD is the sum of reported months. Incident and Near Miss are reported totals;
+          classifications can overlap and are not added together.
+        </p>
+      </section>
 
       <section aria-label="Charts" className="grid grid-cols-1 gap-5 xl:grid-cols-2">
         <BarChart
           title="Incidents vs Near Misses by Month"
-          description={`Reported monthly totals, ${year}. Months without reported values show no bar.`}
+          description={`Reported monthly totals, ${year}. No bar means the month was not reported.`}
           categories={MONTH_LABELS}
           series={metrics.isError ? [] : monthlySeries}
           height={CHART_HEIGHT}
+          showValues
           loading={loading}
           emptyState={metrics.isError ? errorState : undefined}
         />
         <BarChart
-          title="Incident Classification YTD Breakdown"
-          description={`Year-to-date count per classification, ${year}. One incident may have more than one classification.`}
+          title="Incident Classification, Year to Date"
+          description={`Count per classification, ${year}. One incident may have more than one classification.`}
           categories={breakdown.categories}
           series={metrics.isError ? [] : breakdown.series}
           orientation="horizontal"
           height={CHART_HEIGHT}
+          showValues
           loading={loading}
           emptyState={metrics.isError ? errorState : undefined}
         />

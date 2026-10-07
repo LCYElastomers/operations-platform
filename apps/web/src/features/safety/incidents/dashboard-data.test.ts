@@ -6,6 +6,7 @@ import {
   findMetric,
   incidentsVsNearMisses,
   KPI_METRICS,
+  reportedCaption,
   reportedPeriod,
 } from "./dashboard-data";
 
@@ -73,6 +74,18 @@ describe("dashboard data", () => {
     expect(reportedPeriod(undefined, 2026)).toBe("No months reported for 2026");
   });
 
+  it("counts reported months, including reported zeros but not gaps", () => {
+    expect(reportedCaption(row(1, "x", months({ 1: 0, 3: 2 }), 2), 2026)).toBe(
+      "Jan–Mar 2026 · 2 months reported",
+    );
+    expect(reportedCaption(row(1, "x", months({ 4: 1 }), 1), 2026)).toBe(
+      "Apr 2026 · 1 month reported",
+    );
+    expect(reportedCaption(row(1, "x", months({}), null), 2026)).toBe(
+      "No months reported for 2026",
+    );
+  });
+
   it("charts the explicit Incident and Near Miss monthly values", () => {
     const [incidents, nearMisses] = incidentsVsNearMisses(metrics);
     expect(incidents.values.slice(0, 3)).toEqual([2, 0, null]);
@@ -85,7 +98,7 @@ describe("dashboard data", () => {
   });
 
   it("breaks down incident classification YTD, keeping null distinct from zero", () => {
-    expect(classificationBreakdown(metrics)).toEqual({
+    expect(classificationBreakdown(metrics)).toMatchObject({
       categories: ["First Aid", "Fire", "Regulatory"],
       series: [{ name: "YTD", values: [2, 1, null] }],
     });

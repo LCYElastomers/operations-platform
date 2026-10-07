@@ -62,7 +62,7 @@ export const navigation: NavSection[] = [
         label: "Safety",
         icon: HardHat,
         status: "in-development",
-        description: "Incidents, observations, and safety performance tracking.",
+        description: "Departmental safety reporting, starting with Incident & Near Miss.",
         children: [
           { id: "safety-overview", label: "Overview", href: "/safety", exact: true },
           {

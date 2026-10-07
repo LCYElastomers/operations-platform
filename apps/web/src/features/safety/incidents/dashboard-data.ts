@@ -45,12 +45,28 @@ export function reportedPeriod(metric: MetricCategoryRow | undefined, year: numb
   return first === last ? `${first} ${year}` : `${first}–${last} ${year}`;
 }
 
+/** e.g. "Jan–Sep 2026 · 7 months reported"; months inside the range may be unreported. */
+export function reportedCaption(metric: MetricCategoryRow | undefined, year: number): string {
+  const count = (metric?.values ?? []).filter((value) => value !== null).length;
+  if (count === 0) return reportedPeriod(metric, year);
+  return `${reportedPeriod(metric, year)} · ${count} ${count === 1 ? "month" : "months"} reported`;
+}
+
+// Categorical, not status colors: no good/bad meaning is implied.
+const INCIDENT_COLOR = "#2563eb";
+const NEAR_MISS_COLOR = "#0d9488";
+
 export function incidentsVsNearMisses(metrics: MonthlyMetricsResponse | undefined): BarSeries[] {
   const unreported = MONTH_LABELS.map(() => null);
   return [
-    { name: "Incidents", values: findMetric(metrics, TOTALS, "incident")?.values ?? unreported },
+    {
+      name: "Incidents",
+      color: INCIDENT_COLOR,
+      values: findMetric(metrics, TOTALS, "incident")?.values ?? unreported,
+    },
     {
       name: "Near Misses",
+      color: NEAR_MISS_COLOR,
       values: findMetric(metrics, TOTALS, "near_miss")?.values ?? unreported,
     },
   ];
@@ -64,6 +80,8 @@ export function classificationBreakdown(metrics: MonthlyMetricsResponse | undefi
     metrics?.sections.find((section) => section.code === CLASSIFICATION)?.categories ?? [];
   return {
     categories: categories.map((category) => category.name),
-    series: [{ name: "YTD", values: categories.map((category) => category.ytd) }],
+    series: [
+      { name: "YTD", color: INCIDENT_COLOR, values: categories.map((category) => category.ytd) },
+    ],
   };
 }

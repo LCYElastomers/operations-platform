@@ -1,6 +1,14 @@
 "use client";
 
-import { AlertTriangle, CircleCheck, RefreshCw, Save, Undo2 } from "lucide-react";
+import {
+  AlertTriangle,
+  CircleCheck,
+  LayoutDashboard,
+  RefreshCw,
+  Save,
+  Undo2,
+} from "lucide-react";
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { EmptyState } from "@/components/common/empty-state";
@@ -8,8 +16,9 @@ import { FilterBar } from "@/components/common/filter-bar";
 import { MonthlyGrid, type MonthlyGridRow } from "@/components/common/monthly-grid";
 import { PageHeader } from "@/components/common/page-header";
 import { StatusBadge } from "@/components/common/status-badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
+import { cn } from "@/lib/utils";
 
 import { describeSafetyError, editConflicts, type MetricSectionBlock } from "./api";
 import {
@@ -42,6 +51,47 @@ function sectionRows(section: MetricSectionBlock, draft: Draft): MonthlyGridRow[
     cells: states[index].map(({ text, dirty, invalid }) => ({ text, dirty, invalid })),
     total: total(states[index].map((cell) => cell.value)),
   }));
+}
+
+function GridKey({ editable }: { editable: boolean }) {
+  const swatch = "inline-grid h-5 min-w-7 place-items-center rounded-sm border px-1 tabular-nums";
+  return (
+    <div className="flex flex-wrap items-center gap-x-5 gap-y-2 px-1 pt-1 text-xs text-muted-foreground">
+      <span className="flex items-center gap-1.5">
+        <span aria-hidden className={cn(swatch, "bg-card text-muted-foreground/60")}>
+          —
+        </span>
+        Not reported
+      </span>
+      <span className="flex items-center gap-1.5">
+        <span aria-hidden className={cn(swatch, "bg-card font-medium text-foreground")}>
+          0
+        </span>
+        Reported zero
+      </span>
+      {editable && (
+        <span className="flex items-center gap-1.5">
+          <span aria-hidden className={cn(swatch, "border-transparent bg-warning/20")} />
+          Unsaved edit
+        </span>
+      )}
+      <span className="flex items-center gap-1.5">
+        <span aria-hidden className={cn(swatch, "bg-muted font-semibold text-foreground")}>
+          Σ
+        </span>
+        YTD is calculated from reported months
+      </span>
+      <span className="basis-full">
+        Incident and Near Miss are entered as reported totals, not summed from classifications.
+        {editable && (
+          <span className="hidden lg:inline">
+            {" "}
+            Enter or arrow keys move between cells; Esc restores a cell.
+          </span>
+        )}
+      </span>
+    </div>
+  );
 }
 
 type IncidentDataEntryProps = {
@@ -127,78 +177,95 @@ export function IncidentDataEntry({ title, description }: IncidentDataEntryProps
   const accessDenied =
     metrics.error instanceof ApiError && (metrics.error.status === 401 || metrics.error.status === 403);
 
+  const changeCount = summary.changes.length;
+
+  const leaveFor = (event: React.MouseEvent) => {
+    if (dirty && !window.confirm(`Leave without saving your changes for ${year}?`)) {
+      event.preventDefault();
+    }
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <PageHeader
         eyebrow="Safety · Incident & Near Miss"
         title={title}
         description={description}
-        status={
-          save.isPending ? (
-            <StatusBadge tone="pending" pulse>
-              Saving
-            </StatusBadge>
-          ) : dirty ? (
-            <StatusBadge tone="warning">Unsaved changes</StatusBadge>
-          ) : data && !editable ? (
-            <StatusBadge>Read only</StatusBadge>
-          ) : undefined
-        }
         actions={
-          editable && (
-            <>
-              <Button variant="outline" onClick={discard} disabled={!dirty || save.isPending}>
-                <Undo2 />
-                Discard
-              </Button>
-              <Button
-                onClick={submit}
-                disabled={summary.changes.length === 0 || summary.invalidCount > 0 || save.isPending}
-              >
-                <Save />
-                {summary.changes.length > 0
-                  ? `Save ${summary.changes.length.toLocaleString()} ${summary.changes.length === 1 ? "change" : "changes"}`
-                  : "Save"}
-              </Button>
-            </>
-          )
+          <Link
+            href="/safety/incidents/dashboard"
+            onClick={leaveFor}
+            className={buttonVariants({ variant: "outline" })}
+          >
+            <LayoutDashboard />
+            View dashboard
+          </Link>
         }
       />
 
-      <div className="space-y-2">
+      <div className="sticky top-14 z-[15] -mx-1 -my-1 bg-background px-1 py-1">
         <FilterBar
+          className="shadow-sm"
           actions={
-            metrics.isFetching && !metrics.isPending ? (
-              <StatusBadge tone="pending" pulse>
-                Updating
-              </StatusBadge>
-            ) : undefined
+            <>
+              <div aria-live="polite" className="flex items-center">
+                {save.isPending ? (
+                  <StatusBadge tone="pending" pulse>
+                    Saving
+                  </StatusBadge>
+                ) : dirty ? (
+                  <StatusBadge tone="warning">
+                    {changeCount > 0
+                      ? `${changeCount.toLocaleString()} unsaved ${changeCount === 1 ? "change" : "changes"}`
+                      : "Unsaved changes"}
+                  </StatusBadge>
+                ) : notice ? (
+                  <p role="status" className="flex items-center gap-1.5 text-sm text-success">
+                    <CircleCheck className="size-4 shrink-0" />
+                    {notice}
+                  </p>
+                ) : metrics.isFetching && !metrics.isPending ? (
+                  <StatusBadge tone="pending" pulse>
+                    Updating
+                  </StatusBadge>
+                ) : data && !editable ? (
+                  <StatusBadge>Read only</StatusBadge>
+                ) : data ? (
+                  <span className="text-sm text-muted-foreground">All changes saved</span>
+                ) : null}
+              </div>
+              {editable && (
+                <>
+                  <Button variant="outline" onClick={discard} disabled={!dirty || save.isPending}>
+                    <Undo2 />
+                    Discard
+                  </Button>
+                  <Button
+                    onClick={submit}
+                    disabled={changeCount === 0 || summary.invalidCount > 0 || save.isPending}
+                  >
+                    <Save />
+                    Save changes
+                  </Button>
+                </>
+              )}
+            </>
           }
         >
-          <ReportingYearSelect
-            year={year}
-            onChange={changeYear}
-            yearsWithData={data?.yearsWithData}
-            disabled={save.isPending}
-          />
+          <div className="w-full sm:w-44">
+            <ReportingYearSelect
+              year={year}
+              onChange={changeYear}
+              yearsWithData={data?.yearsWithData}
+              disabled={save.isPending}
+            />
+          </div>
         </FilterBar>
-        <p className="px-1 text-xs text-muted-foreground">
-          Blank cells are unreported. Enter 0 for a month with no events. YTD is calculated from
-          the monthly values and cannot be edited. Enter Incident and Near Miss totals directly;
-          they are not calculated from Incident Classification, which can overlap.
-        </p>
       </div>
 
-      <div aria-live="polite" className="space-y-2">
-        {notice && (
-          <div
-            role="status"
-            className="flex items-center gap-2 rounded-lg border border-success/30 bg-success/10 px-4 py-3 text-sm text-success"
-          >
-            <CircleCheck className="size-4 shrink-0" />
-            {notice}
-          </div>
-        )}
+      <GridKey editable={editable} />
+
+      <div aria-live="polite" className="space-y-2 empty:hidden">
         {summary.invalidCount > 0 && (
           <p role="alert" className="px-1 text-sm text-destructive">
             {summary.invalidCount === 1 ? "1 cell contains" : `${summary.invalidCount} cells contain`}{" "}

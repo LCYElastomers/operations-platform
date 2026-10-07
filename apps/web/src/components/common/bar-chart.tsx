@@ -29,9 +29,13 @@ type ChartOption = echarts.ComposeOption<
 export type BarSeries = {
   name: string;
   values: (number | null)[];
+  /** Defaults to the shared palette by position. */
+  color?: string;
 };
 
 const AXIS_LABEL_COLOR = "#64748b";
+/** Categories with no reported value in any series. */
+const UNREPORTED_LABEL_COLOR = "#b6c0cd";
 const AXIS_LINE_COLOR = "#cbd5e1";
 const GRID_COLOR = "#e2e8f0";
 
@@ -45,6 +49,8 @@ type BarChartProps = {
   orientation?: "vertical" | "horizontal";
   /** Height of the plot area in pixels. */
   height?: number;
+  /** Print each value on its bar. A reported 0 is labelled; an unreported value draws nothing. */
+  showValues?: boolean;
   emptyState?: React.ReactNode;
   loading?: boolean;
   className?: string;
@@ -57,6 +63,7 @@ export function BarChart({
   series,
   orientation = "vertical",
   height = 280,
+  showValues = false,
   emptyState,
   loading = false,
   className,
@@ -83,6 +90,7 @@ export function BarChart({
           series={series}
           orientation={orientation}
           height={height}
+          showValues={showValues}
         />
       ) : (
         <div className="flex flex-1 items-center justify-center">
@@ -106,11 +114,13 @@ function BarChartBody({
   series,
   orientation,
   height,
+  showValues,
 }: {
   categories: string[];
   series: BarSeries[];
   orientation: "vertical" | "horizontal";
   height: number;
+  showValues: boolean;
 }) {
   const [hidden, setHidden] = useState<ReadonlySet<string>>(() => new Set());
   const containerRef = useRef<HTMLDivElement>(null);
@@ -140,10 +150,11 @@ function BarChartBody({
   }, []);
 
   useEffect(() => {
-    chartRef.current?.setOption(buildBarOption(categories, series, { hidden, orientation }), {
-      notMerge: true,
-    });
-  }, [categories, series, hidden, orientation]);
+    chartRef.current?.setOption(
+      buildBarOption(categories, series, { hidden, orientation, showValues }),
+      { notMerge: true },
+    );
+  }, [categories, series, hidden, orientation, showValues]);
 
   return (
     <div className="flex flex-1 flex-col gap-2 px-4 pt-3 pb-2">
@@ -172,8 +183,16 @@ export function buildBarOption(
   {
     hidden = new Set(),
     orientation = "vertical",
-  }: { hidden?: ReadonlySet<string>; orientation?: "vertical" | "horizontal" } = {},
+    showValues = false,
+  }: {
+    hidden?: ReadonlySet<string>;
+    orientation?: "vertical" | "horizontal";
+    showValues?: boolean;
+  } = {},
 ): ChartOption {
+  const unreported = categories.map((_, index) =>
+    series.every((s) => s.values[index] === null || s.values[index] === undefined),
+  );
   const categoryAxis = {
     type: "category" as const,
     data: categories,
@@ -181,7 +200,11 @@ export function buildBarOption(
     inverse: orientation === "horizontal",
     axisLine: { lineStyle: { color: AXIS_LINE_COLOR } },
     axisTick: { show: false },
-    axisLabel: { color: AXIS_LABEL_COLOR, fontSize: 12 },
+    axisLabel: {
+      fontSize: 12,
+      color: (_value?: string | number, index?: number) =>
+        index !== undefined && unreported[index] ? UNREPORTED_LABEL_COLOR : AXIS_LABEL_COLOR,
+    },
   };
   const valueAxis = {
     type: "value" as const,
@@ -194,7 +217,14 @@ export function buildBarOption(
   return {
     color: PALETTE,
     animation: false,
-    grid: { left: 4, right: 20, top: 12, bottom: 4, containLabel: true },
+    // Extra room on the value side so labels on the longest bar are not clipped.
+    grid: {
+      left: 4,
+      right: showValues && orientation === "horizontal" ? 32 : 20,
+      top: showValues && orientation === "vertical" ? 22 : 12,
+      bottom: 4,
+      containLabel: true,
+    },
     legend: {
       show: false,
       data: series.map((s) => s.name),
@@ -230,7 +260,17 @@ export function buildBarOption(
       // null stays null: ECharts draws no bar, distinct from a zero-height bar.
       data: s.values,
       barMaxWidth: 28,
-      itemStyle: { borderRadius: orientation === "horizontal" ? [0, 3, 3, 0] : [3, 3, 0, 0] },
+      itemStyle: {
+        borderRadius: orientation === "horizontal" ? [0, 3, 3, 0] : [3, 3, 0, 0],
+        ...(s.color && { color: s.color }),
+      },
+      label: {
+        show: showValues,
+        position: orientation === "horizontal" ? "right" : "top",
+        color: "#334155",
+        fontSize: 11,
+        fontWeight: 600,
+      },
     })),
   };
 }
