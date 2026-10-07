@@ -31,7 +31,7 @@ import {
   reportedCaption,
   type KpiCategoryCode,
 } from "./dashboard-data";
-import { MONTH_LABELS } from "./grid";
+import { defaultReportingYear, MONTH_LABELS } from "./grid";
 import { ReportingYearSelect } from "./reporting-year-select";
 import { useIncidentMetrics } from "./use-incident-metrics";
 
@@ -54,7 +54,7 @@ type IncidentDashboardProps = {
 };
 
 export function IncidentDashboard({ title, description }: IncidentDashboardProps) {
-  const [year, setYear] = useState(() => new Date().getFullYear());
+  const [year, setYear] = useState(() => defaultReportingYear(new Date().getFullYear()));
   const metrics = useIncidentMetrics(year);
   const data = metrics.data;
   const loading = metrics.isPending && !metrics.isError;
@@ -113,7 +113,7 @@ export function IncidentDashboard({ title, description }: IncidentDashboardProps
       </FilterBar>
 
       <section aria-label="Year to date" className="space-y-2">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {KPI_METRICS.map((kpi, index) => {
             const metric = findMetric(data, kpi.sectionCode, kpi.categoryCode);
             const headline = index < HEADLINE_KPIS;
@@ -126,7 +126,7 @@ export function IncidentDashboard({ title, description }: IncidentDashboardProps
                 icon={KPI_ICONS[kpi.categoryCode]}
                 emphasis={headline}
                 loading={loading}
-                className={headline ? "lg:col-span-2" : undefined}
+                className={headline ? "xl:col-span-2" : undefined}
               />
             );
           })}
@@ -137,7 +137,7 @@ export function IncidentDashboard({ title, description }: IncidentDashboardProps
         </p>
       </section>
 
-      <section aria-label="Charts" className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+      <section aria-label="Charts" className="grid grid-cols-1 gap-5 min-[1440px]:grid-cols-2">
         <BarChart
           title="Incidents vs Near Misses by Month"
           description={`Reported monthly totals, ${year}. No bar means the month was not reported.`}

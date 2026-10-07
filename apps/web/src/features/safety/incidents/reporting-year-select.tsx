@@ -27,6 +27,7 @@ export function ReportingYearSelect({
       value={String(year)}
       onChange={(event) => onChange(Number(event.target.value))}
       disabled={disabled}
+      className="pointer-coarse:h-11"
     />
   );
 }

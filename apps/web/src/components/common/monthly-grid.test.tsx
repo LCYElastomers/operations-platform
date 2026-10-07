@@ -49,6 +49,27 @@ describe("MonthlyGrid", () => {
   });
 
   it("labels the block with its title", () => {
-    expect(render()).toContain(">Incident Classification</h2>");
+    const html = render();
+    const labelledBy = html.match(/<section aria-labelledby="([^"]+)"/)?.[1];
+    expect(labelledBy).toBeTruthy();
+    expect(html).toContain(`id="${labelledBy}" class="block px-4 py-2.5">Incident Classification<`);
+    expect(html).not.toContain("aria-expanded");
+  });
+
+  it("is a disclosure when open is controlled", () => {
+    const html = render({ open: true, onOpenChange: () => {}, summary: "YTD 14" });
+    expect(html).toContain('aria-expanded="true"');
+    expect(html.match(/<input/g)).toHaveLength(6);
+    expect(html).not.toContain("YTD 14");
+  });
+
+  it("hides the grid and shows the summary when collapsed", () => {
+    const html = render({ open: false, onOpenChange: () => {}, summary: "YTD 14", status: "2 unsaved" });
+    expect(html).toContain('aria-expanded="false"');
+    const controls = html.match(/aria-controls="([^"]+)"/)?.[1];
+    expect(html).toContain(`id="${controls}" hidden=""`);
+    expect(html).not.toContain("<input");
+    expect(html).toContain("YTD 14");
+    expect(html).toContain("2 unsaved");
   });
 });

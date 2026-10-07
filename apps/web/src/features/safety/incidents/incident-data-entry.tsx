@@ -12,7 +12,6 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { EmptyState } from "@/components/common/empty-state";
-import { FilterBar } from "@/components/common/filter-bar";
 import { MonthlyGrid, type MonthlyGridRow } from "@/components/common/monthly-grid";
 import { PageHeader } from "@/components/common/page-header";
 import { StatusBadge } from "@/components/common/status-badge";
@@ -23,6 +22,7 @@ import { cn } from "@/lib/utils";
 import { describeSafetyError, editConflicts, type MetricSectionBlock } from "./api";
 import {
   cellKey,
+  defaultReportingYear,
   draftSectionValues,
   MONTH_LABELS,
   parseCount,
@@ -51,6 +51,91 @@ function sectionRows(section: MetricSectionBlock, draft: Draft): MonthlyGridRow[
     cells: states[index].map(({ text, dirty, invalid }) => ({ text, dirty, invalid })),
     total: total(states[index].map((cell) => cell.value)),
   }));
+}
+
+/**
+ * Collapsed-header orientation: each explicit category's own YTD. Sections with
+ * many categories get none, since adding overlapping classifications together
+ * would be misleading.
+ */
+const MAX_SUMMARY_CATEGORIES = 2;
+
+function sectionSummary(rows: MonthlyGridRow[]): string | null {
+  if (rows.length === 0 || rows.length > MAX_SUMMARY_CATEGORIES) return null;
+  const format = (value: number | null) => (value === null ? "—" : value.toLocaleString());
+  if (rows.length === 1) return `YTD ${format(rows[0].total)}`;
+  return `YTD ${rows.map((row) => `${row.label} ${format(row.total)}`).join(" · ")}`;
+}
+
+function sectionStatus(rows: MonthlyGridRow[]) {
+  const cells = rows.flatMap((row) => row.cells);
+  const invalid = cells.filter((cell) => cell.invalid).length;
+  const unsaved = cells.filter((cell) => cell.dirty && !cell.invalid).length;
+  if (invalid > 0) return <StatusBadge tone="danger">{invalid} invalid</StatusBadge>;
+  if (unsaved > 0) return <StatusBadge tone="warning">{unsaved} unsaved</StatusBadge>;
+  return null;
+}
+
+/** Shown expanded on small or touch screens; other sections start collapsed there. */
+const PRIMARY_SECTION_CODE = "incident_near_miss_totals";
+const COMPACT_LAYOUT_QUERY = "(pointer: coarse), (max-width: 1279px)";
+const OPEN_SECTIONS_KEY = "safety.incidents.data-entry.open-sections";
+
+function readOpenSections(): Record<string, boolean> {
+  try {
+    const parsed: unknown = JSON.parse(window.sessionStorage.getItem(OPEN_SECTIONS_KEY) ?? "{}");
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, boolean>) : {};
+  } catch {
+    return {};
+  }
+}
+
+type SectionGridsProps = {
+  sections: MetricSectionBlock[];
+  draft: Draft;
+  editable: boolean;
+  onCellChange: (rowId: string, column: number, text: string) => void;
+  onCellRevert: (rowId: string, column: number) => void;
+};
+
+/** Mounted only once data has loaded in the browser, so window is available. */
+function SectionGrids({ sections, draft, editable, onCellChange, onCellRevert }: SectionGridsProps) {
+  const [compact] = useState(() => window.matchMedia(COMPACT_LAYOUT_QUERY).matches);
+  const [chosen, setChosen] = useState(readOpenSections);
+
+  const isOpen = (code: string) => chosen[code] ?? (!compact || code === PRIMARY_SECTION_CODE);
+  const setOpen = (code: string, open: boolean) => {
+    const next = { ...chosen, [code]: open };
+    setChosen(next);
+    try {
+      window.sessionStorage.setItem(OPEN_SECTIONS_KEY, JSON.stringify(next));
+    } catch {
+      // Storage can be unavailable (e.g. private browsing); the choice still applies on this page.
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {sections.map((section) => {
+        const rows = sectionRows(section, draft);
+        return (
+          <MonthlyGrid
+            key={section.id}
+            title={section.name}
+            columns={MONTH_LABELS}
+            rows={rows}
+            editable={editable}
+            onCellChange={onCellChange}
+            onCellRevert={onCellRevert}
+            open={isOpen(section.code)}
+            onOpenChange={(open) => setOpen(section.code, open)}
+            summary={sectionSummary(rows)}
+            status={sectionStatus(rows)}
+          />
+        );
+      })}
+    </div>
+  );
 }
 
 function GridKey({ editable }: { editable: boolean }) {
@@ -100,7 +185,7 @@ type IncidentDataEntryProps = {
 };
 
 export function IncidentDataEntry({ title, description }: IncidentDataEntryProps) {
-  const [year, setYear] = useState(() => new Date().getFullYear());
+  const [year, setYear] = useState(() => defaultReportingYear(new Date().getFullYear()));
   const [draft, setDraft] = useState<Draft>({});
   const [notice, setNotice] = useState<string | null>(null);
   const metrics = useIncidentMetrics(year);
@@ -204,55 +289,12 @@ export function IncidentDataEntry({ title, description }: IncidentDataEntryProps
       />
 
       <div className="sticky top-14 z-[15] -mx-1 -my-1 bg-background px-1 py-1">
-        <FilterBar
-          className="shadow-sm"
-          actions={
-            <>
-              <div aria-live="polite" className="flex items-center">
-                {save.isPending ? (
-                  <StatusBadge tone="pending" pulse>
-                    Saving
-                  </StatusBadge>
-                ) : dirty ? (
-                  <StatusBadge tone="warning">
-                    {changeCount > 0
-                      ? `${changeCount.toLocaleString()} unsaved ${changeCount === 1 ? "change" : "changes"}`
-                      : "Unsaved changes"}
-                  </StatusBadge>
-                ) : notice ? (
-                  <p role="status" className="flex items-center gap-1.5 text-sm text-success">
-                    <CircleCheck className="size-4 shrink-0" />
-                    {notice}
-                  </p>
-                ) : metrics.isFetching && !metrics.isPending ? (
-                  <StatusBadge tone="pending" pulse>
-                    Updating
-                  </StatusBadge>
-                ) : data && !editable ? (
-                  <StatusBadge>Read only</StatusBadge>
-                ) : data ? (
-                  <span className="text-sm text-muted-foreground">All changes saved</span>
-                ) : null}
-              </div>
-              {editable && (
-                <>
-                  <Button variant="outline" onClick={discard} disabled={!dirty || save.isPending}>
-                    <Undo2 />
-                    Discard
-                  </Button>
-                  <Button
-                    onClick={submit}
-                    disabled={changeCount === 0 || summary.invalidCount > 0 || save.isPending}
-                  >
-                    <Save />
-                    Save changes
-                  </Button>
-                </>
-              )}
-            </>
-          }
+        <div
+          role="group"
+          aria-label="Reporting year and saving"
+          className="flex flex-wrap items-end gap-x-3 gap-y-2 rounded-lg border bg-card p-2.5 shadow-sm sm:flex-nowrap"
         >
-          <div className="w-full sm:w-44">
+          <div className="w-32 shrink-0 sm:w-40">
             <ReportingYearSelect
               year={year}
               onChange={changeYear}
@@ -260,7 +302,60 @@ export function IncidentDataEntry({ title, description }: IncidentDataEntryProps
               disabled={save.isPending}
             />
           </div>
-        </FilterBar>
+          <div
+            aria-live="polite"
+            className="order-last flex min-w-0 basis-full items-center empty:hidden sm:order-none sm:basis-auto sm:flex-1 sm:justify-end sm:self-center"
+          >
+            {save.isPending ? (
+              <StatusBadge tone="pending" pulse>
+                Saving
+              </StatusBadge>
+            ) : dirty ? (
+              <StatusBadge tone="warning" className="text-sm">
+                {changeCount > 0
+                  ? `${changeCount.toLocaleString()} unsaved ${changeCount === 1 ? "change" : "changes"}`
+                  : "Unsaved changes"}
+              </StatusBadge>
+            ) : notice ? (
+              <p role="status" className="flex items-center gap-1.5 text-sm text-success">
+                <CircleCheck className="size-4 shrink-0" />
+                {notice}
+              </p>
+            ) : metrics.isFetching && !metrics.isPending ? (
+              <StatusBadge tone="pending" pulse>
+                Updating
+              </StatusBadge>
+            ) : data && !editable ? (
+              <StatusBadge>Read only</StatusBadge>
+            ) : data ? (
+              <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                <CircleCheck className="size-4 shrink-0" />
+                All changes saved
+              </span>
+            ) : null}
+          </div>
+          {editable && (
+            <div className="ml-auto flex shrink-0 items-center gap-2">
+              <Button
+                variant="ghost"
+                onClick={discard}
+                disabled={!dirty || save.isPending}
+                className="pointer-coarse:h-11 max-sm:pointer-coarse:w-11"
+              >
+                <Undo2 />
+                <span className="max-sm:sr-only">Discard</span>
+              </Button>
+              <Button
+                onClick={submit}
+                disabled={changeCount === 0 || summary.invalidCount > 0 || save.isPending}
+                className="pointer-coarse:h-11 pointer-coarse:px-5"
+              >
+                <Save />
+                Save changes
+              </Button>
+            </div>
+          )}
+        </div>
       </div>
 
       <GridKey editable={editable} />
@@ -323,19 +418,13 @@ export function IncidentDataEntry({ title, description }: IncidentDataEntryProps
           description="Run the database migrations to create the Safety section and category definitions."
         />
       ) : (
-        <div className="space-y-5">
-          {data.sections.map((section) => (
-            <MonthlyGrid
-              key={section.id}
-              title={section.name}
-              columns={MONTH_LABELS}
-              rows={sectionRows(section, draft)}
-              editable={editable}
-              onCellChange={setCell}
-              onCellRevert={revertCell}
-            />
-          ))}
-        </div>
+        <SectionGrids
+          sections={data.sections}
+          draft={draft}
+          editable={editable}
+          onCellChange={setCell}
+          onCellRevert={revertCell}
+        />
       )}
     </div>
   );

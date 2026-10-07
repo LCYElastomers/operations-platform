@@ -7,6 +7,8 @@ import {
   cellKey,
   cellState,
   parseCount,
+  defaultReportingYear,
+  FIRST_REPORTING_YEAR,
   reportingYearOptions,
   summarizeDraft,
   total,
@@ -100,8 +102,25 @@ describe("summarizeDraft", () => {
 });
 
 describe("reportingYearOptions", () => {
+  it("starts at the first reporting year", () => {
+    expect(FIRST_REPORTING_YEAR).toBe(2026);
+    expect(reportingYearOptions(2026, [2025, 2026])).toEqual([2026]);
+  });
+
   it("offers recent years and years with data, newest first, without duplicates", () => {
-    expect(reportingYearOptions(2026, [2019, 2026])).toEqual([2026, 2025, 2024, 2023, 2022, 2019]);
+    expect(reportingYearOptions(2026, [2019, 2026], 2018)).toEqual([
+      2026, 2025, 2024, 2023, 2022, 2019,
+    ]);
+  });
+
+  it("exposes later years as they arrive", () => {
+    expect(reportingYearOptions(2028, [2026])).toEqual([2028, 2027, 2026]);
+    expect(reportingYearOptions(2026, [2027])).toEqual([2027, 2026]);
+  });
+
+  it("defaults to the current year, but never before the first reporting year", () => {
+    expect(defaultReportingYear(2025)).toBe(2026);
+    expect(defaultReportingYear(2029)).toBe(2029);
   });
 });
 

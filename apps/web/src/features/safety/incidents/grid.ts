@@ -95,9 +95,22 @@ export function summarizeDraft(metrics: MonthlyMetricsResponse, draft: Draft): D
   return { changes, invalidCount };
 }
 
-/** Recent years plus any year that already has data, newest first. */
-export function reportingYearOptions(currentYear: number, yearsWithData: number[]): number[] {
+/** Incident & Near Miss reporting starts with this year; earlier years are not offered. */
+export const FIRST_REPORTING_YEAR = 2026;
+const RECENT_YEARS = 5;
+
+export function defaultReportingYear(currentYear: number): number {
+  return Math.max(currentYear, FIRST_REPORTING_YEAR);
+}
+
+/** Recent years plus any year that already has data, newest first, never before the first reporting year. */
+export function reportingYearOptions(
+  currentYear: number,
+  yearsWithData: number[],
+  firstYear = FIRST_REPORTING_YEAR,
+): number[] {
   const years = new Set(yearsWithData);
-  for (let year = currentYear; year > currentYear - 5; year -= 1) years.add(year);
-  return [...years].sort((a, b) => b - a);
+  const latest = Math.max(currentYear, firstYear);
+  for (let year = latest; year > latest - RECENT_YEARS; year -= 1) years.add(year);
+  return [...years].filter((year) => year >= firstYear).sort((a, b) => b - a);
 }
