@@ -1,0 +1,50 @@
+{
+  "source": "docs/2026 LCY EHS Dash Board.xlsx (SHA-256 0B94C09BEDF3C343D3250496780A2D3B66671B55741ABA0391FDE81BE8B51C10), sheets 'Rates' and 'TRIR EXP.'",
+  "notes": [
+    "Load with: python -m app.safety.performance.legacy_import check|plan|apply <this file>. Not applied by any migration.",
+    "Monthly hours are Rates!M (Monthly Hours Worked (Total)), typed values imported as stated. Rates!K (Hourly) and Rates!L (Salary) are blank for 2025 and 2026, so no breakdown is imported.",
+    "Rates!M17 (January 2025) = 15000 is a typed workbook value and is imported as stated.",
+    "The workbook does not state which workers Rates!M covers. It is stored as the site's total worked hours as typed; there is no contractor-hours field.",
+    "Closure is never inferred from hours being present: each closed month states its closedBasis. 2025 months close on the typed 2025 annual hours; closing a legacy month confirms the hours only, and blank 2025 counts in safety_performance_legacy_2025_lcy_ehs.mapping.json stay unconfirmed. 2026 months close as complete Incident & Near Miss months; confirm with the Safety owner before apply.",
+    "September 2026 hours (Rates!M37) are blank; September 2026 is not imported, stays Not Reported and open, and is excluded from every rate window.",
+    "CONFLICT (for separate Incident & Near Miss review, not changed here): Rates!E36 records 1 Lost Time Injury for August 2026, which Incident & Near Miss does not record. Safety Performance does not use Lost Time Injury and reads Incident & Near Miss as authoritative.",
+    "Annual rows are TRIR EXP. row 8 (Recordable) and row 15 (Man Hours) for years without monthly hours. Their stated TRIR (row 18) matches recordables x 200000 / hours. The BLS industry averages (row 19) are not imported."
+  ],
+  "hours": [
+    { "year": 2025, "month": 1, "totalHours": 15000, "monthClosed": true, "statedIn": "Rates!M17", "closedBasis": "2025 hours final: TRIR EXP.!L15 (typed) states 191751 hours for 2025, equal to Rates!M17:M28" },
+    { "year": 2025, "month": 2, "totalHours": 15941, "monthClosed": true, "statedIn": "Rates!M18", "closedBasis": "2025 hours final: TRIR EXP.!L15 (typed) states 191751 hours for 2025, equal to Rates!M17:M28" },
+    { "year": 2025, "month": 3, "totalHours": 15785, "monthClosed": true, "statedIn": "Rates!M19", "closedBasis": "2025 hours final: TRIR EXP.!L15 (typed) states 191751 hours for 2025, equal to Rates!M17:M28" },
+    { "year": 2025, "month": 4, "totalHours": 16858, "monthClosed": true, "statedIn": "Rates!M20", "closedBasis": "2025 hours final: TRIR EXP.!L15 (typed) states 191751 hours for 2025, equal to Rates!M17:M28" },
+    { "year": 2025, "month": 5, "totalHours": 17091, "monthClosed": true, "statedIn": "Rates!M21", "closedBasis": "2025 hours final: TRIR EXP.!L15 (typed) states 191751 hours for 2025, equal to Rates!M17:M28" },
+    { "year": 2025, "month": 6, "totalHours": 15833, "monthClosed": true, "statedIn": "Rates!M22", "closedBasis": "2025 hours final: TRIR EXP.!L15 (typed) states 191751 hours for 2025, equal to Rates!M17:M28" },
+    { "year": 2025, "month": 7, "totalHours": 14706, "monthClosed": true, "statedIn": "Rates!M23", "closedBasis": "2025 hours final: TRIR EXP.!L15 (typed) states 191751 hours for 2025, equal to Rates!M17:M28" },
+    { "year": 2025, "month": 8, "totalHours": 15097, "monthClosed": true, "statedIn": "Rates!M24", "closedBasis": "2025 hours final: TRIR EXP.!L15 (typed) states 191751 hours for 2025, equal to Rates!M17:M28" },
+    { "year": 2025, "month": 9, "totalHours": 16918, "monthClosed": true, "statedIn": "Rates!M25", "closedBasis": "2025 hours final: TRIR EXP.!L15 (typed) states 191751 hours for 2025, equal to Rates!M17:M28" },
+    { "year": 2025, "month": 10, "totalHours": 16632, "monthClosed": true, "statedIn": "Rates!M26", "closedBasis": "2025 hours final: TRIR EXP.!L15 (typed) states 191751 hours for 2025, equal to Rates!M17:M28" },
+    { "year": 2025, "month": 11, "totalHours": 15591, "monthClosed": true, "statedIn": "Rates!M27", "closedBasis": "2025 hours final: TRIR EXP.!L15 (typed) states 191751 hours for 2025, equal to Rates!M17:M28" },
+    { "year": 2025, "month": 12, "totalHours": 16299, "monthClosed": true, "statedIn": "Rates!M28", "closedBasis": "2025 hours final: TRIR EXP.!L15 (typed) states 191751 hours for 2025, equal to Rates!M17:M28" },
+    { "year": 2026, "month": 1, "totalHours": 21473, "monthClosed": true, "statedIn": "Rates!M29", "closedBasis": "Month ended; counts entered in Incident & Near Miss; within the 2026 hours reported through August (TRIR EXP.!M15 = Rates!M42)" },
+    { "year": 2026, "month": 2, "totalHours": 17654, "monthClosed": true, "statedIn": "Rates!M30", "closedBasis": "Month ended; counts entered in Incident & Near Miss; within the 2026 hours reported through August (TRIR EXP.!M15 = Rates!M42)" },
+    { "year": 2026, "month": 3, "totalHours": 18698, "monthClosed": true, "statedIn": "Rates!M31", "closedBasis": "Month ended; counts entered in Incident & Near Miss; within the 2026 hours reported through August (TRIR EXP.!M15 = Rates!M42)" },
+    { "year": 2026, "month": 4, "totalHours": 18068, "monthClosed": true, "statedIn": "Rates!M32", "closedBasis": "Month ended; counts entered in Incident & Near Miss; within the 2026 hours reported through August (TRIR EXP.!M15 = Rates!M42)" },
+    { "year": 2026, "month": 5, "totalHours": 17366, "monthClosed": true, "statedIn": "Rates!M33", "closedBasis": "Month ended; counts entered in Incident & Near Miss; within the 2026 hours reported through August (TRIR EXP.!M15 = Rates!M42)" },
+    { "year": 2026, "month": 6, "totalHours": 17111, "monthClosed": true, "statedIn": "Rates!M34", "closedBasis": "Month ended; counts entered in Incident & Near Miss; within the 2026 hours reported through August (TRIR EXP.!M15 = Rates!M42)" },
+    { "year": 2026, "month": 7, "totalHours": 16793, "monthClosed": true, "statedIn": "Rates!M35", "closedBasis": "Month ended; counts entered in Incident & Near Miss; within the 2026 hours reported through August (TRIR EXP.!M15 = Rates!M42)" },
+    { "year": 2026, "month": 8, "totalHours": 18031, "monthClosed": true, "statedIn": "Rates!M36", "closedBasis": "Month ended; counts entered in Incident & Near Miss; within the 2026 hours reported through August (TRIR EXP.!M15 = Rates!M42)" }
+  ],
+  "annual": [
+    { "year": 2021, "recordables": 1, "totalHours": 172301, "source": "TRIR EXP.!H8 (Recordable), TRIR EXP.!H15 (Man Hours)" },
+    { "year": 2023, "recordables": 1, "totalHours": 168563, "source": "TRIR EXP.!J8 (Recordable), TRIR EXP.!J15 (Man Hours)" },
+    { "year": 2024, "recordables": 1, "totalHours": 174706, "source": "TRIR EXP.!K8 (Recordable), TRIR EXP.!K15 (Man Hours)" }
+  ],
+  "expectedHours": [
+    { "year": 2025, "throughMonth": 12, "totalHours": 191751, "statedIn": "TRIR EXP.!L15" },
+    { "year": 2026, "throughMonth": 8, "totalHours": 145194, "statedIn": "TRIR EXP.!M15 = Rates!M42 (=SUM(M29:M40))" }
+  ],
+  "excludedYears": [
+    {
+      "year": 2022,
+      "reason": "Conflicting sources: TRIR EXP.!I15 states 176350 hours (3 recordables) but Rates!M5:M16 sum to 425039.9. Excluded until the Safety owner resolves it."
+    }
+  ]
+}

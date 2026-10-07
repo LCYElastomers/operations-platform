@@ -1,6 +1,8 @@
 import {
+  Activity,
   ChartColumn,
   ClipboardList,
+  Clock,
   Database,
   Droplets,
   FlaskConical,
@@ -65,7 +67,7 @@ export const navigation: NavSection[] = [
         icon: HardHat,
         status: "in-development",
         description:
-          "Departmental safety reporting: Incident & Near Miss, Safety Observations, and Supervisor Safety Contacts.",
+          "Departmental safety reporting: Incident & Near Miss, Safety Observations, Supervisor Safety Contacts, and Safety Performance.",
         children: [
           { id: "safety-overview", label: "Overview", href: "/safety", exact: true },
           {
@@ -136,6 +138,29 @@ export const navigation: NavSection[] = [
                 icon: ChartColumn,
                 status: "in-development",
                 description: "Contacts by month, monthly participation, and the supervisor × month table.",
+              },
+            ],
+          },
+          {
+            id: "safety-performance",
+            label: "Safety Performance",
+            description: "Worked hours and TRIR, First Aid, LOPC and Property & Equipment Damage rates.",
+            children: [
+              {
+                id: "safety-performance-data-entry",
+                label: "Data Entry",
+                href: "/safety/performance/data-entry",
+                icon: Clock,
+                status: "in-development",
+                description: "Enter monthly worked hours and close months once their event counts are complete.",
+              },
+              {
+                id: "safety-performance-dashboard",
+                label: "Dashboard",
+                href: "/safety/performance/dashboard",
+                icon: Activity,
+                status: "in-development",
+                description: "YTD and 12-Month Rolling Average (12MRA) rates, worked hours, and annual TRIR.",
               },
             ],
           },

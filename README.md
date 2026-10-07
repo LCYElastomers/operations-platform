@@ -239,6 +239,7 @@ Current revisions:
 | `0003`   | Creates `core.audit_events`; creates `safety.metric_sections`, `safety.metric_categories`, `safety.monthly_metric_values`; seeds the Incident & Near Miss section and category definitions (no values) |
 | `0004`   | Creates `safety.observation_categories` (seeded) and `safety.observations`; seeds the legacy `observations_legacy` metric sections and categories (no values) |
 | `0005`   | Creates `safety.contact_supervisors` and `safety.supervisor_safety_contacts`; seeds nothing (no supervisors, contacts or targets) |
+| `0006`   | Creates `safety.performance_hours` and `safety.performance_annual_legacy`; seeds the `performance_legacy` metric sections and categories (no hours, annual figures or values) |
 
 Downgrading `0002` drops `core.ingestion_batches` and the versioning
 columns. It refuses to run while superseded measurement versions exist,
@@ -248,7 +249,8 @@ Downgrading `0003` refuses to run while any Safety monthly value or audit
 event exists, so entered data and its history are never dropped silently.
 Downgrading `0004` likewise refuses while any observation or legacy
 observation value exists. Downgrading `0005` refuses while any supervisor or
-supervisor safety contact exists.
+supervisor safety contact exists. Downgrading `0006` refuses while any
+worked-hours row, annual legacy row or `performance_legacy` value exists.
 
 Explicit constraint names in migrations are wrapped in `op.f()`; otherwise the
 `ck_%(table_name)s_%(constraint_name)s` naming convention prefixes them a
@@ -666,14 +668,16 @@ under it, and `edit` implies `view`:
 
 | Granted                    | Satisfies                                                         |
 | -------------------------- | ----------------------------------------------------------------- |
-| `safety.view`              | `safety.view`, `safety.incidents.view`, `safety.observations.view`, `safety.contacts.view` |
-| `safety.edit`              | everything above plus `safety.edit`, `safety.incidents.edit`, `safety.observations.edit`, `safety.contacts.edit` |
+| `safety.view`              | `safety.view`, `safety.incidents.view`, `safety.observations.view`, `safety.contacts.view`, `safety.performance.view` |
+| `safety.edit`              | everything above plus `safety.edit`, `safety.incidents.edit`, `safety.observations.edit`, `safety.contacts.edit`, `safety.performance.edit` |
 | `safety.incidents.view`    | `safety.incidents.view` only                                      |
 | `safety.incidents.edit`    | `safety.incidents.view`, `safety.incidents.edit`                  |
 | `safety.observations.view` | `safety.observations.view` only                                   |
 | `safety.observations.edit` | `safety.observations.view`, `safety.observations.edit`            |
 | `safety.contacts.view`     | `safety.contacts.view` only                                       |
 | `safety.contacts.edit`     | `safety.contacts.view`, `safety.contacts.edit`                    |
+| `safety.performance.view`  | `safety.performance.view` only                                    |
+| `safety.performance.edit`  | `safety.performance.view`, `safety.performance.edit`              |
 
 Endpoints always require the most specific permission (for example
 `safety.incidents.view` or `safety.observations.edit`), so grants can be
@@ -905,8 +909,9 @@ not an employee directory or user accounts.
   same rule. The time zone is a single constant (`SITE_TIME_ZONE` in
   `app/safety/contacts/service.py` and `contact-data.ts`) because the platform
   has one site; move it into site configuration if it becomes multi-site.
-  Incident & Near Miss and Safety Observations are unchanged and still use
-  their own date rules. New contacts
+  Safety Performance reuses `site_today` from the same module. Incident &
+  Near Miss and Safety Observations are unchanged and still use their own
+  date rules. New contacts
   cannot be credited to an inactive supervisor; an existing contact keeps its
   supervisor when edited.
 - Supervisor names are trimmed and whitespace-collapsed, at most 100
@@ -936,6 +941,89 @@ targets. The template
 [`apps/api/import_templates/safety_contacts_legacy.template.json`](apps/api/import_templates/safety_contacts_legacy.template.json)
 names the source cells only; nothing in the platform reads it. No legacy
 contact data has been imported.
+
+## Safety > Safety Performance
+
+Routes: `/safety/performance/data-entry` and `/safety/performance/dashboard`.
+Code lives in `apps/api/app/safety/performance/` and
+`apps/web/src/features/safety/performance/`.
+
+The module stores only monthly worked hours (and, for years before monthly
+records, accepted annual figures). Event counts are read, never copied: from
+Incident & Near Miss for 2026 onward, and from the `performance_legacy`
+metric set for earlier years. No rate, YTD total or rolling total is stored.
+
+| Endpoint                                                          | Permission                | Purpose |
+| ----------------------------------------------------------------- | ------------------------- | ------- |
+| `GET /api/v1/safety/performance/months?year=`                     | `safety.performance.view` | Each month's hours, status (Not Reported / Reported / Closed) and read-only counts |
+| `PUT /api/v1/safety/performance/months/{year}/{month}`            | `safety.performance.edit` | Save total hours, optional hourly/salary split and `monthClosed`; send `expectedUpdatedAt` when the month already has hours |
+| `DELETE /api/v1/safety/performance/months/{year}/{month}?expectedUpdatedAt=` | `safety.performance.edit` | Clear a month back to Not Reported |
+| `GET /api/v1/safety/performance/dashboard?year=&throughMonth=`    | `safety.performance.view` | YTD and 12MRA rates, YTD hours, monthly trends and annual TRIR |
+
+- `safety.performance_hours`: one row per (year, month); `total_hours`
+  `numeric(10,2)` ≥ 0; `hourly_hours` and `salary_hours` optional, ≥ 0, and
+  summing to the total when both are given; `month_closed` defaults to false.
+  There is no contractor column.
+- A month without a row is not reported. A month counts in a rate only when
+  it has hours above zero **and** is closed; an open month is never treated
+  as zero, and a closed zero-hour month is ineligible (it also ends the
+  default YTD). Hours can be entered once a month has started and a month
+  can be closed once it has ended (Baytown site date).
+- Closing an Incident & Near Miss month (2026 on) confirms its counts are
+  complete, so a blank count then means zero. Closing a legacy month (before
+  2026) confirms its hours only. **Legacy completeness rule:** a legacy count
+  is known only when a value is stored, either typed in the source or a zero
+  proven by an independent typed source total. A blank stays unconfirmed,
+  and any window for that measure containing it is unavailable
+  (`count_not_confirmed`). Other measures are unaffected.
+- Every rate is events × 200,000 ÷ worked hours over the same months. YTD
+  runs January through the selected month (default: the latest month for
+  which January onward is eligible). The 12-Month Rolling Average (12MRA) is
+  the 12 months ending in the selected month and is unavailable, with a
+  reason, unless all 12 are eligible.
+- Numerators: TRIR = recordable injuries + occupational illnesses; First Aid
+  = first aid; Loss of Primary Containment (LOPC) = LOPC; Property &
+  Equipment Damage = `property_damage + equipment_damage_failure`. The
+  current Incident & Near Miss model holds monthly aggregate counts and
+  cannot deduplicate an event classified in both, so such an event counts
+  twice and the rate is not a count of distinct events. Both counts are
+  returned separately. Revisit if Incident & Near Miss becomes
+  individual-record based. Legacy years use the
+  `performance_legacy` categories `recordable`, `first_aid`, `lopc` and
+  `property_equipment_damage`.
+- Saves and clears take a per-month advisory lock, return `409 edit_conflict`
+  with the current row on a stale `expectedUpdatedAt`, and write one
+  `core.audit_events` row (`safety.performance_hours` /
+  `performance-hours/YYYY-MM`) in the same transaction. Unchanged saves are
+  not written.
+
+### Importing hours and legacy figures
+
+Reviewed mappings live in `apps/api/import_templates/`:
+`safety_performance_hours_lcy_ehs.mapping.json` (2025 and January–August
+2026 monthly hours; 2021, 2023 and 2024 annual recordables and hours; 2022
+excluded) and `safety_performance_legacy_2025_lcy_ehs.mapping.json` (2025
+counts, for the Incident & Near Miss CLI). Migration `0006` applies neither.
+
+```bash
+cd apps/api
+uv run python -m app.safety.performance.legacy_import check <mapping.json>  # validate file, no database
+uv run python -m app.safety.performance.legacy_import plan  <mapping.json>  # compare with stored rows
+uv run python -m app.safety.performance.legacy_import apply <mapping.json>  # write, audited as "legacy-import"
+uv run python -m app.safety.legacy_import plan  <legacy-counts mapping.json>
+uv run python -m app.safety.legacy_import apply <legacy-counts mapping.json>
+```
+
+`plan` and `apply` refuse when a stored row differs from the mapping, when a
+year would have both monthly and annual figures, or when a future month
+would be closed. Closure is never inferred from hours: every closed month
+in a mapping states its `closedBasis`, which is audited with its `statedIn`
+cell. In the 2025 counts mapping, recordables are explicit zeros (TRIR
+EXP.!L8 types 0 for 2025). Blank First Aid months (Jan, Feb, May, Sep, Nov)
+and blank damage months (Feb, Oct) stay null, so the First Aid and Damage
+12MRA through August 2026 are unavailable. Rates!I28 (December 2025
+equipment failure) is excluded as a conflict. The workbook does not state
+which workers the hours cover. There is no contractor-hours field.
 
 ## shadcn/ui
 

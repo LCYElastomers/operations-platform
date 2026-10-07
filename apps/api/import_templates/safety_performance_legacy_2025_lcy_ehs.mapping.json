@@ -1,0 +1,63 @@
+{
+  "source": "docs/2026 LCY EHS Dash Board.xlsx (SHA-256 0B94C09BEDF3C343D3250496780A2D3B66671B55741ABA0391FDE81BE8B51C10), sheets 'Rates' (rows 17-28 = 2025), 'Incident Data' and 'TRIR EXP.'",
+  "metricSet": "performance_legacy",
+  "year": 2025,
+  "notes": [
+    "Load with: python -m app.safety.legacy_import check|plan|apply <this file>. Not applied by any migration. These are 2025 rate numerators only; 2026 onward comes from Incident & Near Miss.",
+    "Completeness rule: null = blank in the source and unconfirmed; a number is a typed source value or a zero proven by an independent typed source total. Closing a 2025 month does not turn null into zero: a rate window containing a null for its measure is unavailable (count_not_confirmed).",
+    "Recordable: Rates!F17:F27 are blank and F28 (December) is a typed 0. TRIR EXP.!L8 types 0 recordables for 2025; counts cannot be negative, so every 2025 month is 0, stored as explicit zeros.",
+    "First Aid: Rates!G17:G28. Blank January, February, May, September and November stay null: no independent 2025 total confirms them.",
+    "LOPC: Incident Data row 58 (Spill/Release history, 2025), which types 0 for February and November where Rates!H18 and H27 are blank. Other months equal Rates!H17:H28.",
+    "Property & Equipment Damage: Rates!J17:J28 (Property damage), the workbook's combined damage row; it equals Incident Data row 122 except December (Rates!J28 is a typed 0, row 122 is blank). Blank February and October stay null: row 122 is blank in the same months and its Total is the sum of the same cells.",
+    "EXCLUDED (conflict): Rates!I28 (Number of Equipment Failure, December 2025) = 1 is not imported. It is not in Rates!J28 or Incident Data row 122, and the workbook does not say whether it is a separate event."
+  ],
+  "sections": [
+    {
+      "section": "recordable",
+      "name": "Recordable Injuries & Illnesses",
+      "categories": [
+        {
+          "category": "recordable",
+          "name": "Recordable <- Rates!F17:F28; blanks proven 0 by TRIR EXP.!L8",
+          "months": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        }
+      ]
+    },
+    {
+      "section": "first_aid",
+      "name": "First Aid",
+      "categories": [
+        {
+          "category": "first_aid",
+          "name": "First Aid <- Rates!G17:G28",
+          "months": [null, null, 1, 2, null, 1, 1, 1, null, 1, null, 0]
+        }
+      ]
+    },
+    {
+      "section": "lopc",
+      "name": "Loss of Primary Containment (LOPC)",
+      "categories": [
+        {
+          "category": "lopc",
+          "name": "LOPC <- Incident Data row 58 (2025)",
+          "months": [3, 0, 1, 1, 1, 1, 1, 1, 2, 1, 0, 1]
+        }
+      ]
+    },
+    {
+      "section": "property_equipment_damage",
+      "name": "Property & Equipment Damage",
+      "categories": [
+        {
+          "category": "property_equipment_damage",
+          "name": "Property & Equipment Damage <- Rates!J17:J28",
+          "months": [2, null, 2, 1, 1, 1, 3, 2, 1, null, 1, 0]
+        }
+      ]
+    }
+  ],
+  "expectedYtd": [
+    { "section": "recordable", "category": "recordable", "value": 0, "statedIn": "TRIR EXP.!L8" }
+  ]
+}

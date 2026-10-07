@@ -98,8 +98,32 @@ def test_contact_tables_are_created_in_safety(upgrade_sql: str) -> None:
     ) in upgrade_sql
 
 
+def test_performance_tables_are_created_in_safety(upgrade_sql: str) -> None:
+    assert "CREATE TABLE safety.performance_hours" in upgrade_sql
+    assert "CREATE TABLE safety.performance_annual_legacy" in upgrade_sql
+    assert "uq_performance_hours_year_month UNIQUE (reporting_year, reporting_month)" in upgrade_sql
+    assert "total_hours NUMERIC(10, 2) NOT NULL" in upgrade_sql
+    assert "month_closed BOOLEAN DEFAULT false NOT NULL" in upgrade_sql
+    assert "hourly_hours + salary_hours = total_hours" in upgrade_sql
+    assert "contractor" not in upgrade_sql
+
+
+def test_performance_migration_seeds_legacy_definitions_only(upgrade_sql: str) -> None:
+    performance_sql = upgrade_sql.split("Running upgrade 0005 -> 0006", 1)[1]
+    assert "'performance_legacy'" in performance_sql
+    assert "INSERT INTO safety.metric_sections" in performance_sql
+    assert "INSERT INTO safety.metric_categories" in performance_sql
+    assert "INSERT INTO safety.monthly_metric_values" not in performance_sql
+    assert "INSERT INTO safety.performance_hours" not in performance_sql
+    assert "INSERT INTO safety.performance_annual_legacy" not in performance_sql
+    assert "target" not in performance_sql.lower()
+    assert "DROP" not in performance_sql
+    assert "ALTER TABLE" not in performance_sql
+
+
 def test_contacts_migration_seeds_no_names_contacts_or_targets(upgrade_sql: str) -> None:
     contacts_sql = upgrade_sql.split("Running upgrade 0004 -> 0005", 1)[1]
+    contacts_sql = contacts_sql.split("Running upgrade 0005 -> 0006", 1)[0]
     assert "INSERT" not in contacts_sql
     assert "target" not in contacts_sql.lower()
     assert "DROP" not in contacts_sql

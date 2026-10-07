@@ -16,6 +16,8 @@ const requiredRoutes = [
   "/safety/observations/dashboard",
   "/safety/contacts",
   "/safety/contacts/dashboard",
+  "/safety/performance/data-entry",
+  "/safety/performance/dashboard",
   "/environmental",
   "/procurement",
   "/sales",
@@ -62,6 +64,14 @@ describe("navigation config", () => {
     expect(trail.map((item) => item.label)).toEqual(["Safety", "Supervisor Safety Contacts", label]);
   });
 
+  it.each([
+    ["/safety/performance/data-entry", "Data Entry"],
+    ["/safety/performance/dashboard", "Dashboard"],
+  ])("nests %s under Safety > Safety Performance", (route, label) => {
+    const trail = findNavTrail(navigation, route);
+    expect(trail.map((item) => item.label)).toEqual(["Safety", "Safety Performance", label]);
+  });
+
   it("lists the Safety areas in order", () => {
     const safety = moduleItems.find((item) => item.id === "safety");
     expect(safety?.children?.map((item) => item.label)).toEqual([
@@ -69,6 +79,7 @@ describe("navigation config", () => {
       "Incident & Near Miss",
       "Safety Observations",
       "Supervisor Safety Contacts",
+      "Safety Performance",
     ]);
   });
 
