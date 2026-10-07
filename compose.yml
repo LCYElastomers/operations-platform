@@ -23,6 +23,8 @@ services:
       MOISTURE_DATA_SOURCE: ${MOISTURE_DATA_SOURCE:-fixture}
       INGESTION_AUTH_MODE: ${INGESTION_AUTH_MODE:-disabled}
       INGESTION_CONNECTORS: ${INGESTION_CONNECTORS:-}
+      USER_AUTH_MODE: ${USER_AUTH_MODE:-disabled}
+      DEVELOPMENT_USER_PERMISSIONS: ${DEVELOPMENT_USER_PERMISSIONS:-}
     extra_hosts:
       # Lets the API reach the host-managed PostgreSQL server.
       - "host.docker.internal:host-gateway"
