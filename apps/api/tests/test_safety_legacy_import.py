@@ -20,6 +20,8 @@ from app.safety.legacy_import import (
 API_ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE = API_ROOT / "import_templates" / "safety_incidents.template.json"
 MIGRATION_0003 = next((API_ROOT / "alembic" / "versions").glob("*-0003_*.py"))
+OBSERVATIONS_TEMPLATE = API_ROOT / "import_templates" / "safety_observations_legacy.template.json"
+MIGRATION_0004 = next((API_ROOT / "alembic" / "versions").glob("*-0004_*.py"))
 
 
 def months(values: dict[int, int]) -> list[int | None]:
@@ -240,3 +242,40 @@ def test_template_contains_no_values() -> None:
 
 def test_template_passes_check(tmp_path: Path) -> None:
     assert legacy_import.run("check", TEMPLATE) == 0
+
+
+def load_migration_0004() -> Any:
+    spec = importlib.util.spec_from_file_location("migration_0004", MIGRATION_0004)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_observations_template_covers_every_seeded_legacy_section() -> None:
+    migration = load_migration_0004()
+    template = load_mapping(OBSERVATIONS_TEMPLATE)
+
+    assert template.metric_set == migration.LEGACY_METRIC_SET == "observations_legacy"
+    listed = [(s.section, [c.category for c in s.categories]) for s in template.sections]
+    assert listed == [
+        (code, [c for c, _ in categories]) for code, _, categories in migration.LEGACY_SECTIONS
+    ]
+
+
+def test_observations_template_keeps_fire_and_fire_system_apart() -> None:
+    template = load_mapping(OBSERVATIONS_TEMPLATE)
+    by_section = {s.section: {c.category for c in s.categories} for s in template.sections}
+
+    assert "fire" in by_section["safe_by_category"]
+    assert "fire_system" not in by_section["safe_by_category"]
+    assert "fire_system" in by_section["unsafe_by_category"]
+    assert "fire" not in by_section["unsafe_by_category"]
+
+
+def test_observations_template_contains_no_values_and_passes_check() -> None:
+    template = load_mapping(OBSERVATIONS_TEMPLATE)
+
+    assert all(cell.value is None for cell in legacy_import.cells(template))
+    assert template.expected_ytd == []
+    assert legacy_import.run("check", OBSERVATIONS_TEMPLATE) == 0

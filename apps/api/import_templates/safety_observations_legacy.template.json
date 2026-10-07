@@ -1,0 +1,89 @@
+{
+  "source": "TEMPLATE - replace with workbook file name and SHA-256, sheet 'SSO-Site -25 '",
+  "metricSet": "observations_legacy",
+  "year": 2026,
+  "notes": [
+    "TEMPLATE - no source values transcribed. Copy it outside the repository, transcribe, and have it reviewed before use. Each months array is January..December.",
+    "These are legacy aggregate tallies, not individual observations. Never convert them into observation records.",
+    "The workbook's views do not reconcile (Jan-May 2026: by category 38 safe + 69 unsafe = 107; act/condition 37 + 79 = 116; typed Total Observations 99). Each view is its own section; none is authoritative without a Safety owner decision.",
+    "Category name fields record the workbook cell and label as written (the import alias). Stored display names are the normalized category names.",
+    "Total Observations: Jan-Feb are formulas (safe + unsafe category totals); Mar-May are typed values.",
+    "null = unreported in the source (never written). 0 = a reported zero (for example Unsafe Act, May, cell J42). Do not replace null with 0."
+  ],
+  "sections": [
+    {
+      "section": "safe_by_category",
+      "name": "Safe Act / Condition by Category (legacy workbook)",
+      "categories": [
+        { "category": "building", "name": "SSO-Site -25!B5 'Building' (months F:Q)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "chemical", "name": "SSO-Site -25!B6 'Chemical' (months F:Q)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "confined_space", "name": "SSO-Site -25!B7 'Confined Space' (months F:Q)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "electrical", "name": "SSO-Site -25!B8 'Electrical' (months F:Q)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "ergonomics", "name": "SSO-Site -25!B9 'Ergonomics' (months F:Q)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "fire", "name": "SSO-Site -25!B10 'Fire' (months F:Q)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "forklift", "name": "SSO-Site -25!B11 'Forklift' (months F:Q)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "housekeeping", "name": "SSO-Site -25!B12 'Housekeepng' (months F:Q)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "loto", "name": "SSO-Site -25!B13 'LOTO' (months F:Q)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "material_defect", "name": "SSO-Site -25!B14 'Material defect' (months F:Q)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "material_handling_lifting", "name": "SSO-Site -25!B15 'Material handling or lifiting ' (months F:Q)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "non_work_related", "name": "SSO-Site -25!B16 'Non work related ' (months F:Q)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "ppe", "name": "SSO-Site -25!B17 'PPE' (months F:Q)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "respiratory_protection", "name": "SSO-Site -25!B18 'Respiratory protection' (months F:Q)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "slip_trip_fall", "name": "SSO-Site -25!B19 'Slip, trip, fall' (months F:Q)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "stairs_ladders", "name": "SSO-Site -25!B20 'Stairs, ladders' (months F:Q)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "tools_equipment", "name": "SSO-Site -25!B21 'Tools & Equipment' (months F:Q); PPT Work calls it 'Tools'", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "vehicle_company_owned", "name": "SSO-Site -25!B22 'Vehicle company owned ' (months F:Q)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "vehicle_not_company_owned", "name": "SSO-Site -25!B23 'Vehicle not company owned ' (months F:Q)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "walking_working_surface", "name": "SSO-Site -25!B24 'Walking working surface' (months F:Q)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "work_at_elevation", "name": "SSO-Site -25!B25 'Work at elevation' (months F:Q)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "crane", "name": "SSO-Site -25!B26 'Crane ' (months F:Q)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] }
+      ]
+    },
+    {
+      "section": "unsafe_by_category",
+      "name": "Unsafe Act / Condition by Category (legacy workbook)",
+      "categories": [
+        { "category": "building", "name": "SSO-Site -25!T5 'Building' (months X:AI)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "chemical", "name": "SSO-Site -25!T6 'Chemical' (months X:AI)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "confined_space", "name": "SSO-Site -25!T7 'Confined Space' (months X:AI)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "electrical", "name": "SSO-Site -25!T8 'Electrical' (months X:AI)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "ergonomics", "name": "SSO-Site -25!T9 'Ergonomics' (months X:AI)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "fire_system", "name": "SSO-Site -25!T10 'Fire system ' (months X:AI); not merged with Fire pending Safety owner confirmation", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "forklift", "name": "SSO-Site -25!T11 'Forklift' (months X:AI)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "housekeeping", "name": "SSO-Site -25!T12 'Housekeepng' (months X:AI)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "loto", "name": "SSO-Site -25!T13 'LOTO' (months X:AI)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "material_defect", "name": "SSO-Site -25!T14 'Material defect' (months X:AI)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "material_handling_lifting", "name": "SSO-Site -25!T15 'Material handling or lifiting ' (months X:AI)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "non_work_related", "name": "SSO-Site -25!T16 'Non work related ' (months X:AI)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "ppe", "name": "SSO-Site -25!T17 'PPE' (months X:AI)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "respiratory_protection", "name": "SSO-Site -25!T18 'Respiratory protection' (months X:AI)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "slip_trip_fall", "name": "SSO-Site -25!T19 'Slip, trip, fall' (months X:AI)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "stairs_ladders", "name": "SSO-Site -25!T20 'Stairs, ladders' (months X:AI)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "tools_equipment", "name": "SSO-Site -25!T21 'Tools & Equipment' (months X:AI); PPT Work calls it 'Tools'", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "vehicle_company_owned", "name": "SSO-Site -25!T22 'Vehicle company owned ' (months X:AI)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "vehicle_not_company_owned", "name": "SSO-Site -25!T23 'Vehicle not company owned ' (months X:AI)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "walking_working_surface", "name": "SSO-Site -25!T24 'Walking working surface' (months X:AI)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "work_at_elevation", "name": "SSO-Site -25!T25 'Work at elevation' (months X:AI)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "crane", "name": "SSO-Site -25!T26 'Crane' (months X:AI)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] }
+      ]
+    },
+    {
+      "section": "act_condition",
+      "name": "Act / Condition (legacy workbook)",
+      "categories": [
+        { "category": "safe_act", "name": "SSO-Site -25!D40 'Safe Act' (months F:Q)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "safe_condition", "name": "SSO-Site -25!D41 'Safe Condition' (months F:Q)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "unsafe_act", "name": "SSO-Site -25!D42 'Unsafe Act' (months F:Q)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "unsafe_condition", "name": "SSO-Site -25!D43 'Unsafe Condition' (months F:Q)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] }
+      ]
+    },
+    {
+      "section": "total_observations",
+      "name": "Total Observations (legacy workbook)",
+      "categories": [
+        { "category": "total_observations", "name": "SSO-Site -25!U39 'Total Observations' (months V40:AG40)", "months": [null, null, null, null, null, null, null, null, null, null, null, null] }
+      ]
+    }
+  ],
+  "expectedYtd": []
+}

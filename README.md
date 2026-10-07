@@ -237,6 +237,7 @@ Current revisions:
 | `0001`   | Creates `quality.finishing_measurements`                                |
 | `0002`   | Creates `core.ingestion_batches`; adds record identity and versioning columns to `quality.finishing_measurements` |
 | `0003`   | Creates `core.audit_events`; creates `safety.metric_sections`, `safety.metric_categories`, `safety.monthly_metric_values`; seeds the Incident & Near Miss section and category definitions (no values) |
+| `0004`   | Creates `safety.observation_categories` (seeded) and `safety.observations`; seeds the legacy `observations_legacy` metric sections and categories (no values) |
 
 Downgrading `0002` drops `core.ingestion_batches` and the versioning
 columns. It refuses to run while superseded measurement versions exist,
@@ -244,6 +245,8 @@ because they would otherwise become indistinguishable from current rows.
 
 Downgrading `0003` refuses to run while any Safety monthly value or audit
 event exists, so entered data and its history are never dropped silently.
+Downgrading `0004` likewise refuses while any observation or legacy
+observation value exists.
 
 Explicit constraint names in migrations are wrapped in `op.f()`; otherwise the
 `ck_%(table_name)s_%(constraint_name)s` naming convention prefixes them a
@@ -659,17 +662,18 @@ Permissions are defined once in `app/core/permissions.py` as
 `<module>[.<function>].<action>`. A grant covers its scope and every function
 under it, and `edit` implies `view`:
 
-| Granted                 | Satisfies                                                       |
-| ----------------------- | --------------------------------------------------------------- |
-| `safety.view`           | `safety.view`, `safety.incidents.view`                          |
-| `safety.edit`           | everything above plus `safety.edit`, `safety.incidents.edit`    |
-| `safety.incidents.view` | `safety.incidents.view` only                                    |
-| `safety.incidents.edit` | `safety.incidents.view`, `safety.incidents.edit`                |
+| Granted                    | Satisfies                                                         |
+| -------------------------- | ----------------------------------------------------------------- |
+| `safety.view`              | `safety.view`, `safety.incidents.view`, `safety.observations.view` |
+| `safety.edit`              | everything above plus `safety.edit`, `safety.incidents.edit`, `safety.observations.edit` |
+| `safety.incidents.view`    | `safety.incidents.view` only                                      |
+| `safety.incidents.edit`    | `safety.incidents.view`, `safety.incidents.edit`                  |
+| `safety.observations.view` | `safety.observations.view` only                                   |
+| `safety.observations.edit` | `safety.observations.view`, `safety.observations.edit`            |
 
-Endpoints always require the most specific permission
-(`safety.incidents.view` / `safety.incidents.edit`), so function-level grants
-such as `safety.observations.edit` can be added later without changing
-existing endpoints.
+Endpoints always require the most specific permission (for example
+`safety.incidents.view` or `safety.observations.edit`), so grants can be
+narrowed to one function without changing endpoints.
 
 | `USER_AUTH_MODE`              | Behaviour                                                       |
 | ----------------------------- | --------------------------------------------------------------- |
@@ -805,6 +809,65 @@ with the Safety owner, record the decision in the mapping file's `notes`, and
 add the agreed Incident figure to `expectedYtd` before running `apply`.
 Incident is the explicit metric, so Incident Classification totals are not
 used to reconcile it.
+
+## Safety > Safety Observations
+
+Routes: `/safety/observations` (record and review a month) and
+`/safety/observations/dashboard`. Code lives in
+`apps/api/app/safety/observations/` and
+`apps/web/src/features/safety/observations/`.
+
+Each observation is one record: observed date, Safe or Unsafe, Act or
+Condition, and a category are required; area / location, description and
+corrective action are optional. There is no person, site or
+corrective-action workflow yet.
+
+| Endpoint                                              | Permission                 | Purpose |
+| ----------------------------------------------------- | -------------------------- | ------- |
+| `GET /api/v1/safety/observations/categories`          | `safety.observations.view` | Active categories in display order |
+| `GET /api/v1/safety/observations`                     | `safety.observations.view` | Newest first; filters `year`, `month`, `observedFrom`, `observedTo`, `outcome`, `kind`, `categoryId`; `limit` (default 50, max 500), `offset` |
+| `GET /api/v1/safety/observations/summary?year=&month=` | `safety.observations.view` | Total, Safe, Unsafe, the four Act / Condition counts, and per-category counts |
+| `GET /api/v1/safety/observations/dashboard?year=`     | `safety.observations.view` | Year counts, Unsafe share, monthly and per-category counts (months not yet started are `null`) |
+| `POST /api/v1/safety/observations`                    | `safety.observations.edit` | Record one observation |
+| `PUT /api/v1/safety/observations/{id}`                | `safety.observations.edit` | Replace its fields; send `expectedUpdatedAt` from the loaded record |
+| `DELETE /api/v1/safety/observations/{id}`             | `safety.observations.edit` | Delete it |
+
+- `observedOn` is a `YYYY-MM-DD` date from 2000-01-01 up to today (UTC).
+  Optional text is trimmed; blank becomes `null`. Area / location allows 200
+  characters, description and corrective action 2,000 each. The database
+  enforces the same rules with check constraints.
+- Categories are referenced by id. Retired (inactive) categories are rejected
+  for new observations; an existing observation keeps its retired category
+  unless the editor picks another.
+- An update whose `expectedUpdatedAt` no longer matches returns
+  `409 edit_conflict` with the current record; nothing is written.
+- Every create, update and delete writes one `core.audit_events` row in the
+  same transaction (`entity_type = safety.observation`, `entity_key =
+  observations/<id>`, full before/after values). Unchanged updates are not
+  written or audited. Logs carry ids and counts only, never free text.
+- Every count derives from the same records, so Safe + Unsafe and
+  Act + Condition both equal Total.
+
+Category display names correct the workbook's spelling ("Housekeepng",
+"Tools") and spacing; the workbook labels belong in import mappings only.
+**Fire and Fire System are separate categories** because the workbook's Safe
+table lists "Fire" and its Unsafe table "Fire system"; merging them needs the
+Safety owner's confirmation and a migration.
+
+### Legacy 2026 workbook tallies
+
+The workbook's sheet `SSO-Site -25` holds monthly aggregates, not individual
+observations, and its views do not reconcile (category tables 38 Safe + 69
+Unsafe = 107; Act / Condition 37 + 79 = 116; typed Total Observations 99).
+They are therefore never converted into observations. Migration `0004` seeds
+them as four separate sections of the `observations_legacy` metric set (Safe
+by category, Unsafe by category, Act / Condition, Total Observations), with no
+values. The template
+[`apps/api/import_templates/safety_observations_legacy.template.json`](apps/api/import_templates/safety_observations_legacy.template.json)
+names the source cells for every category; fill in a reviewed copy and load
+it with the same `legacy_import` CLI as Incident & Near Miss. No legacy
+observation values have been imported, and the application shows none of
+them.
 
 ## shadcn/ui
 

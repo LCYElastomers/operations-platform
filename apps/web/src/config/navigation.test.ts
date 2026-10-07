@@ -12,6 +12,8 @@ const requiredRoutes = [
   "/safety",
   "/safety/incidents/data-entry",
   "/safety/incidents/dashboard",
+  "/safety/observations",
+  "/safety/observations/dashboard",
   "/environmental",
   "/procurement",
   "/sales",
@@ -40,6 +42,32 @@ describe("navigation config", () => {
   ])("nests %s under Safety > Incident & Near Miss", (route, label) => {
     const trail = findNavTrail(navigation, route);
     expect(trail.map((item) => item.label)).toEqual(["Safety", "Incident & Near Miss", label]);
+  });
+
+  it.each([
+    ["/safety/observations", "Observations"],
+    ["/safety/observations/dashboard", "Dashboard"],
+  ])("nests %s under Safety > Safety Observations", (route, label) => {
+    const trail = findNavTrail(navigation, route);
+    expect(trail.map((item) => item.label)).toEqual(["Safety", "Safety Observations", label]);
+  });
+
+  it("lists the Safety areas in order", () => {
+    const safety = moduleItems.find((item) => item.id === "safety");
+    expect(safety?.children?.map((item) => item.label)).toEqual([
+      "Overview",
+      "Incident & Near Miss",
+      "Safety Observations",
+    ]);
+  });
+
+  it("marks only the Observations page active on its dashboard", () => {
+    expect(findNavTrail(navigation, "/safety/observations/dashboard").at(-1)?.id).toBe(
+      "safety-observations-dashboard",
+    );
+    expect(findNavTrail(navigation, "/safety/observations").at(-1)?.id).toBe(
+      "safety-observations-entry",
+    );
   });
 
   it("does not mark Safety Overview active on Safety function pages", () => {

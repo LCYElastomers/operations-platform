@@ -41,17 +41,22 @@ async function readErrorDetail(response: Response): Promise<ApiErrorDetail | und
   }
 }
 
+/** Sends a JSON request. A 204 No Content response resolves to undefined. */
 export async function apiSend<T>(
   method: "POST" | "PUT" | "PATCH" | "DELETE",
   path: string,
-  body: unknown,
+  body?: unknown,
   init?: RequestInit,
 ): Promise<T> {
   const response = await fetch(path, {
     ...init,
     method,
-    headers: { Accept: "application/json", "Content-Type": "application/json", ...init?.headers },
-    body: JSON.stringify(body),
+    headers: {
+      Accept: "application/json",
+      ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+      ...init?.headers,
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
   });
 
   if (!response.ok) {
@@ -62,5 +67,6 @@ export async function apiSend<T>(
     );
   }
 
+  if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }

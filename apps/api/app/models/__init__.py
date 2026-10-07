@@ -8,6 +8,7 @@ from app.db.base import Base
 from app.ingestion.models import IngestionBatch
 from app.quality.moisture.models import FinishingMeasurement
 from app.safety.models import MetricCategory, MetricSection, MonthlyMetricValue
+from app.safety.observations.models import Observation, ObservationCategory
 
 __all__ = [
     "AuditEvent",
@@ -17,4 +18,6 @@ __all__ = [
     "MetricCategory",
     "MetricSection",
     "MonthlyMetricValue",
+    "Observation",
+    "ObservationCategory",
 ]

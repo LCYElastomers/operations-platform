@@ -69,3 +69,20 @@ def test_safety_seeds_definitions_but_no_values(upgrade_sql: str) -> None:
     assert "INSERT INTO safety.metric_categories" in upgrade_sql
     assert "'Lost Time Injury'" in upgrade_sql
     assert "INSERT INTO safety.monthly_metric_values" not in upgrade_sql
+
+
+def test_observation_tables_are_created_in_safety(upgrade_sql: str) -> None:
+    assert "CREATE TABLE safety.observation_categories" in upgrade_sql
+    assert "CREATE TABLE safety.observations" in upgrade_sql
+    assert "REFERENCES safety.observation_categories" in upgrade_sql
+    assert "outcome IN ('safe', 'unsafe')" in upgrade_sql
+    assert "kind IN ('act', 'condition')" in upgrade_sql
+
+
+def test_observation_categories_are_seeded_but_no_observations(upgrade_sql: str) -> None:
+    assert "INSERT INTO safety.observation_categories" in upgrade_sql
+    for name in ("'Housekeeping'", "'Fire'", "'Fire System'", "'Tools & Equipment'"):
+        assert name in upgrade_sql
+    assert "Housekeepng" not in upgrade_sql
+    assert "INSERT INTO safety.observations " not in upgrade_sql
+    assert "'observations_legacy'" in upgrade_sql

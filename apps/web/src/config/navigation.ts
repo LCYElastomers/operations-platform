@@ -1,5 +1,6 @@
 import {
   ChartColumn,
+  ClipboardList,
   Database,
   Droplets,
   FlaskConical,
@@ -62,7 +63,7 @@ export const navigation: NavSection[] = [
         label: "Safety",
         icon: HardHat,
         status: "in-development",
-        description: "Departmental safety reporting, starting with Incident & Near Miss.",
+        description: "Departmental safety reporting: Incident & Near Miss and Safety Observations.",
         children: [
           { id: "safety-overview", label: "Overview", href: "/safety", exact: true },
           {
@@ -85,6 +86,30 @@ export const navigation: NavSection[] = [
                 icon: ChartColumn,
                 status: "in-development",
                 description: "Year-to-date Incident & Near Miss totals and monthly trends.",
+              },
+            ],
+          },
+          {
+            id: "safety-observations",
+            label: "Safety Observations",
+            description: "Safe and unsafe acts and conditions, recorded one observation at a time.",
+            children: [
+              {
+                id: "safety-observations-entry",
+                label: "Observations",
+                href: "/safety/observations",
+                exact: true,
+                icon: ClipboardList,
+                status: "in-development",
+                description: "Record safe and unsafe acts and conditions, and review the month's observations.",
+              },
+              {
+                id: "safety-observations-dashboard",
+                label: "Dashboard",
+                href: "/safety/observations/dashboard",
+                icon: ChartColumn,
+                status: "in-development",
+                description: "Year-to-date Safe vs Unsafe, Act / Condition, and category trends.",
               },
             ],
           },
