@@ -86,3 +86,21 @@ def test_observation_categories_are_seeded_but_no_observations(upgrade_sql: str)
     assert "Housekeepng" not in upgrade_sql
     assert "INSERT INTO safety.observations " not in upgrade_sql
     assert "'observations_legacy'" in upgrade_sql
+
+
+def test_contact_tables_are_created_in_safety(upgrade_sql: str) -> None:
+    assert "CREATE TABLE safety.contact_supervisors" in upgrade_sql
+    assert "CREATE TABLE safety.supervisor_safety_contacts" in upgrade_sql
+    assert "REFERENCES safety.contact_supervisors (id) ON DELETE RESTRICT" in upgrade_sql
+    assert (
+        "CREATE UNIQUE INDEX uq_contact_supervisors_display_name "
+        "ON safety.contact_supervisors (lower(display_name))"
+    ) in upgrade_sql
+
+
+def test_contacts_migration_seeds_no_names_contacts_or_targets(upgrade_sql: str) -> None:
+    contacts_sql = upgrade_sql.split("Running upgrade 0004 -> 0005", 1)[1]
+    assert "INSERT" not in contacts_sql
+    assert "target" not in contacts_sql.lower()
+    assert "DROP" not in contacts_sql
+    assert "ALTER TABLE" not in contacts_sql

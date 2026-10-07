@@ -7,8 +7,8 @@ Endpoints require the most specific permission (for example
 ``safety.incidents.edit``), so finer-grained grants can be introduced later
 without changing the endpoints.
 
-Planned Safety functions follow the same scheme: ``safety.contacts.*``,
-``safety.performance.view``. Add them here when the function is built.
+Planned Safety functions follow the same scheme (e.g.
+``safety.performance.view``). Add them here when the function is built.
 """
 
 from collections.abc import Iterable
@@ -22,6 +22,8 @@ class Permission(StrEnum):
     SAFETY_INCIDENTS_EDIT = "safety.incidents.edit"
     SAFETY_OBSERVATIONS_VIEW = "safety.observations.view"
     SAFETY_OBSERVATIONS_EDIT = "safety.observations.edit"
+    SAFETY_CONTACTS_VIEW = "safety.contacts.view"
+    SAFETY_CONTACTS_EDIT = "safety.contacts.edit"
 
 
 _IMPLIED_ACTIONS = {"view": frozenset({"view"}), "edit": frozenset({"view", "edit"})}

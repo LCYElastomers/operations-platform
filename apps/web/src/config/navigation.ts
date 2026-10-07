@@ -12,6 +12,7 @@ import {
   ScrollText,
   TableProperties,
   Truck,
+  UserRoundCheck,
   Wrench,
 } from "lucide-react";
 
@@ -63,7 +64,8 @@ export const navigation: NavSection[] = [
         label: "Safety",
         icon: HardHat,
         status: "in-development",
-        description: "Departmental safety reporting: Incident & Near Miss and Safety Observations.",
+        description:
+          "Departmental safety reporting: Incident & Near Miss, Safety Observations, and Supervisor Safety Contacts.",
         children: [
           { id: "safety-overview", label: "Overview", href: "/safety", exact: true },
           {
@@ -110,6 +112,30 @@ export const navigation: NavSection[] = [
                 icon: ChartColumn,
                 status: "in-development",
                 description: "Year-to-date Safe vs Unsafe, Act / Condition, and category trends.",
+              },
+            ],
+          },
+          {
+            id: "safety-contacts",
+            label: "Supervisor Safety Contacts",
+            description: "Safety contacts credited to supervisors, recorded one contact at a time.",
+            children: [
+              {
+                id: "safety-contacts-entry",
+                label: "Contacts",
+                href: "/safety/contacts",
+                exact: true,
+                icon: UserRoundCheck,
+                status: "in-development",
+                description: "Record supervisor safety contacts with one tap, and review recent contacts.",
+              },
+              {
+                id: "safety-contacts-dashboard",
+                label: "Dashboard",
+                href: "/safety/contacts/dashboard",
+                icon: ChartColumn,
+                status: "in-development",
+                description: "Contacts by month, monthly participation, and the supervisor × month table.",
               },
             ],
           },

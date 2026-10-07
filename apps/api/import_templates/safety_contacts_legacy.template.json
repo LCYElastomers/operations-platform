@@ -1,0 +1,37 @@
+{
+  "source": "TEMPLATE - replace with workbook file name and SHA-256, hidden sheet 'SSC-Site -21'",
+  "kind": "supervisor_safety_contacts_legacy_aggregates",
+  "year": null,
+  "applied": false,
+  "notes": [
+    "TEMPLATE - no names and no values transcribed. Copy it outside the repository, transcribe, and have it reviewed by the Safety owner before any use. Nothing in the platform reads or applies this file.",
+    "These are monthly tallies per supervisor (cells V5:AG24, January..December), not individual contacts. Never convert them into contact records: no contact dates exist in the source.",
+    "year: the workbook does not state a year. Leave null until the Safety owner confirms it.",
+    "sourceName records the workbook's spelling (U5:U24). approvedDisplayName stays null until the owner approves the name; U-column rows include one name entered twice, which the owner must resolve.",
+    "The workbook's program figures (trained supervisors V1, contacts per month V2 and row 36, personal target AH2) and its participation row 38 are not transcribed here. Targets are not configured in the platform.",
+    "The activity checklist block (F5:Q33) is out of scope and must not be imported.",
+    "null = unreported in the source. 0 = a typed zero. Do not replace null with 0."
+  ],
+  "supervisors": [
+    { "sourceCell": "SSC-Site -21!U5", "sourceName": null, "approvedDisplayName": null, "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+    { "sourceCell": "SSC-Site -21!U6", "sourceName": null, "approvedDisplayName": null, "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+    { "sourceCell": "SSC-Site -21!U7", "sourceName": null, "approvedDisplayName": null, "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+    { "sourceCell": "SSC-Site -21!U8", "sourceName": null, "approvedDisplayName": null, "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+    { "sourceCell": "SSC-Site -21!U9", "sourceName": null, "approvedDisplayName": null, "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+    { "sourceCell": "SSC-Site -21!U10", "sourceName": null, "approvedDisplayName": null, "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+    { "sourceCell": "SSC-Site -21!U11", "sourceName": null, "approvedDisplayName": null, "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+    { "sourceCell": "SSC-Site -21!U12", "sourceName": null, "approvedDisplayName": null, "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+    { "sourceCell": "SSC-Site -21!U13", "sourceName": null, "approvedDisplayName": null, "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+    { "sourceCell": "SSC-Site -21!U14", "sourceName": null, "approvedDisplayName": null, "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+    { "sourceCell": "SSC-Site -21!U15", "sourceName": null, "approvedDisplayName": null, "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+    { "sourceCell": "SSC-Site -21!U16", "sourceName": null, "approvedDisplayName": null, "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+    { "sourceCell": "SSC-Site -21!U17", "sourceName": null, "approvedDisplayName": null, "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+    { "sourceCell": "SSC-Site -21!U18", "sourceName": null, "approvedDisplayName": null, "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+    { "sourceCell": "SSC-Site -21!U19", "sourceName": null, "approvedDisplayName": null, "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+    { "sourceCell": "SSC-Site -21!U20", "sourceName": null, "approvedDisplayName": null, "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+    { "sourceCell": "SSC-Site -21!U21", "sourceName": null, "approvedDisplayName": null, "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+    { "sourceCell": "SSC-Site -21!U22", "sourceName": null, "approvedDisplayName": null, "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+    { "sourceCell": "SSC-Site -21!U23", "sourceName": null, "approvedDisplayName": null, "months": [null, null, null, null, null, null, null, null, null, null, null, null] },
+    { "sourceCell": "SSC-Site -21!U24", "sourceName": null, "approvedDisplayName": null, "months": [null, null, null, null, null, null, null, null, null, null, null, null] }
+  ]
+}

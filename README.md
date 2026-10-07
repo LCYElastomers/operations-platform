@@ -238,6 +238,7 @@ Current revisions:
 | `0002`   | Creates `core.ingestion_batches`; adds record identity and versioning columns to `quality.finishing_measurements` |
 | `0003`   | Creates `core.audit_events`; creates `safety.metric_sections`, `safety.metric_categories`, `safety.monthly_metric_values`; seeds the Incident & Near Miss section and category definitions (no values) |
 | `0004`   | Creates `safety.observation_categories` (seeded) and `safety.observations`; seeds the legacy `observations_legacy` metric sections and categories (no values) |
+| `0005`   | Creates `safety.contact_supervisors` and `safety.supervisor_safety_contacts`; seeds nothing (no supervisors, contacts or targets) |
 
 Downgrading `0002` drops `core.ingestion_batches` and the versioning
 columns. It refuses to run while superseded measurement versions exist,
@@ -246,7 +247,8 @@ because they would otherwise become indistinguishable from current rows.
 Downgrading `0003` refuses to run while any Safety monthly value or audit
 event exists, so entered data and its history are never dropped silently.
 Downgrading `0004` likewise refuses while any observation or legacy
-observation value exists.
+observation value exists. Downgrading `0005` refuses while any supervisor or
+supervisor safety contact exists.
 
 Explicit constraint names in migrations are wrapped in `op.f()`; otherwise the
 `ck_%(table_name)s_%(constraint_name)s` naming convention prefixes them a
@@ -664,12 +666,14 @@ under it, and `edit` implies `view`:
 
 | Granted                    | Satisfies                                                         |
 | -------------------------- | ----------------------------------------------------------------- |
-| `safety.view`              | `safety.view`, `safety.incidents.view`, `safety.observations.view` |
-| `safety.edit`              | everything above plus `safety.edit`, `safety.incidents.edit`, `safety.observations.edit` |
+| `safety.view`              | `safety.view`, `safety.incidents.view`, `safety.observations.view`, `safety.contacts.view` |
+| `safety.edit`              | everything above plus `safety.edit`, `safety.incidents.edit`, `safety.observations.edit`, `safety.contacts.edit` |
 | `safety.incidents.view`    | `safety.incidents.view` only                                      |
 | `safety.incidents.edit`    | `safety.incidents.view`, `safety.incidents.edit`                  |
 | `safety.observations.view` | `safety.observations.view` only                                   |
 | `safety.observations.edit` | `safety.observations.view`, `safety.observations.edit`            |
+| `safety.contacts.view`     | `safety.contacts.view` only                                       |
+| `safety.contacts.edit`     | `safety.contacts.view`, `safety.contacts.edit`                    |
 
 Endpoints always require the most specific permission (for example
 `safety.incidents.view` or `safety.observations.edit`), so grants can be
@@ -868,6 +872,62 @@ names the source cells for every category; fill in a reviewed copy and load
 it with the same `legacy_import` CLI as Incident & Near Miss. No legacy
 observation values have been imported, and the application shows none of
 them.
+
+## Safety > Supervisor Safety Contacts
+
+Routes: `/safety/contacts` (tally board, recent contacts, supervisor list) and
+`/safety/contacts/dashboard`. Code lives in `apps/api/app/safety/contacts/`
+and `apps/web/src/features/safety/contacts/`.
+
+Each contact is one record: one contact credited to one supervisor on one
+date. Nothing else is captured (no contacted person, area, notes, type or
+checklist). Supervisors are a program list maintained in the application,
+not an employee directory or user accounts.
+
+| Endpoint                                                | Permission             | Purpose |
+| ------------------------------------------------------- | ---------------------- | ------- |
+| `GET /api/v1/safety/contacts/supervisors`               | `safety.contacts.view` | Every supervisor, active and inactive, alphabetical |
+| `POST /api/v1/safety/contacts/supervisors`              | `safety.contacts.edit` | Add a supervisor |
+| `PUT /api/v1/safety/contacts/supervisors/{id}`          | `safety.contacts.edit` | Correct name, active, eligibility or effective dates; send `expectedUpdatedAt` |
+| `DELETE /api/v1/safety/contacts/supervisors/{id}`       | `safety.contacts.edit` | Remove a supervisor added by mistake; `409 supervisor_has_contacts` once contacts exist |
+| `GET /api/v1/safety/contacts`                           | `safety.contacts.view` | Newest first; filters `year`, `month`, `contactFrom`, `contactTo`, `supervisorId`; `limit` (default 50, max 500), `offset` |
+| `POST /api/v1/safety/contacts`                          | `safety.contacts.edit` | Credit one contact; an optional `requestId` makes retries return the first contact (`200`) instead of a duplicate |
+| `PUT /api/v1/safety/contacts/{id}`                      | `safety.contacts.edit` | Change date or supervisor; send `expectedUpdatedAt` |
+| `DELETE /api/v1/safety/contacts/{id}`                   | `safety.contacts.edit` | Delete it (also used by Undo) |
+| `GET /api/v1/safety/contacts/summary?year=&month=`      | `safety.contacts.view` | Contacts per supervisor; participation when a month is given |
+| `GET /api/v1/safety/contacts/dashboard?year=`           | `safety.contacts.view` | Year total, monthly contacts and participation (months not yet started are `null`), supervisor × month counts |
+
+- `contactDate` is a `YYYY-MM-DD` date from 2000-01-01 up to today (UTC).
+  A contact must fall within its supervisor's effective period. New contacts
+  cannot be credited to an inactive supervisor; an existing contact keeps its
+  supervisor when edited.
+- Supervisor names are trimmed and whitespace-collapsed, at most 100
+  characters, and unique ignoring case. An inactive supervisor needs an
+  effective end date. Dates cannot be narrowed so that existing contacts fall
+  outside them. Inactive supervisors remain in history and the dashboard.
+- Stale `expectedUpdatedAt` returns `409 edit_conflict` with the current
+  record; nothing is written.
+- Every create, update and delete writes one `core.audit_events` row in the
+  same transaction (`safety.contact` / `contacts/<id>` and
+  `safety.contact_supervisor` / `contact-supervisors/<id>`). Unchanged updates
+  are not written or audited. Logs carry ids only, never names.
+
+**Participation** for a month = eligible supervisors with at least one contact
+in that month ÷ supervisors eligible for that month. A supervisor counts as
+eligible when marked participation-eligible and their effective period
+overlaps the month. Both numbers are returned with the rate; the rate is
+`null` when no supervisor is eligible. No target is configured or shown, and
+supervisors are listed alphabetically without ranking.
+
+### Legacy workbook tallies
+
+The workbook's hidden sheet `SSC-Site -21` holds monthly tallies per
+supervisor with no contact dates and no stated year, so they are never
+converted into contacts. Migration `0005` seeds no supervisors, contacts or
+targets. The template
+[`apps/api/import_templates/safety_contacts_legacy.template.json`](apps/api/import_templates/safety_contacts_legacy.template.json)
+names the source cells only; nothing in the platform reads it. No legacy
+contact data has been imported.
 
 ## shadcn/ui
 

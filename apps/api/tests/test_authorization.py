@@ -30,6 +30,12 @@ P = Permission
         (P.SAFETY_OBSERVATIONS_EDIT, P.SAFETY_OBSERVATIONS_VIEW, True),
         (P.SAFETY_OBSERVATIONS_VIEW, P.SAFETY_INCIDENTS_VIEW, False),
         (P.SAFETY_INCIDENTS_EDIT, P.SAFETY_OBSERVATIONS_VIEW, False),
+        (P.SAFETY_VIEW, P.SAFETY_CONTACTS_VIEW, True),
+        (P.SAFETY_VIEW, P.SAFETY_CONTACTS_EDIT, False),
+        (P.SAFETY_EDIT, P.SAFETY_CONTACTS_EDIT, True),
+        (P.SAFETY_CONTACTS_EDIT, P.SAFETY_CONTACTS_VIEW, True),
+        (P.SAFETY_CONTACTS_EDIT, P.SAFETY_OBSERVATIONS_VIEW, False),
+        (P.SAFETY_OBSERVATIONS_EDIT, P.SAFETY_CONTACTS_VIEW, False),
     ],
 )
 def test_grants_follow_scope_and_action(
@@ -43,6 +49,7 @@ def test_effective_permissions_expand_module_grants() -> None:
         P.SAFETY_VIEW,
         P.SAFETY_INCIDENTS_VIEW,
         P.SAFETY_OBSERVATIONS_VIEW,
+        P.SAFETY_CONTACTS_VIEW,
     }
     assert effective_permissions([P.SAFETY_EDIT]) == set(Permission)
     assert effective_permissions([]) == set()

@@ -14,6 +14,8 @@ const requiredRoutes = [
   "/safety/incidents/dashboard",
   "/safety/observations",
   "/safety/observations/dashboard",
+  "/safety/contacts",
+  "/safety/contacts/dashboard",
   "/environmental",
   "/procurement",
   "/sales",
@@ -52,13 +54,29 @@ describe("navigation config", () => {
     expect(trail.map((item) => item.label)).toEqual(["Safety", "Safety Observations", label]);
   });
 
+  it.each([
+    ["/safety/contacts", "Contacts"],
+    ["/safety/contacts/dashboard", "Dashboard"],
+  ])("nests %s under Safety > Supervisor Safety Contacts", (route, label) => {
+    const trail = findNavTrail(navigation, route);
+    expect(trail.map((item) => item.label)).toEqual(["Safety", "Supervisor Safety Contacts", label]);
+  });
+
   it("lists the Safety areas in order", () => {
     const safety = moduleItems.find((item) => item.id === "safety");
     expect(safety?.children?.map((item) => item.label)).toEqual([
       "Overview",
       "Incident & Near Miss",
       "Safety Observations",
+      "Supervisor Safety Contacts",
     ]);
+  });
+
+  it("marks only the Contacts page active on its dashboard", () => {
+    expect(findNavTrail(navigation, "/safety/contacts/dashboard").at(-1)?.id).toBe(
+      "safety-contacts-dashboard",
+    );
+    expect(findNavTrail(navigation, "/safety/contacts").at(-1)?.id).toBe("safety-contacts-entry");
   });
 
   it("marks only the Observations page active on its dashboard", () => {
