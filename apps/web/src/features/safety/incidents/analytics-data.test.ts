@@ -4,6 +4,7 @@ import { buildBarOption } from "@/components/common/bar-chart";
 
 import {
   bars,
+  breakdownChart,
   classificationChart,
   combinedKpiCaption,
   formatCount,
@@ -14,10 +15,98 @@ import {
   monthLabels,
   monthList,
   NOTES,
+  parseView,
   periodLabel,
+  priorYearCaption,
+  reconciliationStatus,
+  reconciliationSummary,
   totalLabel,
 } from "./analytics-data";
+import { fixtureCategory, fixtureReconciliation } from "./analytics.fixture";
 import type { AnalyticsKpi, AnalyticsSeries, IncidentAnalyticsResponse } from "./api";
+
+describe("dashboard views", () => {
+  it("parses ?view= and falls back to Overview", () => {
+    expect(parseView("area")).toBe("area");
+    expect(parseView("incident-analysis")).toBe("incident-analysis");
+    expect(parseView("behavior")).toBe("behavior");
+    expect(parseView(["area", "behavior"])).toBe("area");
+    expect(parseView(undefined)).toBe("overview");
+    expect(parseView("")).toBe("overview");
+    expect(parseView("process-safety")).toBe("overview");
+  });
+});
+
+describe("prior year", () => {
+  const prior = (value: number | null, delta: number | null, complete = true) => ({
+    year: 2025,
+    value,
+    monthsReported: 9,
+    complete,
+    delta,
+  });
+
+  it("captions the same period of the prior year with the change", () => {
+    expect(priorYearCaption(kpi({ priorYear: prior(36, 5) }))).toBe("Prior year (Jan–Sep 2025): 36 · +5");
+    expect(priorYearCaption(kpi({ priorYear: prior(14, -3) }))).toBe("Prior year (Jan–Sep 2025): 14 · −3");
+    expect(priorYearCaption(kpi({ priorYear: prior(41, 0, false) }))).toBe("Prior year (Jan–Sep 2025): 41 (partial) · ±0");
+    expect(priorYearCaption(kpi({ priorYear: prior(36, null) }))).toBe("Prior year (Jan–Sep 2025): 36");
+  });
+
+  it("shows nothing when the prior year is unavailable", () => {
+    expect(priorYearCaption(kpi({}))).toBeNull();
+    expect(priorYearCaption(kpi({ priorYear: null }))).toBeNull();
+    expect(priorYearCaption(undefined)).toBeNull();
+  });
+});
+
+describe("breakdowns", () => {
+  it("charts reported categories only, keeping a reported zero, sized by count", () => {
+    const chart = breakdownChart(
+      [fixtureCategory("a", "A", [3]), fixtureCategory("b", "B", [0]), fixtureCategory("c", "C", [null])],
+      "Count",
+      "#000",
+    );
+    expect(chart.categories).toEqual(["A", "B"]);
+    expect(chart.series[0].values).toEqual([3, 0]);
+    expect(chart.height).toBe(140);
+    const many = breakdownChart(
+      Array.from({ length: 15 }, (_, i) => fixtureCategory(String(i), String(i), [1])),
+      "Count",
+      "#000",
+    );
+    expect(many.height).toBe(15 * 30 + 40);
+  });
+
+  it("describes each reconciliation state", () => {
+    const [ok, below, above, noData, noTotal] = fixtureReconciliation([2, 1, 3, null, 1], [2, 2, 2, 0, null]);
+    expect(reconciliationStatus(ok, "areas", "Incidents")).toEqual({
+      tone: "ok",
+      text: "✓",
+      description: "January: areas total 2, matches Incidents 2",
+    });
+    expect(reconciliationStatus(below, "areas", "Incidents").text).toBe("−1");
+    expect(reconciliationStatus(above, "body parts", "injuries")).toMatchObject({
+      tone: "warning",
+      text: "+1",
+      description: "March: body parts total 3, injuries 2 (reconciliation difference +1)",
+    });
+    expect(reconciliationStatus(noData, "areas", "Incidents").description).toBe(
+      "April: no areas data; Incidents 0",
+    );
+    expect(reconciliationStatus(noTotal, "areas", "Incidents").description).toBe(
+      "May: Incidents not reported; areas total 1",
+    );
+  });
+
+  it("summarizes reconciliation without hiding differences", () => {
+    const months = fixtureReconciliation([2, 1, null, 1], [2, 2, 0, null]);
+    expect(reconciliationSummary(months, "Incident")).toBe(
+      "Reconciled in 1 of 4 months; 1 with a reconciliation difference; 1 with no breakdown data; 1 with no Incident total.",
+    );
+    expect(reconciliationSummary([], "LOPC")).toBe("No months to compare.");
+  });
+});
 
 function series(values: (number | null)[], overrides: Partial<AnalyticsSeries> = {}): AnalyticsSeries {
   const reported = values.filter((value): value is number => value !== null);

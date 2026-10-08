@@ -16,6 +16,8 @@ export type MonthlyGridCell = {
 export type MonthlyGridRow = {
   id: string;
   label: string;
+  /** Shown as the row header's tooltip, e.g. a category definition. */
+  description?: string | null;
   cells: MonthlyGridCell[];
   /** Calculated, read-only row total; null when no month is reported. */
   total: number | null;
@@ -40,6 +42,8 @@ type MonthlyGridProps = {
   summary?: React.ReactNode;
   /** Shown in the header at all times, e.g. an unsaved-changes badge. */
   status?: React.ReactNode;
+  /** Shown under the grid while it is expanded, e.g. data checks. */
+  notes?: React.ReactNode;
   loading?: boolean;
   className?: string;
 };
@@ -79,6 +83,7 @@ export function MonthlyGrid({
   onOpenChange,
   summary,
   status,
+  notes,
   className,
   ...grid
 }: MonthlyGridProps) {
@@ -133,6 +138,7 @@ export function MonthlyGrid({
       </h2>
       <div id={bodyId} hidden={!expanded}>
         {expanded && <GridTable {...grid} />}
+        {expanded && notes && <div className="border-t px-4 py-2.5">{notes}</div>}
       </div>
     </section>
   );
@@ -140,7 +146,7 @@ export function MonthlyGrid({
 
 type GridTableProps = Omit<
   MonthlyGridProps,
-  "title" | "open" | "onOpenChange" | "summary" | "status" | "className"
+  "title" | "open" | "onOpenChange" | "summary" | "status" | "notes" | "className"
 >;
 
 function GridTable({
@@ -316,7 +322,7 @@ function GridTable({
                       "bg-card px-3 text-left leading-tight font-medium group-focus-within/row:text-primary sm:px-4",
                       stickyStart,
                     )}
-                    title={row.label}
+                    title={row.description ? `${row.label}\n${row.description}` : row.label}
                   >
                     <span className="line-clamp-2">{row.label}</span>
                   </th>

@@ -19,18 +19,40 @@ nothing is stored. Rules:
   rather than of distinct events. The ``property_equipment_damage`` section is
   not read.
 - PSIF is shown as recorded; it is not defined, weighted or rated here.
+- Breakdowns (area, near-miss potential and cause, LOPC contributing factor,
+  injury cause, body part) are supporting dimensions. The Incident, Near
+  Miss and LOPC totals stay authoritative; a breakdown is only compared with
+  them (``MonthReconciliationOut``), never used to replace or fill them, and a
+  blank breakdown cell is never treated as zero. Potential, cause, injury
+  cause and body part are tags and may total more than the events.
+- The prior year covers the same months. Incidents are read from the
+  ``incidents`` set; LOPC from the set Safety Performance reads for that year
+  (``count_source``: ``performance_legacy`` before 2026), so it is never stored
+  twice.
+- Behavior has no approved source: nothing is read or returned for it.
 """
 
 import datetime as dt
 from collections.abc import Sequence
+from dataclasses import dataclass
 
+from app.safety.performance.calculations import count_source
 from app.safety.repository import SafetyMetricsRepository, SectionDefinition, StoredValues
 from app.safety.schemas import (
+    AnalyticsBreakdownOut,
+    AnalyticsCategoryOut,
+    AnalyticsCumulativeOut,
     AnalyticsKpiKey,
     AnalyticsKpiOut,
     AnalyticsKpiPartOut,
+    AnalyticsPriorYearOut,
     AnalyticsSeriesOut,
+    AreaReconciliationOut,
     IncidentAnalyticsResponse,
+    InjuryReconciliationOut,
+    LopcFactorsOut,
+    MonthReconciliationOut,
+    ReconciliationStatus,
 )
 from app.safety.service import category_ids, total
 from app.safety.site_calendar import site_today
@@ -49,6 +71,27 @@ PIT = (CLASSIFICATION, "pit_accident")
 PROPERTY_DAMAGE = (CLASSIFICATION, "property_damage")
 EQUIPMENT_DAMAGE = (CLASSIFICATION, "equipment_damage_failure")
 COMBINED_DAMAGE_CODE = "property_damage+equipment_damage_failure"
+FIRST_AID = (CLASSIFICATION, "first_aid")
+RECORDABLE_INJURY = (CLASSIFICATION, "recordable_injury")
+
+INCIDENTS_BY_AREA = "incidents_by_area"
+NEAR_MISSES_BY_AREA = "near_misses_by_area"
+NEAR_MISS_POTENTIAL = "near_miss_potential"
+NEAR_MISS_CAUSE = "near_miss_cause"
+LOPC_FACTOR = "lopc_contributing_factor"
+INJURY_CAUSE = "injury_cause"
+BODY_PART = "body_part"
+
+
+@dataclass(frozen=True)
+class PriorYearValues:
+    """Prior-year monthly values, January..through month; empty when not loaded."""
+
+    incidents: Sequence[int | None] = ()
+    lopc: Sequence[int | None] = ()
+
+
+NO_PRIOR_YEAR = PriorYearValues()
 
 
 class MonthNotStartedError(ValueError):
@@ -112,7 +155,22 @@ def _kpi(
     series: AnalyticsSeriesOut,
     through_month: int | None,
     parts: Sequence[AnalyticsSeriesOut] = (),
+    prior: AnalyticsSeriesOut | None = None,
+    prior_year: int | None = None,
 ) -> AnalyticsKpiOut:
+    prior_out = None
+    if prior is not None and prior_year is not None and prior.months_reported > 0:
+        prior_out = AnalyticsPriorYearOut(
+            year=prior_year,
+            value=prior.total,
+            months_reported=prior.months_reported,
+            complete=prior.complete,
+            delta=(
+                series.total - prior.total
+                if series.total is not None and prior.total is not None
+                else None
+            ),
+        )
     return AnalyticsKpiOut(
         key=key,
         value=series.total,
@@ -125,7 +183,93 @@ def _kpi(
             )
             for part in parts
         ],
+        prior_year=prior_out,
     )
+
+
+def reconcile(
+    dimension: Sequence[int | None], authoritative: Sequence[int | None]
+) -> list[MonthReconciliationOut]:
+    """Compare a breakdown's monthly sums with an authoritative monthly total."""
+    months = []
+    for month, (part, whole) in enumerate(zip(dimension, authoritative, strict=True), start=1):
+        status: ReconciliationStatus
+        if whole is None:
+            status = "no_authoritative_total"
+        elif part is None:
+            status = "no_dimension_data"
+        elif part == whole:
+            status = "reconciled"
+        elif part < whole:
+            status = "below_total"
+        else:
+            status = "above_total"
+        months.append(
+            MonthReconciliationOut(
+                month=month,
+                dimension_total=part,
+                authoritative_total=whole,
+                difference=part - whole if part is not None and whole is not None else None,
+                status=status,
+            )
+        )
+    return months
+
+
+def cumulative(values: Sequence[int | None]) -> list[int | None]:
+    """Running total of reported values: carried through unreported months, null before
+    the first reported month."""
+    running: int | None = None
+    out: list[int | None] = []
+    for value in values:
+        if value is not None:
+            running = (running or 0) + value
+        out.append(running)
+    return out
+
+
+def _breakdown(
+    section_code: str,
+    sections: Sequence[SectionDefinition],
+    stored: StoredValues,
+    months: range,
+    *,
+    is_tag: bool,
+) -> AnalyticsBreakdownOut:
+    section = next((s for s in sections if s.code == section_code), None)
+    rows = []
+    for category in section.categories if section else ():
+        values = [stored.get((category.id, m)) for m in months]
+        rows.append(
+            AnalyticsCategoryOut(
+                code=category.code,
+                name=category.name,
+                description=category.description,
+                area_kind=category.area_kind,
+                values=values,
+                total=total(values),
+                months_reported=sum(1 for value in values if value is not None),
+            )
+        )
+    # Highest total first, unreported last; display order breaks ties.
+    ranked = sorted(
+        enumerate(rows),
+        key=lambda item: (item[1].total is None, -(item[1].total or 0), item[0]),
+    )
+    monthly_totals = [total(row.values[index] for row in rows) for index in range(len(months))]
+    return AnalyticsBreakdownOut(
+        section=section_code,
+        name=section.name if section else section_code,
+        is_tag=is_tag,
+        categories=[row for _, row in ranked],
+        rows=rows,
+        monthly_totals=monthly_totals,
+        total=total(monthly_totals),
+    )
+
+
+def _reported_only(breakdown: AnalyticsBreakdownOut) -> list[AnalyticsCategoryOut]:
+    return [row for row in breakdown.categories if row.total is not None]
 
 
 def build_analytics(
@@ -136,6 +280,7 @@ def build_analytics(
     sections: Sequence[SectionDefinition],
     stored: StoredValues,
     years: list[int],
+    prior: PriorYearValues = NO_PRIOR_YEAR,
 ) -> IncidentAnalyticsResponse:
     """Analytics for ``year``, January..``through_month`` (no months when None)."""
     months = range(1, through_month + 1) if through_month is not None else range(0)
@@ -166,15 +311,35 @@ def build_analytics(
         series(PSIF),
         series(PIT),
     )
+
+    def padded(values: Sequence[int | None]) -> list[int | None]:
+        return [values[m - 1] if m <= len(values) else None for m in months]
+
+    prior_year = year - 1
+    prior_incidents = _series(INCIDENTS[0], INCIDENTS[1], incidents.name, padded(prior.incidents))
+    prior_lopc = _series(LOPC[0], LOPC[1], lopc.name, padded(prior.lopc))
+
+    incident_areas = _breakdown(INCIDENTS_BY_AREA, sections, stored, months, is_tag=False)
+    near_miss_areas = _breakdown(NEAR_MISSES_BY_AREA, sections, stored, months, is_tag=False)
+    factors = _breakdown(LOPC_FACTOR, sections, stored, months, is_tag=False)
+    injury_cause = _breakdown(INJURY_CAUSE, sections, stored, months, is_tag=True)
+    body_part = _breakdown(BODY_PART, sections, stored, months, is_tag=True)
+    injuries = [
+        total(pair)
+        for pair in zip(series(FIRST_AID).values, series(RECORDABLE_INJURY).values, strict=True)
+    ]
+
     return IncidentAnalyticsResponse(
         year=year,
         through_month=through_month,
         latest_month=latest_month,
         available_years=years,
         kpis=[
-            _kpi("incidents", incidents, through_month),
+            _kpi(
+                "incidents", incidents, through_month, prior=prior_incidents, prior_year=prior_year
+            ),
             _kpi("near_misses", near_misses, through_month),
-            _kpi("lopc", lopc, through_month),
+            _kpi("lopc", lopc, through_month, prior=prior_lopc, prior_year=prior_year),
             _kpi("psif", psif, through_month),
             _kpi("pit", pit, through_month),
             _kpi(
@@ -193,7 +358,71 @@ def build_analytics(
         property_damage=property_damage,
         equipment_damage=equipment_damage,
         combined_damage=combined_damage,
+        incidents_by_area=_reported_only(incident_areas),
+        near_misses_by_area=_reported_only(near_miss_areas),
+        incident_area_monthly=incident_areas.rows,
+        near_miss_area_monthly=near_miss_areas.rows,
+        area_reconciliation=AreaReconciliationOut(
+            incidents=reconcile(incident_areas.monthly_totals, incidents.values),
+            near_misses=reconcile(near_miss_areas.monthly_totals, near_misses.values),
+        ),
+        prior_year=prior_year,
+        incidents_prior_year_monthly=prior_incidents,
+        incidents_prior_year_available=prior_incidents.months_reported > 0,
+        lopc_prior_year_monthly=prior_lopc,
+        lopc_prior_year_available=prior_lopc.months_reported > 0,
+        lopc_contributing_factors=LopcFactorsOut(
+            breakdown=factors,
+            cumulative=[
+                AnalyticsCumulativeOut(code=row.code, name=row.name, values=cumulative(row.values))
+                for row in factors.rows
+            ],
+            cumulative_total=cumulative(factors.monthly_totals),
+        ),
+        lopc_factor_reconciliation=reconcile(factors.monthly_totals, lopc.values),
+        near_miss_potential=_breakdown(NEAR_MISS_POTENTIAL, sections, stored, months, is_tag=True),
+        near_miss_cause=_breakdown(NEAR_MISS_CAUSE, sections, stored, months, is_tag=True),
+        injury_cause=injury_cause,
+        body_part=body_part,
+        injury_reconciliation=InjuryReconciliationOut(
+            injuries=injuries,
+            injury_cause=reconcile(injury_cause.monthly_totals, injuries),
+            body_part=reconcile(body_part.monthly_totals, injuries),
+        ),
     )
+
+
+def _prior_year_values(
+    repository: SafetyMetricsRepository,
+    sections: Sequence[SectionDefinition],
+    prior_year: int,
+    through_month: int | None,
+) -> PriorYearValues:
+    if through_month is None:
+        return PriorYearValues()
+    months = range(1, through_month + 1)
+
+    def values(
+        source_sections: Sequence[SectionDefinition], key: tuple[str, str]
+    ) -> list[int | None]:
+        category = next(
+            (
+                c
+                for s in source_sections
+                if s.code == key[0]
+                for c in s.categories
+                if c.code == key[1]
+            ),
+            None,
+        )
+        if category is None:
+            return [None for _ in months]
+        stored = repository.values([category.id], prior_year)
+        return [stored.get((category.id, m)) for m in months]
+
+    lopc_set = count_source(prior_year)
+    lopc_sections = sections if lopc_set == METRIC_SET else repository.sections(lopc_set)
+    return PriorYearValues(incidents=values(sections, INCIDENTS), lopc=values(lopc_sections, LOPC))
 
 
 def load_analytics(
@@ -209,13 +438,15 @@ def load_analytics(
     latest = latest_started_month(year, today)
     if through_month is not None and (latest is None or through_month > latest):
         raise MonthNotStartedError(latest)
+    through = through_month if through_month is not None else latest
     sections = repository.sections(METRIC_SET)
     ids = category_ids(sections)
     return build_analytics(
         year=year,
-        through_month=through_month if through_month is not None else latest,
+        through_month=through,
         latest_month=latest,
         sections=sections,
         stored=repository.values(ids, year),
         years=available_years(today, repository.years_with_values(ids)),
+        prior=_prior_year_values(repository, sections, year - 1, through),
     )

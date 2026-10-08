@@ -105,11 +105,16 @@ def test_performance_tables_are_created_in_safety(upgrade_sql: str) -> None:
     assert "total_hours NUMERIC(10, 2) NOT NULL" in upgrade_sql
     assert "month_closed BOOLEAN DEFAULT false NOT NULL" in upgrade_sql
     assert "hourly_hours + salary_hours = total_hours" in upgrade_sql
-    assert "contractor" not in upgrade_sql
+    assert "contractor" not in _segment(upgrade_sql, "0005 -> 0006", "0006 -> 0007")
+
+
+def _segment(sql: str, start: str, end: str | None = None) -> str:
+    segment = sql.split(f"Running upgrade {start}", 1)[1]
+    return segment.split(f"Running upgrade {end}", 1)[0] if end else segment
 
 
 def test_performance_migration_seeds_legacy_definitions_only(upgrade_sql: str) -> None:
-    performance_sql = upgrade_sql.split("Running upgrade 0005 -> 0006", 1)[1]
+    performance_sql = _segment(upgrade_sql, "0005 -> 0006", "0006 -> 0007")
     assert "'performance_legacy'" in performance_sql
     assert "INSERT INTO safety.metric_sections" in performance_sql
     assert "INSERT INTO safety.metric_categories" in performance_sql
@@ -128,3 +133,31 @@ def test_contacts_migration_seeds_no_names_contacts_or_targets(upgrade_sql: str)
     assert "target" not in contacts_sql.lower()
     assert "DROP" not in contacts_sql
     assert "ALTER TABLE" not in contacts_sql
+
+
+def test_incident_dimensions_migration_creates_areas_and_definitions_only(upgrade_sql: str) -> None:
+    dimensions_sql = _segment(upgrade_sql, "0006 -> 0007")
+    assert "CREATE TABLE safety.areas" in dimensions_sql
+    assert "area_kind IN ('process_unit', 'support', 'organization')" in dimensions_sql
+    assert "ADD COLUMN area_id INTEGER" in dimensions_sql
+    assert "REFERENCES safety.areas (id) ON DELETE RESTRICT" in dimensions_sql
+    assert "CREATE UNIQUE INDEX uq_metric_categories_section_area" in dimensions_sql
+    assert "WHERE area_id IS NOT NULL" in dimensions_sql
+    assert "CREATE TRIGGER trg_metric_categories_area_rule" in dimensions_sql
+    assert "CREATE TRIGGER trg_metric_sections_area_rule" in dimensions_sql
+    assert "INSERT INTO safety.areas" in dimensions_sql
+    for section in (
+        "incidents_by_area",
+        "near_misses_by_area",
+        "near_miss_potential",
+        "near_miss_cause",
+        "lopc_contributing_factor",
+        "injury_cause",
+        "body_part",
+    ):
+        assert f"'{section}'" in dimensions_sql
+    assert "INSERT INTO safety.monthly_metric_values" not in dimensions_sql
+    assert "UPDATE safety.monthly_metric_values" not in dimensions_sql
+    assert "DROP" not in dimensions_sql
+    for excluded in ("behavior", "process_safety", "psm", "electrical", "material"):
+        assert f"'{excluded}" not in dimensions_sql.lower()

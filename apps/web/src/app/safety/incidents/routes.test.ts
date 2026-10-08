@@ -30,12 +30,9 @@ describe("Incident & Near Miss routes", () => {
   });
 
   it("has no application link to the retired Analytics page", () => {
-    // The Incident Analytics API (/api/v1/safety/incidents/analytics) is not a page link.
-    const stale = sourceFiles(SRC).filter((file) =>
-      readFileSync(file, "utf8")
-        .split("\n")
-        .some((line) => line.includes(OLD_ROUTE) && !line.includes(`/api/v1${OLD_ROUTE}`)),
-    );
+    // Only the bare route counts: not the API (/api/v1/safety/…) or module paths (…/incidents/analytics-data).
+    const link = /(?<![\w-])\/safety\/incidents\/analytics(?![\w-])/;
+    const stale = sourceFiles(SRC).filter((file) => link.test(readFileSync(file, "utf8")));
     expect(stale).toEqual([]);
   });
 });

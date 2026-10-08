@@ -74,6 +74,8 @@ def build_metrics(
                     id=category.id,
                     code=category.code,
                     name=category.name,
+                    description=category.description,
+                    area_kind=category.area_kind,
                     values=values,
                     ytd=total(values),
                 )

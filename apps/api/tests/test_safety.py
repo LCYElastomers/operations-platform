@@ -355,6 +355,8 @@ def test_get_returns_the_monthly_grid(editor: TestClient) -> None:
         "id": 11,
         "code": "first_aid",
         "name": "First Aid",
+        "description": None,
+        "areaKind": None,
         "values": [2] + [None] * 11,
         "ytd": 2,
     }

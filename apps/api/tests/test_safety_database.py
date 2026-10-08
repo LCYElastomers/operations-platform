@@ -5,23 +5,29 @@ USAGE and CREATE on `safety` (or CREATE on the database).
 """
 
 import datetime as dt
+import importlib.util
 from collections.abc import Iterator
+from pathlib import Path
+from types import ModuleType
 
 import pytest
 from postgres_support import requires_postgres
 from sqlalchemy import Engine, func, insert, inspect, select, text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.orm import Session
 
 from app.audit.models import AuditEvent
 from app.safety import analytics, service
-from app.safety.models import MetricCategory, MetricSection, MonthlyMetricValue
+from app.safety.models import Area, MetricCategory, MetricSection, MonthlyMetricValue
 from app.safety.repository import DatabaseSafetyMetricsRepository
 from app.safety.schemas import CellChange
 from app.safety.service import EditConflictError
 
 pytestmark = requires_postgres
 
+API_ROOT = Path(analytics.__file__).resolve().parents[2]
+# The 0007 trigger messages (the constraint name is not part of the error text).
+AREA_RULE = "area-linked categories belong only|must be linked to an area"
 NOW = dt.datetime(2026, 10, 6, 12, 0, tzinfo=dt.UTC)
 
 
@@ -88,6 +94,13 @@ def test_incident_definitions_are_seeded_in_display_order(
         ("property_equipment_damage", "Property / Equipment Damage"),
         ("pit", "PIT"),
         ("psif", "PSIF"),
+        ("incidents_by_area", "Incidents by Area"),
+        ("near_misses_by_area", "Near Misses by Area"),
+        ("near_miss_potential", "Near-Miss Potential"),
+        ("near_miss_cause", "Near-Miss Cause"),
+        ("lopc_contributing_factor", "LOPC Contributing Factor"),
+        ("injury_cause", "Injury Cause"),
+        ("body_part", "Body Part"),
     ]
     assert [(c.code, c.name) for c in sections[0].categories] == [
         ("near_miss", "Near Miss"),
@@ -108,7 +121,7 @@ def test_incident_definitions_are_seeded_in_display_order(
         "Non-Work Related",
         "Regulatory",
     ]
-    for section in sections[2:]:
+    for section in sections[2:6]:
         assert [c.code for c in section.categories] == [section.code]
 
 
@@ -116,14 +129,17 @@ def test_foreign_keys_and_check_constraints(engine: Engine) -> None:
     inspector = inspect(engine)
 
     fks = {
-        table: [
+        table: sorted(
             (fk["name"], fk["constrained_columns"], fk["referred_table"])
             for fk in inspector.get_foreign_keys(table, schema="safety")
-        ]
+        )
         for table in ("metric_categories", "monthly_metric_values")
     }
     assert fks == {
-        "metric_categories": [("fk_metric_categories_section", ["section_id"], "metric_sections")],
+        "metric_categories": [
+            ("fk_metric_categories_area", ["area_id"], "areas"),
+            ("fk_metric_categories_section", ["section_id"], "metric_sections"),
+        ],
         "monthly_metric_values": [
             ("fk_monthly_metric_values_category", ["category_id"], "metric_categories")
         ],
@@ -340,6 +356,200 @@ def test_check_constraints(
 
     with pytest.raises(IntegrityError, match=constraint):
         session.execute(insert(MonthlyMetricValue).values(_value_row(first_aid, **overrides)))
+
+
+# Migration 0007: areas and incident dimensions ------------------------------------------
+
+
+def _migration_0007() -> ModuleType:
+    path = next((API_ROOT / "alembic" / "versions").glob("*-0007_*.py"))
+    spec = importlib.util.spec_from_file_location("migration_0007", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_areas_are_seeded_in_display_order(session: Session) -> None:
+    areas = session.scalars(select(Area).order_by(Area.display_order)).all()
+
+    assert [(a.code, a.name, a.area_kind, a.active) for a in areas] == [
+        (code, name, kind, True) for code, name, _, kind in _migration_0007().SEED_AREAS
+    ]
+    assert areas[0].description == "Ingredient Prep"
+    assert areas[9].description is None
+
+
+def test_area_sections_hold_one_linked_category_per_area(
+    session: Session, repository: DatabaseSafetyMetricsRepository
+) -> None:
+    areas = session.scalars(select(Area).order_by(Area.display_order)).all()
+    by_code = {s.code: s for s in repository.sections("incidents")}
+
+    for code in ("incidents_by_area", "near_misses_by_area"):
+        categories = by_code[code].categories
+        assert [(c.code, c.name, c.area_kind) for c in categories] == [
+            (a.code, a.name, a.area_kind) for a in areas
+        ]
+    linked = session.execute(
+        text(
+            "SELECT s.code, count(*) FROM safety.metric_categories c "
+            "JOIN safety.metric_sections s ON s.id = c.section_id "
+            "WHERE c.area_id IS NOT NULL GROUP BY s.code ORDER BY s.code"
+        )
+    ).all()
+    assert [tuple(row) for row in linked] == [
+        ("incidents_by_area", 15),
+        ("near_misses_by_area", 15),
+    ]
+    assert by_code["near_miss_cause"].categories[0].description
+    assert by_code["lopc_contributing_factor"].categories[0].area_kind is None
+    # An area category is described by its area.
+    assert by_code["incidents_by_area"].categories[0].description == "Ingredient Prep"
+    assert by_code["incidents_by_area"].categories[9].description is None
+
+
+def _area_id(session: Session, code: str) -> int:
+    return session.scalars(select(Area.id).where(Area.code == code)).one()
+
+
+def _section_id(session: Session, code: str) -> int:
+    return session.scalars(
+        select(MetricSection.id).where(
+            MetricSection.metric_set == "incidents", MetricSection.code == code
+        )
+    ).one()
+
+
+def test_area_links_are_only_allowed_in_the_area_sections(session: Session) -> None:
+    with pytest.raises(DBAPIError, match=AREA_RULE), session.begin_nested():
+        session.execute(
+            insert(MetricCategory).values(
+                section_id=_section_id(session, "injury_cause"),
+                code="area_100",
+                name="100",
+                display_order=99,
+                area_id=_area_id(session, "100"),
+            )
+        )
+    with pytest.raises(DBAPIError, match=AREA_RULE), session.begin_nested():
+        session.execute(
+            insert(MetricCategory).values(
+                section_id=_section_id(session, "incidents_by_area"),
+                code="unlinked",
+                name="Unlinked",
+                display_order=99,
+            )
+        )
+    with pytest.raises(DBAPIError, match=AREA_RULE), session.begin_nested():
+        session.execute(
+            text(
+                "UPDATE safety.metric_sections SET code = 'renamed' "
+                "WHERE metric_set = 'incidents' AND code = 'incidents_by_area'"
+            )
+        )
+
+
+def test_an_area_appears_once_per_area_section(session: Session) -> None:
+    duplicate = insert(MetricCategory).values(
+        section_id=_section_id(session, "incidents_by_area"),
+        code="mundy_again",
+        name="MUNDY again",
+        display_order=99,
+        area_id=_area_id(session, "mundy"),
+    )
+    with (
+        pytest.raises(IntegrityError, match="uq_metric_categories_section_area"),
+        session.begin_nested(),
+    ):
+        session.execute(duplicate)
+
+
+def test_an_area_in_use_cannot_be_deleted(session: Session) -> None:
+    with (
+        pytest.raises(IntegrityError, match="fk_metric_categories_area"),
+        session.begin_nested(),
+    ):
+        session.execute(text("DELETE FROM safety.areas WHERE code = 'mundy'"))
+
+
+@pytest.mark.parametrize(
+    ("column", "value", "constraint"),
+    [
+        ("area_kind", "plant", "ck_areas_area_kind"),
+        ("code", "Bad Code", "ck_areas_code"),
+        ("name", " padded", "ck_areas_name"),
+    ],
+)
+def test_area_check_constraints(session: Session, column: str, value: str, constraint: str) -> None:
+    row = {"code": "new_area", "name": "New", "area_kind": "support", "display_order": 99}
+    row[column] = value
+    with pytest.raises(IntegrityError, match=constraint), session.begin_nested():
+        session.execute(insert(Area).values(row))
+
+
+def test_downgrade_guard_refuses_when_dimension_values_exist(
+    session: Session, repository: NonCommittingRepository
+) -> None:
+    guard = text(_migration_0007().DOWNGRADE_GUARD)
+    year = 2099
+    service.save_changes(
+        repository,
+        metric_set="incidents",
+        year=year,
+        changes=[
+            CellChange(
+                category_id=category_id(repository, "incidents_by_area", "mundy"),
+                month=1,
+                value=0,
+                previous_value=None,
+            )
+        ],
+        actor_id="tester",
+        now=NOW,
+    )
+
+    with pytest.raises(DBAPIError, match="Cannot downgrade"), session.begin_nested():
+        session.execute(guard)
+
+
+def test_area_values_round_trip_with_null_and_zero(
+    session: Session, repository: NonCommittingRepository
+) -> None:
+    year = 2099
+    mundy = category_id(repository, "incidents_by_area", "mundy")
+    lab = category_id(repository, "incidents_by_area", "lab")
+    incident = category_id(repository, "incident_near_miss_totals", "incident")
+    service.save_changes(
+        repository,
+        metric_set="incidents",
+        year=year,
+        changes=[
+            CellChange(category_id=incident, month=1, value=2, previous_value=None),
+            CellChange(category_id=mundy, month=1, value=2, previous_value=None),
+            CellChange(category_id=lab, month=1, value=0, previous_value=None),
+        ],
+        actor_id="tester",
+        now=NOW,
+    )
+    audit = session.scalars(
+        select(AuditEvent.entity_key).where(AuditEvent.entity_key.like("%/2099-01"))
+    ).all()
+    assert "incidents/incidents_by_area/mundy/2099-01" in audit
+
+    result = analytics.load_analytics(
+        repository, year=year, through_month=2, now=dt.datetime(2099, 3, 1, 18, tzinfo=dt.UTC)
+    )
+
+    assert [(row.code, row.total) for row in result.incidents_by_area] == [
+        ("mundy", 2),
+        ("lab", 0),
+    ]
+    assert [m.status for m in result.area_reconciliation.incidents] == [
+        "reconciled",
+        "no_authoritative_total",
+    ]
+    assert result.behavior_available is False
 
 
 def test_section_codes_are_unique_per_metric_set(session: Session) -> None:

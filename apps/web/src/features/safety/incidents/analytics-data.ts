@@ -1,7 +1,28 @@
 import type { BarSeries } from "@/components/common/bar-chart";
+import type { HeatmapColumnStatus } from "@/components/common/heatmap-table";
 
-import type { AnalyticsKpi, AnalyticsSeries, IncidentAnalyticsResponse } from "./api";
+import type {
+  AnalyticsCategory,
+  AnalyticsKpi,
+  AnalyticsSeries,
+  IncidentAnalyticsResponse,
+  MonthReconciliation,
+} from "./api";
 import { MONTH_LABELS } from "./grid";
+
+export const DASHBOARD_VIEWS = [
+  { value: "overview", label: "Overview" },
+  { value: "area", label: "Area" },
+  { value: "incident-analysis", label: "Incident Analysis" },
+  { value: "behavior", label: "Behavior" },
+] as const;
+export type DashboardView = (typeof DASHBOARD_VIEWS)[number]["value"];
+
+/** The `?view=` value, or Overview when missing or unknown. */
+export function parseView(value: string | string[] | null | undefined): DashboardView {
+  const text = Array.isArray(value) ? value[0] : value;
+  return DASHBOARD_VIEWS.find((view) => view.value === text)?.value ?? "overview";
+}
 
 export const KPI_LABELS: Record<AnalyticsKpi["key"], string> = {
   incidents: "Incidents YTD",
@@ -31,7 +52,16 @@ export const NOTES = {
   psifDefinition: "PSIF is displayed as recorded and is not defined by this analytics page.",
   lopc: "LOPC is the LOPC series. Spill / Release records the same events and is not added to it.",
   pit: "PIT is the Powered Industrial Vehicle Accident classification. The separate PIT block holds the same counts and is not added to it.",
+  area: "Area counts are a breakdown of the reported Incident and Near Miss totals, which stay authoritative. A blank area cell is not reported, never zero.",
+  lopcFactor:
+    "Contributing factors are a breakdown of LOPC, which stays authoritative. A month whose factors do not add up to LOPC is flagged, not changed.",
+  tags: "Tags may exceed the event count: one event can carry more than one tag.",
+  injuries:
+    "Injury cause and body part are compared with First Aid + Recordable Injury. Body parts are tags: one injury can involve more than one.",
+  priorYear: "The prior year covers the same months. A month with no entry leaves a gap; 0 is a reported zero.",
 } as const;
+
+export const PRIOR_YEAR_COLOR = "#94a3b8";
 
 // Categorical, not status colors: no good/bad meaning is implied. Incident and
 // Near Miss match the Incident & Near Miss dashboard.
@@ -126,6 +156,95 @@ export function classificationChart(data: IncidentAnalyticsResponse | undefined)
     categories: rows.map((row) => row.name),
     series: [{ name: "YTD", color: COLORS.classification, values: rows.map((row) => row.total) }],
   };
+}
+
+/** e.g. "Prior year (Jan–Sep 2025): 36 · +5". Null when the prior year has nothing reported. */
+export function priorYearCaption(kpi: AnalyticsKpi | undefined): string | null {
+  const prior = kpi?.priorYear;
+  if (!prior || prior.value === null || kpi.throughMonth === null) return null;
+  const partial = prior.complete ? "" : " (partial)";
+  const delta =
+    prior.delta === null ? "" : ` · ${prior.delta > 0 ? "+" : prior.delta < 0 ? "−" : "±"}${Math.abs(prior.delta)}`;
+  return `Prior year (${periodLabel(prior.year, kpi.throughMonth)}): ${prior.value.toLocaleString()}${partial}${delta}`;
+}
+
+/** Reported categories only, as one horizontal bar series in the API's order. */
+export function breakdownChart(
+  categories: AnalyticsCategory[],
+  name: string,
+  color: string,
+): { categories: string[]; series: BarSeries[]; height: number } {
+  const reported = categories.filter((category) => category.total !== null);
+  return {
+    categories: reported.map((category) => category.name),
+    series: [{ name, color, values: reported.map((category) => category.total) }],
+    height: Math.max(140, reported.length * 30 + 40),
+  };
+}
+
+const MONTH_NAMES = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
+/**
+ * A month's breakdown compared with its authoritative total, e.g. "+1" with
+ * "September: areas total 5, Incidents 4 (1 above)".
+ */
+export function reconciliationStatus(
+  month: MonthReconciliation,
+  dimension: string,
+  authoritative: string,
+): HeatmapColumnStatus {
+  const name = MONTH_NAMES[month.month - 1];
+  const parts = `${dimension} total ${formatCount(month.dimensionTotal)}`;
+  const whole = `${authoritative} ${formatCount(month.authoritativeTotal)}`;
+  switch (month.status) {
+    case "reconciled":
+      return { tone: "ok", text: "✓", description: `${name}: ${parts}, matches ${whole}` };
+    case "below_total":
+    case "above_total": {
+      const difference = month.difference ?? 0;
+      return {
+        tone: "warning",
+        text: difference > 0 ? `+${difference}` : `−${Math.abs(difference)}`,
+        description: `${name}: ${parts}, ${whole} (reconciliation difference ${difference > 0 ? "+" : "−"}${Math.abs(difference)})`,
+      };
+    }
+    case "no_dimension_data":
+      return { tone: "neutral", text: "–", description: `${name}: no ${dimension} data; ${whole}` };
+    case "no_authoritative_total":
+      return {
+        tone: "neutral",
+        text: "n/a",
+        description: `${name}: ${authoritative} not reported; ${parts}`,
+      };
+  }
+}
+
+/** e.g. "Reconciled in 7 of 9 months; 2 months have no Near Miss total." */
+export function reconciliationSummary(months: MonthReconciliation[], authoritative: string): string {
+  if (months.length === 0) return "No months to compare.";
+  const count = (status: MonthReconciliation["status"]) =>
+    months.filter((month) => month.status === status).length;
+  const different = count("below_total") + count("above_total");
+  const parts = [`Reconciled in ${count("reconciled")} of ${months.length} months`];
+  if (different > 0) parts.push(`${different} with a reconciliation difference`);
+  if (count("no_dimension_data") > 0) parts.push(`${count("no_dimension_data")} with no breakdown data`);
+  if (count("no_authoritative_total") > 0) {
+    parts.push(`${count("no_authoritative_total")} with no ${authoritative} total`);
+  }
+  return `${parts.join("; ")}.`;
 }
 
 /** Series whose period has unreported months, for the data-completeness notes. */

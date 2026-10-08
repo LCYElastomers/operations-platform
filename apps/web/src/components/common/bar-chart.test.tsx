@@ -68,6 +68,55 @@ describe("buildBarOption", () => {
     expect(html).toContain("&lt;b&gt;A&lt;/b&gt;");
     expect(html).toContain("Not reported");
   });
+
+  it("leaves existing charts without stacks, lines or a second axis", () => {
+    const option = buildBarOption(["Jan"], [{ name: "A", values: [1] }]);
+    const [series] = option.series as { type: string; stack?: string }[];
+    expect((option.series as unknown[]).length).toBe(1);
+    expect(series.type).toBe("bar");
+    expect(series.stack).toBeUndefined();
+    expect(Array.isArray(option.yAxis)).toBe(false);
+  });
+
+  it("stacks series that share a stack id and labels only non-zero segments", () => {
+    const option = buildBarOption(
+      ["Jan", "Feb"],
+      [
+        { name: "A", values: [1, 0], stack: "s" },
+        { name: "B", values: [null, 2], stack: "s" },
+      ],
+      { showValues: true },
+    );
+    const series = option.series as {
+      stack?: string;
+      data: (number | null)[];
+      label: { formatter: (p: { value: unknown }) => string };
+    }[];
+    expect(series.map((s) => s.stack)).toEqual(["s", "s"]);
+    expect(series[1].data).toEqual([null, 2]);
+    expect(series[0].label.formatter({ value: 0 })).toBe("");
+    expect(series[0].label.formatter({ value: 1 })).toBe("1");
+  });
+
+  it("draws lines on a named right axis, keeping gaps for unreported months", () => {
+    const option = buildBarOption(["Jan", "Feb", "Mar"], [{ name: "A", values: [1, null, 2] }], {
+      lines: [{ name: "Cumulative", values: [1, null, 3], axis: "right", color: "#0f172a" }],
+      rightAxisName: "Cumulative",
+    });
+    const series = option.series as { type: string; data: (number | null)[]; yAxisIndex?: number; connectNulls?: boolean }[];
+    expect(series.map((s) => s.type)).toEqual(["bar", "line"]);
+    expect(series[1]).toMatchObject({ data: [1, null, 3], yAxisIndex: 1, connectNulls: false });
+    expect(option.yAxis).toMatchObject([{ type: "value" }, { type: "value", name: "Cumulative" }]);
+    expect(option.legend).toMatchObject({ data: ["A", "Cumulative"] });
+  });
+
+  it("ignores lines on horizontal charts", () => {
+    const option = buildBarOption(["A"], [{ name: "YTD", values: [1] }], {
+      orientation: "horizontal",
+      lines: [{ name: "L", values: [1] }],
+    });
+    expect((option.series as { type: string }[]).map((s) => s.type)).toEqual(["bar"]);
+  });
 });
 
 describe("BarChart", () => {

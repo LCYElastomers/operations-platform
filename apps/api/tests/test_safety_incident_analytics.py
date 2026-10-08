@@ -273,6 +273,7 @@ def test_approved_damage_kpi_is_6_property_plus_8_equipment() -> None:
                 "complete": False,
             },
         ],
+        "prior_year": None,
     }
 
 
@@ -415,6 +416,7 @@ def test_partial_year_completeness() -> None:
         "through_month": 9,
         "complete": True,
         "parts": [],
+        "prior_year": None,
     }
     assert (by_key["near_misses"].months_reported, by_key["near_misses"].complete) == (7, False)
     assert result.near_misses.unreported_months == [2, 3]
@@ -569,6 +571,25 @@ def test_get_returns_typed_analytics(viewer: TestClient) -> None:
         "propertyDamage",
         "equipmentDamage",
         "combinedDamage",
+        "incidentsByArea",
+        "nearMissesByArea",
+        "incidentAreaMonthly",
+        "nearMissAreaMonthly",
+        "areaReconciliation",
+        "priorYear",
+        "incidentsPriorYearMonthly",
+        "incidentsPriorYearAvailable",
+        "lopcPriorYearMonthly",
+        "lopcPriorYearAvailable",
+        "lopcContributingFactors",
+        "lopcFactorReconciliation",
+        "nearMissPotential",
+        "nearMissCause",
+        "injuryCause",
+        "bodyPart",
+        "injuryReconciliation",
+        "behaviorAvailable",
+        "behaviorData",
     }
     assert (data["year"], data["throughMonth"], data["latestMonth"]) == (2026, 9, 10)
     assert data["availableYears"] == [2026]
@@ -579,7 +600,10 @@ def test_get_returns_typed_analytics(viewer: TestClient) -> None:
         "throughMonth": 9,
         "complete": True,
         "parts": [],
+        "priorYear": None,
     }
+    assert (data["behaviorAvailable"], data["behaviorData"]) == (False, None)
+    assert data["incidentsPriorYearAvailable"] is False
     assert [kpi["key"] for kpi in data["kpis"]] == [
         "incidents",
         "near_misses",

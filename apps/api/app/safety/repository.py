@@ -6,13 +6,14 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
-from sqlalchemy import delete, select, text, tuple_
+from sqlalchemy import delete, func, select, text, tuple_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.audit.recorder import AuditChange, record_changes
 from app.safety.models import (
     MONTHLY_VALUE_IDENTITY_CONSTRAINT,
+    Area,
     MetricCategory,
     MetricSection,
     MonthlyMetricValue,
@@ -24,6 +25,9 @@ class CategoryDefinition:
     id: int
     code: str
     name: str
+    description: str | None = None
+    # The linked area's kind (process_unit, support, organization); None when not area-linked.
+    area_kind: str | None = None
 
 
 @dataclass(frozen=True)
@@ -81,17 +85,51 @@ class DatabaseSafetyMetricsRepository:
         self._session = session
 
     def sections(self, metric_set: str) -> list[SectionDefinition]:
-        s, c = MetricSection, MetricCategory
+        s, c, a = MetricSection, MetricCategory, Area
         rows = self._session.execute(
-            select(s.id, s.code, s.name, c.id, c.code, c.name)
+            select(
+                s.id,
+                s.code,
+                s.name,
+                c.id,
+                c.code,
+                c.name,
+                # An area category's description is its area's, e.g. "Ingredient Prep" for 100.
+                func.coalesce(c.description, a.description),
+                a.area_kind,
+            )
             .join(c, c.section_id == s.id)
-            .where(s.metric_set == metric_set, s.active.is_(True), c.active.is_(True))
+            .outerjoin(a, a.id == c.area_id)
+            .where(
+                s.metric_set == metric_set,
+                s.active.is_(True),
+                c.active.is_(True),
+                # An area-linked category is hidden while its area is inactive.
+                (c.area_id.is_(None)) | (a.active.is_(True)),
+            )
             .order_by(s.display_order, s.id, c.display_order, c.id)
         ).all()
         sections: dict[int, tuple[str, str, list[CategoryDefinition]]] = {}
-        for section_id, section_code, section_name, category_id, code, name in rows:
+        for (
+            section_id,
+            section_code,
+            section_name,
+            category_id,
+            code,
+            name,
+            description,
+            area_kind,
+        ) in rows:
             entry = sections.setdefault(section_id, (section_code, section_name, []))
-            entry[2].append(CategoryDefinition(id=category_id, code=code, name=name))
+            entry[2].append(
+                CategoryDefinition(
+                    id=category_id,
+                    code=code,
+                    name=name,
+                    description=description,
+                    area_kind=area_kind,
+                )
+            )
         return [
             SectionDefinition(id=section_id, code=code, name=name, categories=tuple(categories))
             for section_id, (code, name, categories) in sections.items()

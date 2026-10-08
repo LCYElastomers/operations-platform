@@ -1,0 +1,143 @@
+{
+  "source": "docs/2026 LCY EHS Dash Board.xlsx (SHA-256 0B94C09BEDF3C343D3250496780A2D3B66671B55741ABA0391FDE81BE8B51C10), sheets 'Dash' (area grids C7:N21 and C27:N40) and 'Incident Data' (B31:M33, Q12:AB18, Q39:AB49, AJ9:AU24, AJ37:AU63)",
+  "metricSet": "incidents",
+  "year": 2026,
+  "notes": [
+    "Load with: python -m app.safety.legacy_import check|plan|apply <this file>. Not applied by any migration. Requires migration 0007 (sections and categories). Each months array is January..December.",
+    "Strict blanks: null = blank source cell, never written (no row); a number is a typed source value. No zero was added for a blank cell, including blank areas in months whose area sum matches the authoritative total.",
+    "Incidents by Area <- Dash!C27:N40 (rows 100, 200, 300, 400, 500, 600, 700, 800, 900, WHSE, Maint, Lab, Mundy, 3rd Party; C = January). The area cells sum to the approved Incident totals in every month January-September, including May = 3 (WHSE 2 + 3rd Party 1). Dash!G41 (=SUM(G27:G38), which omits Mundy and 3rd Party) is NOT used. The incident grid has no Admin row.",
+    "Near Misses by Area <- Dash!C7:N21 (rows 100 ... 900, WHSE, Maint., Lab, MUNDY, Admin, 3rd Party). The area cells sum to the approved Near Miss totals (3, -, -, 11, 2, 4, 4, 5, 2); February and March have no area entries. Area Data!E65:F79 (stale sorted helper) is NOT used; expectedYtd uses the typed Area Data!C67:C80 column.",
+    "LOPC Contributing Factor <- Incident Data!B31:M33 (Mechanical Integrity, Human Error, Other; B = January). Each month sums to the approved LOPC month. The cumulative rows 35/36 are NOT used.",
+    "Near-Miss Potential <- Incident Data!Q12:AB18 (Q = January). The typed summary P21:Q28 is NOT used (it states Environmental Release 4; the monthly cells sum to 5). Potentials are tags and may exceed the Near Miss count.",
+    "Near-Miss Cause <- Incident Data!Q39:AB49. The typed summary P51:Q62 is NOT used (it states Equipment / Maintenance 11; the monthly cells sum to 12). Causes are tags and may exceed the Near Miss count.",
+    "Injury Cause <- Incident Data!AJ9:AU24 (AJ = January). Each month equals First Aid + Recordable Injury. The BA6:BB20 list is NOT used (it omits Contact By).",
+    "Body Part <- Incident Data!AJ37:AU63. The AX36:AY62 list is NOT used (misaligned; it omits Leg). Body parts are tags; one injury may involve several.",
+    "Categories without any source value in 2026 (areas 800 and 900, Maint and Lab for incidents, 300, 900 and Maint for near misses, the other injury causes and body parts) are omitted: they are unreported and nothing is written for them."
+  ],
+  "sections": [
+    {
+      "section": "incidents_by_area",
+      "name": "Incidents by Area <- Dash!C27:N40",
+      "categories": [
+        { "category": "100", "name": "100 <- Dash!C27:N27", "months": [null, null, 1, null, null, null, 1, null, null, null, null, null] },
+        { "category": "200", "name": "200 <- Dash!C28:N28", "months": [1, 1, null, null, null, 1, 1, null, null, null, null, null] },
+        { "category": "300", "name": "300 <- Dash!C29:N29", "months": [1, 1, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "400", "name": "400 <- Dash!C30:N30", "months": [1, null, 1, 1, null, null, null, null, 1, null, null, null] },
+        { "category": "500", "name": "500 <- Dash!C31:N31", "months": [null, null, null, null, null, null, null, 2, null, null, null, null] },
+        { "category": "600", "name": "600 <- Dash!C32:N32", "months": [null, null, 1, 1, null, null, 1, null, null, null, null, null] },
+        { "category": "700", "name": "700 <- Dash!C33:N33", "months": [1, null, null, null, null, 1, null, null, null, null, null, null] },
+        { "category": "whse", "name": "WHSE <- Dash!C36:N36", "months": [null, null, null, null, 2, null, null, null, null, null, null, null] },
+        { "category": "mundy", "name": "Mundy <- Dash!C39:N39", "months": [1, 2, 2, 4, null, 2, 1, 1, 1, null, null, null] },
+        { "category": "third_party", "name": "3rd Party <- Dash!C40:N40", "months": [null, 2, null, null, 1, null, 1, null, 2, null, null, null] }
+      ]
+    },
+    {
+      "section": "near_misses_by_area",
+      "name": "Near Misses by Area <- Dash!C7:N21",
+      "categories": [
+        { "category": "100", "name": "100 <- Dash!C7:N7", "months": [null, null, null, null, null, null, null, 1, 1, null, null, null] },
+        { "category": "200", "name": "200 <- Dash!C8:N8", "months": [null, null, null, null, null, 1, null, null, null, null, null, null] },
+        { "category": "400", "name": "400 <- Dash!C10:N10", "months": [null, null, null, 1, null, 1, null, null, null, null, null, null] },
+        { "category": "500", "name": "500 <- Dash!C11:N11", "months": [1, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "600", "name": "600 <- Dash!C12:N12", "months": [null, null, null, 3, 1, null, 1, 2, null, null, null, null] },
+        { "category": "700", "name": "700 <- Dash!C13:N13", "months": [null, null, null, 3, null, null, null, 2, null, null, null, null] },
+        { "category": "800", "name": "800 <- Dash!C14:N14", "months": [null, null, null, null, null, null, null, null, 1, null, null, null] },
+        { "category": "whse", "name": "WHSE <- Dash!C16:N16", "months": [null, null, null, null, null, 1, null, null, null, null, null, null] },
+        { "category": "lab", "name": "Lab <- Dash!C18:N18", "months": [null, null, null, null, null, 1, null, null, null, null, null, null] },
+        { "category": "mundy", "name": "MUNDY <- Dash!C19:N19", "months": [null, null, null, 3, 1, null, 2, null, null, null, null, null] },
+        { "category": "admin", "name": "Admin <- Dash!C20:N20", "months": [null, null, null, 1, null, null, 1, null, null, null, null, null] },
+        { "category": "third_party", "name": "3rd Party <- Dash!C21:N21", "months": [2, null, null, null, null, null, null, null, null, null, null, null] }
+      ]
+    },
+    {
+      "section": "lopc_contributing_factor",
+      "name": "LOPC Contributing Factor <- Incident Data!B31:M33",
+      "categories": [
+        { "category": "mechanical_integrity", "name": "Mechanical Integrity <- Incident Data!B31:M31", "months": [1, 1, 2, null, null, 2, 2, 1, null, null, null, null] },
+        { "category": "human_error", "name": "Human Error <- Incident Data!B32:M32", "months": [null, 1, null, 1, null, null, 1, 1, null, null, null, null] },
+        { "category": "other", "name": "Other <- Incident Data!B33:M33", "months": [null, null, null, null, null, null, null, null, 1, null, null, null] }
+      ]
+    },
+    {
+      "section": "near_miss_potential",
+      "name": "Near-Miss Potential <- Incident Data!Q12:AB18",
+      "categories": [
+        { "category": "sif", "name": "SIF <- Incident Data!Q12:AB12", "months": [2, null, null, 2, null, 1, 1, null, null, null, null, null] },
+        { "category": "lost_time_injury", "name": "Lost Time Injury <- Incident Data!Q13:AB13", "months": [null, null, null, 5, null, 1, 2, null, null, null, null, null] },
+        { "category": "exposure", "name": "Exposure <- Incident Data!Q14:AB14", "months": [1, null, null, 1, 1, null, null, 3, null, null, null, null] },
+        { "category": "fire", "name": "Fire <- Incident Data!Q15:AB15", "months": [null, null, null, 1, 1, 2, null, 2, null, null, null, null] },
+        { "category": "property_damage", "name": "Property Damage <- Incident Data!Q16:AB16", "months": [1, null, null, 1, null, 2, null, null, null, null, null, null] },
+        { "category": "environmental_release", "name": "Environmental Release <- Incident Data!Q17:AB17", "months": [null, null, null, 1, null, null, null, 3, 1, null, null, null] },
+        { "category": "business_interruption", "name": "Business Interruption <- Incident Data!Q18:AB18 ('Buisness Interuption')", "months": [1, null, null, null, null, 2, null, null, null, null, null, null] }
+      ]
+    },
+    {
+      "section": "near_miss_cause",
+      "name": "Near-Miss Cause <- Incident Data!Q39:AB49",
+      "categories": [
+        { "category": "human_performance", "name": "Human Performance <- Incident Data!Q39:AB39", "months": [2, null, null, 6, null, 2, 3, null, null, null, null, null] },
+        { "category": "communication", "name": "Communication <- Incident Data!Q40:AB40", "months": [null, null, null, null, null, 1, null, null, null, null, null, null] },
+        { "category": "training_competency", "name": "Training / Competency <- Incident Data!Q41:AB41", "months": [null, null, null, null, null, 2, null, null, null, null, null, null] },
+        { "category": "procedures", "name": "Procedures <- Incident Data!Q42:AB42", "months": [null, null, null, null, null, 1, null, null, null, null, null, null] },
+        { "category": "equipment_maintenance", "name": "Equipment / Maintenance <- Incident Data!Q43:AB43", "months": [1, null, null, 2, 2, 1, null, 5, 1, null, null, null] },
+        { "category": "design_engineering", "name": "Design / Engineering <- Incident Data!Q44:AB44", "months": [null, null, null, 7, null, null, null, null, null, null, null, null] },
+        { "category": "work_planning", "name": "Work Planning <- Incident Data!Q45:AB45", "months": [null, null, null, null, null, 1, 1, null, null, null, null, null] },
+        { "category": "housekeeping", "name": "Housekeeping <- Incident Data!Q46:AB46", "months": [null, null, null, 2, 1, null, 1, null, null, null, null, null] },
+        { "category": "environmental_conditions", "name": "Environmental Conditions <- Incident Data!Q47:AB47", "months": [null, null, null, 2, null, 1, 1, null, null, null, null, null] },
+        { "category": "management_systems", "name": "Management Systems <- Incident Data!Q48:AB48", "months": [1, null, null, null, null, 2, null, null, null, null, null, null] },
+        { "category": "contractor_management", "name": "Contractor Management <- Incident Data!Q49:AB49", "months": [3, null, null, null, null, null, null, null, null, null, null, null] }
+      ]
+    },
+    {
+      "section": "injury_cause",
+      "name": "Injury Cause <- Incident Data!AJ9:AU24",
+      "categories": [
+        { "category": "caught_between", "name": "Caught Between <- Incident Data!AJ9:AU9", "months": [1, null, null, null, null, null, null, null, null, null, null, null] },
+        { "category": "caught_in", "name": "Caught In <- Incident Data!AJ10:AU10", "months": [null, null, null, null, null, null, null, 1, null, null, null, null] },
+        { "category": "contact_by", "name": "Contact By <- Incident Data!AJ12:AU12", "months": [null, null, null, 1, null, null, null, null, null, null, null, null] },
+        { "category": "contact_with", "name": "Contact With <- Incident Data!AJ13:AU13", "months": [null, null, null, 1, null, null, null, null, null, null, null, null] },
+        { "category": "exposure", "name": "Exposure <- Incident Data!AJ14:AU14", "months": [null, null, 1, null, null, null, null, null, null, null, null, null] },
+        { "category": "struck_by", "name": "Struck By <- Incident Data!AJ24:AU24", "months": [null, null, null, null, null, null, null, null, 1, null, null, null] }
+      ]
+    },
+    {
+      "section": "body_part",
+      "name": "Body Part <- Incident Data!AJ37:AU63",
+      "categories": [
+        { "category": "eye", "name": "Eye <- Incident Data!AJ45:AU45", "months": [null, null, 1, null, null, null, null, null, null, null, null, null] },
+        { "category": "fingers", "name": "Fingers <- Incident Data!AJ48:AU48", "months": [1, null, null, 2, null, null, null, 1, null, null, null, null] },
+        { "category": "leg", "name": "Leg <- Incident Data!AJ54:AU54", "months": [null, null, null, null, null, null, null, null, 1, null, null, null] }
+      ]
+    }
+  ],
+  "expectedYtd": [
+    { "section": "incidents_by_area", "category": "100", "value": 2, "statedIn": "Dash!O27 (=SUM(C27:N27))" },
+    { "section": "incidents_by_area", "category": "200", "value": 4, "statedIn": "Dash!O28" },
+    { "section": "incidents_by_area", "category": "300", "value": 2, "statedIn": "Dash!O29" },
+    { "section": "incidents_by_area", "category": "400", "value": 4, "statedIn": "Dash!O30" },
+    { "section": "incidents_by_area", "category": "500", "value": 2, "statedIn": "Dash!O31" },
+    { "section": "incidents_by_area", "category": "600", "value": 3, "statedIn": "Dash!O32" },
+    { "section": "incidents_by_area", "category": "700", "value": 2, "statedIn": "Dash!O33" },
+    { "section": "incidents_by_area", "category": "whse", "value": 2, "statedIn": "Dash!O36" },
+    { "section": "incidents_by_area", "category": "mundy", "value": 14, "statedIn": "Dash!O39" },
+    { "section": "incidents_by_area", "category": "third_party", "value": 6, "statedIn": "Dash!O40" },
+    { "section": "near_misses_by_area", "category": "200", "value": 1, "statedIn": "Area Data!C67 (typed)" },
+    { "section": "near_misses_by_area", "category": "400", "value": 2, "statedIn": "Area Data!C69 (typed)" },
+    { "section": "near_misses_by_area", "category": "500", "value": 1, "statedIn": "Area Data!C70 (typed)" },
+    { "section": "near_misses_by_area", "category": "600", "value": 7, "statedIn": "Area Data!C71 (typed)" },
+    { "section": "near_misses_by_area", "category": "700", "value": 5, "statedIn": "Area Data!C72 (typed)" },
+    { "section": "near_misses_by_area", "category": "800", "value": 1, "statedIn": "Area Data!C73 (typed)" },
+    { "section": "near_misses_by_area", "category": "whse", "value": 1, "statedIn": "Area Data!C75 (typed)" },
+    { "section": "near_misses_by_area", "category": "lab", "value": 1, "statedIn": "Area Data!C77 (typed)" },
+    { "section": "near_misses_by_area", "category": "mundy", "value": 6, "statedIn": "Area Data!C78 (typed)" },
+    { "section": "near_misses_by_area", "category": "admin", "value": 2, "statedIn": "Area Data!C79 (typed)" },
+    { "section": "near_misses_by_area", "category": "third_party", "value": 2, "statedIn": "Area Data!C80 (typed)" },
+    { "section": "near_miss_potential", "category": "environmental_release", "value": 5, "statedIn": "Incident Data!AC17 (=SUM(Q17:AB17)); not the stale typed Q27 = 4" },
+    { "section": "near_miss_potential", "category": "lost_time_injury", "value": 8, "statedIn": "Incident Data!AC13" },
+    { "section": "near_miss_potential", "category": "sif", "value": 6, "statedIn": "Incident Data!AC12" },
+    { "section": "near_miss_cause", "category": "equipment_maintenance", "value": 12, "statedIn": "Incident Data!AC43 (=SUM(Q43:AB43)); not the stale typed Q53 = 11" },
+    { "section": "near_miss_cause", "category": "human_performance", "value": 13, "statedIn": "Incident Data!AC39" },
+    { "section": "near_miss_cause", "category": "design_engineering", "value": 7, "statedIn": "Incident Data!AC44" },
+    { "section": "body_part", "category": "fingers", "value": 4, "statedIn": "Incident Data!AV48 (=SUM(AJ48:AU48))" }
+  ]
+}

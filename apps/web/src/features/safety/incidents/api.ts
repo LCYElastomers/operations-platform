@@ -8,6 +8,10 @@ export type MetricCategoryRow = {
   id: number;
   code: string;
   name: string;
+  /** Reviewer-facing definition, e.g. the subcategories of a Near-Miss Cause. */
+  description?: string | null;
+  /** Set for area categories: process_unit, support or organization. */
+  areaKind?: string | null;
   /** 12 entries, January..December. */
   values: (number | null)[];
   ytd: number | null;
@@ -94,6 +98,66 @@ export type AnalyticsKpi = {
   complete: boolean;
   /** The components of a combined KPI (combined_damage); empty otherwise. */
   parts: AnalyticsKpiPart[];
+  /** The same months of the prior year (Incidents and LOPC); null when nothing is reported. */
+  priorYear?: AnalyticsPriorYear | null;
+};
+
+export type AnalyticsPriorYear = {
+  year: number;
+  value: number | null;
+  monthsReported: number;
+  complete: boolean;
+  /** Selected year minus prior year; null unless both are reported. */
+  delta: number | null;
+};
+
+export type ReconciliationStatus =
+  | "reconciled"
+  | "below_total"
+  | "above_total"
+  | "no_dimension_data"
+  | "no_authoritative_total";
+
+/** A breakdown's monthly sum compared with the authoritative monthly total. */
+export type MonthReconciliation = {
+  month: number;
+  dimensionTotal: number | null;
+  authoritativeTotal: number | null;
+  difference: number | null;
+  status: ReconciliationStatus;
+};
+
+/** One breakdown category, January..throughMonth. */
+export type AnalyticsCategory = {
+  code: string;
+  name: string;
+  description: string | null;
+  areaKind: string | null;
+  values: (number | null)[];
+  total: number | null;
+  monthsReported: number;
+};
+
+export type AnalyticsBreakdown = {
+  section: string;
+  name: string;
+  /** Tags: one event may carry several, so the categories may total more than the events. */
+  isTag: boolean;
+  /** Highest total first, unreported last; display order breaks ties. */
+  categories: AnalyticsCategory[];
+  /** Display order. */
+  rows: AnalyticsCategory[];
+  monthlyTotals: (number | null)[];
+  total: number | null;
+};
+
+export type AnalyticsCumulative = { code: string; name: string; values: (number | null)[] };
+
+export type LopcFactors = {
+  breakdown: AnalyticsBreakdown;
+  /** Running totals per factor, carried through unreported months. */
+  cumulative: AnalyticsCumulative[];
+  cumulativeTotal: (number | null)[];
 };
 
 /**
@@ -121,6 +185,33 @@ export type IncidentAnalyticsResponse = {
   propertyDamage: AnalyticsSeries;
   equipmentDamage: AnalyticsSeries;
   combinedDamage: AnalyticsSeries;
+  /** Areas with at least one reported month, highest total first. */
+  incidentsByArea: AnalyticsCategory[];
+  nearMissesByArea: AnalyticsCategory[];
+  /** Every area in display order, for the monthly grids. */
+  incidentAreaMonthly: AnalyticsCategory[];
+  nearMissAreaMonthly: AnalyticsCategory[];
+  areaReconciliation: { incidents: MonthReconciliation[]; nearMisses: MonthReconciliation[] };
+  priorYear: number;
+  incidentsPriorYearMonthly: AnalyticsSeries;
+  incidentsPriorYearAvailable: boolean;
+  lopcPriorYearMonthly: AnalyticsSeries;
+  lopcPriorYearAvailable: boolean;
+  lopcContributingFactors: LopcFactors;
+  lopcFactorReconciliation: MonthReconciliation[];
+  nearMissPotential: AnalyticsBreakdown;
+  nearMissCause: AnalyticsBreakdown;
+  injuryCause: AnalyticsBreakdown;
+  bodyPart: AnalyticsBreakdown;
+  injuryReconciliation: {
+    /** First Aid + Recordable Injury per month. */
+    injuries: (number | null)[];
+    injuryCause: MonthReconciliation[];
+    bodyPart: MonthReconciliation[];
+  };
+  /** No approved behavior source exists; always false with no data. */
+  behaviorAvailable: boolean;
+  behaviorData: AnalyticsBreakdown | null;
 };
 
 export const incidentAnalyticsKeys = {

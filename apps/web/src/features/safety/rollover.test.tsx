@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ContactDashboard } from "./contacts/contact-dashboard";
 import { FIRST_CONTACT_YEAR } from "./contacts/contact-data";
 import { ContactsPage } from "./contacts/contacts-page";
+import { emptyAnalyticsExtras } from "./incidents/analytics.fixture";
 import type { AnalyticsSeries, IncidentAnalyticsResponse } from "./incidents/api";
 import { FIRST_REPORTING_YEAR } from "./incidents/grid";
 import { IncidentDashboard } from "./incidents/incident-dashboard";
@@ -121,6 +122,7 @@ function emptyIncidentYear(year: number): IncidentAnalyticsResponse {
     propertyDamage: empty("incident_classification", "property_damage"),
     equipmentDamage: empty("incident_classification", "equipment_damage_failure"),
     combinedDamage: empty("incident_classification", "property_damage+equipment_damage_failure"),
+    ...emptyAnalyticsExtras(year, 1),
   };
 }
 

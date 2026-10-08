@@ -68,6 +68,87 @@ export function draftSectionValues(section: MetricSectionBlock, draft: Draft) {
   );
 }
 
+/** Per-month sums of a section's draft-aware values; null where no category is reported. */
+export function draftMonthlyTotals(section: MetricSectionBlock, draft: Draft): (number | null)[] {
+  const rows = draftSectionValues(section, draft);
+  return MONTH_LABELS.map((_, index) => total(rows.map((row) => row[index].value)));
+}
+
+/** Draft-aware values of one category, January..December; null when the category does not exist. */
+export function draftCategoryValues(
+  sections: MetricSectionBlock[],
+  sectionCode: string,
+  categoryCode: string,
+  draft: Draft,
+): (number | null)[] | null {
+  const category = sections
+    .find((section) => section.code === sectionCode)
+    ?.categories.find((row) => row.code === categoryCode);
+  if (!category) return null;
+  return category.values.map((stored, index) => cellState(stored, draft[cellKey(category.id, index + 1)]).value);
+}
+
+export type MonthCheck =
+  | "reconciled"
+  | "below_total"
+  | "above_total"
+  | "no_dimension_data"
+  | "no_authoritative_total";
+
+/** Same rule as the API's reconciliation. A month with neither value is not checked (null). */
+export function checkMonth(dimension: number | null, authoritative: number | null): MonthCheck | null {
+  if (dimension === null && authoritative === null) return null;
+  if (authoritative === null) return "no_authoritative_total";
+  if (dimension === null) return "no_dimension_data";
+  if (dimension === authoritative) return "reconciled";
+  return dimension < authoritative ? "below_total" : "above_total";
+}
+
+/**
+ * The breakdown sections checked against an authoritative total in data entry.
+ * Only a warning: nothing is filled in, distributed or blocked.
+ */
+export const BREAKDOWN_CHECKS: Record<
+  string,
+  { label: string; parts: string; against: [section: string, category: string][] }
+> = {
+  incidents_by_area: { label: "Incidents", parts: "Areas", against: [["incident_near_miss_totals", "incident"]] },
+  near_misses_by_area: { label: "Near Misses", parts: "Areas", against: [["incident_near_miss_totals", "near_miss"]] },
+  lopc_contributing_factor: { label: "LOPC", parts: "Factors", against: [["lopc", "lopc"]] },
+  injury_cause: {
+    label: "First Aid + Recordable Injury",
+    parts: "Injury causes",
+    against: [
+      ["incident_classification", "first_aid"],
+      ["incident_classification", "recordable_injury"],
+    ],
+  },
+  body_part: {
+    label: "First Aid + Recordable Injury",
+    parts: "Body parts",
+    against: [
+      ["incident_classification", "first_aid"],
+      ["incident_classification", "recordable_injury"],
+    ],
+  },
+};
+
+/** Sections whose categories are tags: one near miss may carry several. */
+export const TAG_SECTIONS = new Set(["near_miss_potential", "near_miss_cause"]);
+
+/** The authoritative monthly totals a breakdown is checked against; null when none of its categories exist. */
+export function authoritativeTotals(
+  sections: MetricSectionBlock[],
+  against: [string, string][],
+  draft: Draft,
+): (number | null)[] | null {
+  const series = against
+    .map(([section, category]) => draftCategoryValues(sections, section, category, draft))
+    .filter((values): values is (number | null)[] => values !== null);
+  if (series.length === 0) return null;
+  return MONTH_LABELS.map((_, index) => total(series.map((values) => values[index])));
+}
+
 export type DraftSummary = {
   changes: CellChange[];
   invalidCount: number;

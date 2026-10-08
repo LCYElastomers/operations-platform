@@ -4,9 +4,15 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { BarSeries } from "@/components/common/bar-chart";
+import type { BarSeries, LineSeries } from "@/components/common/bar-chart";
 
-import { NOTES } from "./analytics-data";
+import { NOTES, type DashboardView } from "./analytics-data";
+import {
+  emptyAnalyticsExtras,
+  fixtureBreakdown,
+  fixtureCategory,
+  fixtureReconciliation,
+} from "./analytics.fixture";
 import type { AnalyticsKpi, AnalyticsSeries, IncidentAnalyticsResponse } from "./api";
 import { IncidentDashboard } from "./incident-dashboard";
 import { siteIsoDate } from "../site-calendar";
@@ -19,6 +25,7 @@ vi.mock("@/components/common/bar-chart", async (original) => ({
     description,
     categories,
     series,
+    lines = [],
     footer,
     emptyState,
     loading,
@@ -27,11 +34,16 @@ vi.mock("@/components/common/bar-chart", async (original) => ({
     description?: string;
     categories: string[];
     series: BarSeries[];
+    lines?: LineSeries[];
     footer?: ReactNode;
     emptyState?: ReactNode;
     loading?: boolean;
   }) => (
-    <section data-chart={title}>
+    <section
+      data-chart={title}
+      data-series={series.map((s) => `${s.name}:${s.color ?? ""}:${s.stack ?? ""}`).join("|")}
+      data-lines={lines.map((l) => `${l.name}:${l.axis ?? "left"}:${l.values.join(",")}`).join("|")}
+    >
       <h2>{title}</h2>
       <p>{description}</p>
       {loading ? null : series.some((s) => s.values.some((value) => value !== null)) ? (
@@ -78,6 +90,7 @@ function analytics(
   year: number,
   through: number | null,
   values: Partial<Record<"incidents" | "nearMisses" | "lopc" | "psif" | "pit" | "property" | "equipment", (number | null)[]>> = {},
+  extras: Partial<IncidentAnalyticsResponse> = {},
 ): IncidentAnalyticsResponse {
   const months = through ?? 0;
   const of = (key: keyof typeof values) => values[key] ?? Array.from({ length: months }, () => null);
@@ -142,6 +155,8 @@ function analytics(
     propertyDamage,
     equipmentDamage,
     combinedDamage,
+    ...emptyAnalyticsExtras(year, months),
+    ...extras,
   };
 }
 
@@ -177,17 +192,29 @@ let root: Root | null = null;
 let container: HTMLDivElement;
 let queryClient: QueryClient;
 
-async function render(instant = OCTOBER_8_2026) {
+async function render(instant = OCTOBER_8_2026, initialView?: DashboardView) {
   vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
   vi.setSystemTime(new Date(instant));
   root = createRoot(container);
   await act(async () =>
     root!.render(
       <QueryClientProvider client={queryClient}>
-        <IncidentDashboard title="Incident & Near Miss Dashboard" siteToday={siteIsoDate(new Date())} />
+        <IncidentDashboard
+          title="Incident & Near Miss Dashboard"
+          siteToday={siteIsoDate(new Date())}
+          initialView={initialView}
+        />
       </QueryClientProvider>,
     ),
   );
+  await settle();
+}
+
+const tab = (name: string) =>
+  [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find((t) => t.textContent === name)!;
+
+async function openTab(name: string) {
+  await act(async () => tab(name).click());
   await settle();
 }
 
@@ -331,7 +358,7 @@ describe("Incident & Near Miss Dashboard", () => {
 
   it("shows property and equipment damage separately with their YTD totals", async () => {
     stubApi(() => ok(analytics(2026, 2, { property: [1, 2], equipment: [0, null] })));
-    await render("2026-02-10T15:00:00Z");
+    await render("2026-02-10T15:00:00Z", "incident-analysis");
 
     const damage = chart("Property vs Equipment Damage by Month");
     expect(damage.textContent).toContain("Property Damage · 3 YTD");
@@ -375,13 +402,27 @@ describe("Incident & Near Miss Dashboard", () => {
     );
     expect([...container.querySelectorAll("[data-chart]")].map((c) => c.getAttribute("data-chart"))).toEqual([
       "Incidents vs Near Misses by Month",
+      "Incidents vs Prior Year by Month (2026 vs 2025)",
       "Incident Classification",
-      "LOPC by Month",
-      "Property vs Equipment Damage by Month",
-      "Powered Industrial Vehicle (PIT) Incidents",
       "PSIF by Month",
     ]);
     expect(container.querySelector('[aria-label="Methodology and data completeness"]')).not.toBeNull();
+
+    await openTab("Incident Analysis");
+    expect([...container.querySelectorAll("[data-chart]")].map((c) => c.getAttribute("data-chart"))).toEqual([
+      "LOPC by Month",
+      "LOPC vs Prior Year by Month (2026 vs 2025)",
+      "LOPC Contributing Factors",
+      "Property vs Equipment Damage by Month",
+      "Powered Industrial Vehicle (PIT) Incidents",
+      "Injury Cause",
+      "Body Part",
+      "Near-Miss Potential",
+      "Near-Miss Cause",
+    ]);
+    // Damage is shown once, on Incident Analysis only.
+    await openTab("Overview");
+    expect(chart("Property vs Equipment Damage by Month")).toBeNull();
   });
 
   it("shows a complete damage total, a reported zero and an unreported component", async () => {
@@ -409,10 +450,21 @@ describe("Incident & Near Miss Dashboard", () => {
     stubApi(() => ok(analytics(2026, 1, { pit: [1] })));
     await render("2026-01-10T15:00:00Z");
 
+    // Overview: the prior-year chart has no table while 2025 is unavailable.
+    let captions = [...container.querySelectorAll("table caption")].map((c) => c.textContent);
+    expect(captions).toEqual([
+      "Incidents and Near Misses by month, Jan 2026",
+      "Incident Classification, Jan 2026",
+      "PSIF by month, Jan 2026",
+    ]);
+
+    await openTab("Incident Analysis");
     expect(chart("Powered Industrial Vehicle (PIT) Incidents")).not.toBeNull();
-    const captions = [...container.querySelectorAll("table caption")].map((c) => c.textContent);
-    expect(captions).toHaveLength(6);
-    expect(captions).toContain("Incident Classification, Jan 2026");
+    captions = [...container.querySelectorAll("table caption")].map((c) => c.textContent);
+    expect(captions).toContain("LOPC by month, Jan 2026");
+    expect(captions).toContain("LOPC contributing factors by month, Jan 2026");
+    expect(captions).toContain("Powered Industrial Vehicle (PIT) Incidents by month, Jan 2026");
+    expect(captions).toContain("Near-Miss Cause, Jan 2026");
   });
 
   it("renders an empty year as not reported, without 2026 values", async () => {
@@ -429,5 +481,182 @@ describe("Incident & Near Miss Dashboard", () => {
     expect(chart("Incident Classification").textContent).toContain("Nothing has been reported for Jan 2027.");
     expect(text()).not.toContain("2026 ·");
     expect(requested.map((url) => url.searchParams.get("year"))).toEqual(["2027"]);
+  });
+});
+
+/** Test fixture: two months with area, factor and tag breakdowns. */
+function withBreakdowns(): IncidentAnalyticsResponse {
+  const incidentAreas = [
+    fixtureCategory("100", "100", [null, 1], { description: "Ingredient Prep", areaKind: "process_unit" }),
+    fixtureCategory("lab", "Lab", [0, null], { areaKind: "support" }),
+    fixtureCategory("mundy", "MUNDY", [2, 2], { areaKind: "organization" }),
+    fixtureCategory("admin", "Admin", [null, null], { areaKind: "support" }),
+  ];
+  const nearMissAreas = [fixtureCategory("600", "600", [1, null], { areaKind: "process_unit" })];
+  const factors = fixtureBreakdown(
+    "lopc_contributing_factor",
+    [
+      fixtureCategory("mechanical_integrity", "Mechanical Integrity", [1, 1]),
+      fixtureCategory("human_error", "Human Error", [null, 1]),
+      fixtureCategory("other", "Other", [null, null]),
+    ],
+    2,
+  );
+  const reported = (rows: ReturnType<typeof fixtureCategory>[]) =>
+    fixtureBreakdown("x", rows, 2).categories.filter((row) => row.total !== null);
+  const response = analytics(
+    2026,
+    2,
+    { incidents: [2, 4], nearMisses: [1, null], lopc: [1, 2] },
+    {
+      incidentsByArea: reported(incidentAreas),
+      nearMissesByArea: reported(nearMissAreas),
+      incidentAreaMonthly: incidentAreas,
+      nearMissAreaMonthly: nearMissAreas,
+      areaReconciliation: {
+        incidents: fixtureReconciliation([2, 3], [2, 4]),
+        nearMisses: fixtureReconciliation([1, null], [1, null]),
+      },
+      incidentsPriorYearMonthly: series([5, 0], { section: "incident_near_miss_totals", code: "incident", name: "Incident" }),
+      incidentsPriorYearAvailable: true,
+      lopcContributingFactors: {
+        breakdown: factors,
+        cumulative: factors.rows.map((row) => ({ code: row.code, name: row.name, values: row.values })),
+        cumulativeTotal: [1, 3],
+      },
+      lopcFactorReconciliation: fixtureReconciliation(factors.monthlyTotals, [1, 2]),
+      nearMissCause: fixtureBreakdown(
+        "near_miss_cause",
+        [fixtureCategory("housekeeping", "Housekeeping", [1, null]), fixtureCategory("procedures", "Procedures", [2, null])],
+        2,
+        true,
+      ),
+    },
+  );
+  response.kpis[0] = {
+    ...response.kpis[0],
+    priorYear: { year: 2025, value: 5, monthsReported: 2, complete: true, delta: 1 },
+  };
+  return response;
+}
+
+describe("Incident & Near Miss Dashboard views", () => {
+  afterEach(() => window.history.replaceState(null, "", "/"));
+
+  it("opens on Overview, switches views in the URL and keeps the year, month and request", async () => {
+    stubApi(() => ok(withBreakdowns()));
+    await render("2026-02-10T15:00:00Z");
+    await choose(select("Through month"), 1);
+    const requests = requested.length;
+
+    expect(tab("Overview").getAttribute("aria-selected")).toBe("true");
+    await openTab("Area");
+
+    expect(tab("Area").getAttribute("aria-selected")).toBe("true");
+    expect(new URL(window.location.href).searchParams.get("view")).toBe("area");
+    expect(select("Through month").value).toBe("1");
+    expect(requested).toHaveLength(requests);
+    const link = [...container.querySelectorAll("a")].find((a) => a.textContent === "Open data entry");
+    expect(link?.getAttribute("href")).toBe("/safety/incidents/data-entry");
+  });
+
+  it("moves between tabs with the arrow keys", async () => {
+    stubApi(() => ok(withBreakdowns()));
+    await render("2026-02-10T15:00:00Z");
+
+    await act(async () => {
+      tab("Overview").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
+    });
+
+    expect(tab("Behavior").getAttribute("aria-selected")).toBe("true");
+    expect(document.activeElement).toBe(tab("Behavior"));
+  });
+
+  it("compares Incidents with the prior year in grey, keeping a reported zero", async () => {
+    stubApi(() => ok(withBreakdowns()));
+    await render("2026-02-10T15:00:00Z");
+
+    const prior = chart("Incidents vs Prior Year by Month (2026 vs 2025)");
+    expect(prior.getAttribute("data-series")).toBe("2025:#94a3b8:|2026:#2563eb:");
+    expect(prior.querySelector("ol")!.textContent).toBe("Jan: 5/2Feb: 0/4");
+    expect(card("Incidents YTD")).toContain("Prior year (Jan–Feb 2025): 5 · +1");
+  });
+
+  it("shows an empty prior-year chart when the prior year is unavailable", async () => {
+    stubApi(() => ok(analytics(2026, 2, { incidents: [1, 1] })));
+    await render("2026-02-10T15:00:00Z");
+
+    const prior = chart("Incidents vs Prior Year by Month (2026 vs 2025)");
+    expect(prior.textContent).toContain("No Incidents values are recorded for 2025, so there is nothing to compare.");
+    expect(prior.querySelector("ol")).toBeNull();
+    expect(card("Incidents YTD")).not.toContain("Prior year");
+  });
+
+  it("lists reported areas only and shows blank as – and a reported zero as 0", async () => {
+    stubApi(() => ok(withBreakdowns()));
+    await render("2026-02-10T15:00:00Z", "area");
+
+    expect(chart("Incidents by Area").querySelector("ol")!.textContent).toBe("MUNDY: 4100: 1Lab: 0");
+    expect(chart("Incidents by Area").textContent).toContain("Jan–Feb 2026");
+    const grid = container.querySelector('section[aria-label="Incidents by Area and Month"]')!;
+    const row = (label: string) =>
+      [...grid.querySelectorAll("tbody tr")].find((tr) => tr.querySelector("th")!.textContent!.startsWith(label))!;
+    const cells = (label: string) => [...row(label).querySelectorAll("td")].map((td) => td.textContent);
+    expect(cells("Lab")).toEqual(["0", "–Not reported", "0"]);
+    expect(cells("Admin")).toEqual(["–Not reported", "–Not reported", "–Not reported"]);
+    expect(row("100").querySelector("th")!.getAttribute("title")).toBe("Ingredient Prep");
+    // Area rows stay in display order; the footer adds the reported areas.
+    expect([...grid.querySelectorAll("tbody th")].map((th) => th.childNodes[0].textContent)).toEqual([
+      "100",
+      "Lab",
+      "MUNDY",
+      "Admin",
+    ]);
+    expect([...grid.querySelectorAll("tfoot tr")[0].querySelectorAll("td")].map((td) => td.textContent)).toEqual([
+      "2",
+      "3",
+      "5",
+    ]);
+    const checks = [...grid.querySelectorAll("tfoot tr")[1].querySelectorAll("td")].map((td) => td.getAttribute("title"));
+    expect(checks[0]).toBe("January: areas total 2, matches Incidents 2");
+    expect(checks[1]).toBe("February: areas total 3, Incidents 4 (reconciliation difference −1)");
+    expect(grid.textContent).toContain("Reconciled in 1 of 2 months; 1 with a reconciliation difference.");
+  });
+
+  it("stacks the LOPC factors with a cumulative total and flags the tags", async () => {
+    stubApi(() => ok(withBreakdowns()));
+    await render("2026-02-10T15:00:00Z", "incident-analysis");
+
+    const factors = chart("LOPC Contributing Factors");
+    expect(factors.getAttribute("data-series")).toBe(
+      "Mechanical Integrity:#7c3aed:factors|Human Error:#0d9488:factors|Other:#64748b:factors",
+    );
+    expect(factors.getAttribute("data-lines")).toBe("Cumulative total:right:1,3");
+    expect(factors.textContent).toContain("Reconciled in 2 of 2 months.");
+    const cause = chart("Near-Miss Cause");
+    expect(cause.textContent).toContain(NOTES.tags);
+    expect(cause.querySelector("ol")!.textContent).toBe("Procedures: 2Housekeeping: 1");
+    expect(chart("Body Part").textContent).toContain(NOTES.injuries);
+  });
+
+  it("shows a legitimate empty Behavior view with no values and no data entry", async () => {
+    stubApi(() => ok(withBreakdowns()));
+    await render("2026-02-10T15:00:00Z", "behavior");
+
+    const panel = container.querySelector('[role="tabpanel"]')!;
+    expect(panel.textContent).toContain("No behavior data recorded for 2026.");
+    expect(panel.textContent).not.toMatch(/\b0 behaviors?\b|zero/i);
+    expect(panel.querySelector("a")).toBeNull();
+    expect(panel.querySelector("[data-chart]")).toBeNull();
+  });
+
+  it("never shows TRIR, Process Safety or pie charts", async () => {
+    stubApi(() => ok(withBreakdowns()));
+    for (const view of ["overview", "area", "incident-analysis", "behavior"] as const) {
+      await render("2026-02-10T15:00:00Z", view);
+      expect(text()).not.toMatch(/TRIR|Process Safety|PSM|\bpie\b/i);
+      await act(async () => root?.unmount());
+      root = null;
+    }
   });
 });

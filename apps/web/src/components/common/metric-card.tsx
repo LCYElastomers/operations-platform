@@ -13,6 +13,8 @@ type MetricCardProps = {
   precision?: number;
   /** Supporting text, e.g. the period or source of the metric. */
   caption?: string;
+  /** A second line under the caption, e.g. a comparison period. */
+  detail?: string | null;
   icon?: React.ComponentType<{ className?: string }>;
   /** Larger value for the page's headline metrics. Visual weight only; implies no status. */
   emphasis?: boolean;
@@ -26,6 +28,7 @@ export function MetricCard({
   unit,
   precision = 0,
   caption,
+  detail,
   icon: Icon,
   emphasis = false,
   loading = false,
@@ -90,6 +93,7 @@ export function MetricCard({
           <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
             {hasValue ? caption : (caption ?? "No data")}
           </p>
+          {detail && <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">{detail}</p>}
         </>
       )}
     </div>

@@ -21,15 +21,21 @@ import { cn } from "@/lib/utils";
 
 import { describeSafetyError, editConflicts, type MetricSectionBlock } from "./api";
 import {
+  authoritativeTotals,
+  BREAKDOWN_CHECKS,
   cellKey,
+  checkMonth,
   defaultReportingYear,
+  draftMonthlyTotals,
   draftSectionValues,
   FIRST_REPORTING_YEAR,
   MONTH_LABELS,
   parseCount,
   summarizeDraft,
+  TAG_SECTIONS,
   total,
   type Draft,
+  type MonthCheck,
 } from "./grid";
 import { yearOf } from "../site-calendar";
 import { useAutomaticValue, useSiteToday } from "../use-site-calendar";
@@ -51,6 +57,7 @@ function sectionRows(section: MetricSectionBlock, draft: Draft): MonthlyGridRow[
   return section.categories.map((category, index) => ({
     id: String(category.id),
     label: category.name,
+    description: category.description,
     cells: states[index].map(({ text, dirty, invalid }) => ({ text, dirty, invalid })),
     total: total(states[index].map((cell) => cell.value)),
   }));
@@ -117,26 +124,139 @@ function SectionGrids({ sections, draft, editable, onCellChange, onCellRevert }:
     }
   };
 
+  const breakdownCodes = BREAKDOWN_GROUPS.map(([, code]) => code);
+  const totalsGroup = sections.filter((section) => !breakdownCodes.includes(section.code));
+  const breakdowns = BREAKDOWN_GROUPS.flatMap(([letter, code]) => {
+    const section = sections.find((s) => s.code === code);
+    return section ? [{ letter, section }] : [];
+  });
+
+  const grid = (section: MetricSectionBlock, title: string, breakdown: boolean) => {
+    const rows = sectionRows(section, draft);
+    const monthly = draftMonthlyTotals(section, draft);
+    return (
+      <MonthlyGrid
+        key={section.id}
+        title={title}
+        columns={MONTH_LABELS}
+        rows={rows}
+        editable={editable}
+        onCellChange={onCellChange}
+        onCellRevert={onCellRevert}
+        open={isOpen(section.code)}
+        onOpenChange={(open) => setOpen(section.code, open)}
+        summary={sectionSummary(rows)}
+        status={sectionStatus(rows)}
+        footer={
+          breakdown
+            ? { label: "Sum of categories", values: monthly, total: total(monthly) }
+            : undefined
+        }
+        notes={breakdown && <BreakdownNotes section={section} sections={sections} draft={draft} />}
+      />
+    );
+  };
+
   return (
-    <div className="space-y-4">
-      {sections.map((section) => {
-        const rows = sectionRows(section, draft);
-        return (
-          <MonthlyGrid
-            key={section.id}
-            title={section.name}
-            columns={MONTH_LABELS}
-            rows={rows}
-            editable={editable}
-            onCellChange={onCellChange}
-            onCellRevert={onCellRevert}
-            open={isOpen(section.code)}
-            onOpenChange={(open) => setOpen(section.code, open)}
-            summary={sectionSummary(rows)}
-            status={sectionStatus(rows)}
-          />
-        );
-      })}
+    <div className="space-y-6">
+      <section aria-labelledby="group-totals" className="space-y-4">
+        <h2 id="group-totals" className="px-1 text-base font-semibold">
+          A · Incident totals and classifications
+        </h2>
+        {totalsGroup.map((section) => grid(section, section.name, false))}
+      </section>
+      {breakdowns.length > 0 && (
+        <section aria-labelledby="group-breakdowns" className="space-y-4">
+          <div className="px-1">
+            <h2 id="group-breakdowns" className="text-base font-semibold">
+              Breakdowns
+            </h2>
+            <p className="mt-0.5 max-w-4xl text-sm text-muted-foreground">
+              Supporting dimensions of the totals above, which stay authoritative. Each month is checked against
+              its total as you type; a difference is a warning only and nothing is filled in or distributed. Blank is
+              not reported; 0 is a reported zero.
+            </p>
+          </div>
+          {breakdowns.map(({ letter, section }) => grid(section, `${letter} · ${section.name}`, true))}
+        </section>
+      )}
+    </div>
+  );
+}
+
+/** Groups B–H, in this order; every other section is in group A. */
+const BREAKDOWN_GROUPS: [letter: string, code: string][] = [
+  ["B", "incidents_by_area"],
+  ["C", "near_misses_by_area"],
+  ["D", "near_miss_potential"],
+  ["E", "near_miss_cause"],
+  ["F", "lopc_contributing_factor"],
+  ["G", "injury_cause"],
+  ["H", "body_part"],
+];
+
+const MONTH_CHECK_TEXT: Record<Exclude<MonthCheck, "reconciled">, string> = {
+  below_total: "below total",
+  above_total: "above total",
+  no_dimension_data: "no breakdown data",
+  no_authoritative_total: "no authoritative total",
+};
+
+/** Live, non-blocking comparison of a breakdown with its authoritative total, month by month. */
+function BreakdownNotes({
+  section,
+  sections,
+  draft,
+}: {
+  section: MetricSectionBlock;
+  sections: MetricSectionBlock[];
+  draft: Draft;
+}) {
+  if (TAG_SECTIONS.has(section.code)) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        Tags may exceed the near-miss count: one near miss can carry more than one {section.name.toLowerCase()}.
+      </p>
+    );
+  }
+  const check = BREAKDOWN_CHECKS[section.code];
+  if (!check) return null;
+  const parts = draftMonthlyTotals(section, draft);
+  const whole = authoritativeTotals(sections, check.against, draft);
+  const months = MONTH_LABELS.map((label, index) => {
+    const authoritative = whole?.[index] ?? null;
+    return { label, parts: parts[index], whole: authoritative, state: checkMonth(parts[index], authoritative) };
+  }).filter((month) => month.state !== null);
+  const reconciled = months.filter((month) => month.state === "reconciled");
+  const flagged = months.filter((month) => month.state !== "reconciled");
+  const noData = check.parts === "Areas" ? "no area data" : "no breakdown data";
+
+  return (
+    <div aria-live="polite" className="space-y-1 text-xs">
+      <p className="font-medium text-muted-foreground">
+        Checked against {check.label} (warning only).
+        {section.code === "body_part" && " Body parts are tags: one injury can involve more than one."}
+      </p>
+      {months.length === 0 && <p className="text-muted-foreground">No months to check yet.</p>}
+      {reconciled.length > 0 && (
+        <p className="text-success">Reconciled: {reconciled.map((month) => month.label).join(", ")}</p>
+      )}
+      {flagged.length > 0 && (
+        <ul className="space-y-0.5">
+          {flagged.map((month) => {
+            const state = month.state as Exclude<MonthCheck, "reconciled">;
+            const difference = month.parts !== null && month.whole !== null ? month.parts - month.whole : null;
+            return (
+              <li key={month.label} className={cn(difference !== null ? "text-amber-700 dark:text-warning" : "text-muted-foreground")}>
+                {month.label}: {check.parts} {month.parts ?? "not reported"}, {check.label}{" "}
+                {month.whole ?? "not reported"} ·{" "}
+                {state === "no_dimension_data" ? noData : MONTH_CHECK_TEXT[state]}
+                {difference !== null && ` (reconciliation difference ${difference > 0 ? "+" : "−"}${Math.abs(difference)})`}
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }

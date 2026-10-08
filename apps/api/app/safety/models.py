@@ -22,6 +22,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Identity,
+    Index,
     Integer,
     SmallInteger,
     Text,
@@ -59,10 +60,54 @@ class MetricSection(Base):
     )
 
 
+AREA_KINDS = ("process_unit", "support", "organization")
+# The only sections whose categories are (and must be) linked to an area. Enforced
+# by a trigger (migration 0007).
+AREA_SECTION_CODES = ("incidents_by_area", "near_misses_by_area")
+
+
+class Area(Base):
+    """A reporting area: a process unit, a support area or an organization."""
+
+    __tablename__ = "areas"
+    __table_args__ = (
+        UniqueConstraint("code"),
+        CheckConstraint(
+            "area_kind IN ('process_unit', 'support', 'organization')", name="area_kind"
+        ),
+        CheckConstraint("code ~ '^[a-z0-9_]{1,100}$'", name="code"),
+        CheckConstraint(
+            "name = btrim(name) AND name <> '' AND char_length(name) <= 200", name="name"
+        ),
+        {"schema": SAFETY_SCHEMA},
+    )
+
+    id: Mapped[int] = mapped_column(Integer, Identity(), primary_key=True)
+    code: Mapped[str] = mapped_column(Text, nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    area_kind: Mapped[str] = mapped_column(Text, nullable=False)
+    display_order: Mapped[int] = mapped_column(Integer, nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class MetricCategory(Base):
     __tablename__ = "metric_categories"
     __table_args__ = (
         UniqueConstraint("section_id", "code"),
+        Index(
+            "uq_metric_categories_section_area",
+            "section_id",
+            "area_id",
+            unique=True,
+            postgresql_where=text("area_id IS NOT NULL"),
+        ),
         {"schema": SAFETY_SCHEMA},
     )
 
@@ -72,6 +117,13 @@ class MetricCategory(Base):
     )
     code: Mapped[str] = mapped_column(Text, nullable=False)
     name: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Set only for the categories of the area sections (AREA_SECTION_CODES).
+    area_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey(Area.id, name="fk_metric_categories_area", ondelete="RESTRICT"),
+        nullable=True,
+    )
     display_order: Mapped[int] = mapped_column(Integer, nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
     created_at: Mapped[dt.datetime] = mapped_column(

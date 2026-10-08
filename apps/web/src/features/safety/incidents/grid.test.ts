@@ -4,8 +4,12 @@ import { ApiError } from "@/lib/api-client";
 
 import { describeSafetyError, editConflicts, type MonthlyMetricsResponse } from "./api";
 import {
+  authoritativeTotals,
   cellKey,
   cellState,
+  checkMonth,
+  draftCategoryValues,
+  draftMonthlyTotals,
   parseCount,
   defaultReportingYear,
   FIRST_REPORTING_YEAR,
@@ -13,6 +17,53 @@ import {
   summarizeDraft,
   total,
 } from "./grid";
+
+describe("breakdown checks", () => {
+  const year = (values: Record<number, number>): (number | null)[] =>
+    Array.from({ length: 12 }, (_, index) => values[index + 1] ?? null);
+  const sections: MonthlyMetricsResponse["sections"] = [
+    {
+      id: 1,
+      code: "incident_near_miss_totals",
+      name: "Incident & Near Miss Totals",
+      categories: [{ id: 22, code: "incident", name: "Incident", values: year({ 1: 2, 2: 3 }), ytd: 5 }],
+    },
+    {
+      id: 7,
+      code: "incidents_by_area",
+      name: "Incidents by Area",
+      categories: [
+        { id: 71, code: "100", name: "100", values: year({ 1: 1 }), ytd: 1 },
+        { id: 72, code: "mundy", name: "MUNDY", values: year({ 1: 1, 3: 0 }), ytd: 1 },
+      ],
+    },
+  ];
+
+  it("sums a breakdown per month with the draft applied, keeping blanks null", () => {
+    const area = sections[1];
+    expect(draftMonthlyTotals(area, {}).slice(0, 4)).toEqual([2, null, 0, null]);
+    expect(draftMonthlyTotals(area, { [cellKey(71, 2)]: "2", [cellKey(72, 1)]: "" }).slice(0, 3)).toEqual([1, 2, 0]);
+  });
+
+  it("reads the authoritative total with the draft applied", () => {
+    expect(authoritativeTotals(sections, [["incident_near_miss_totals", "incident"]], { [cellKey(22, 2)]: "4" })?.slice(0, 3)).toEqual(
+      [2, 4, null],
+    );
+    expect(draftCategoryValues(sections, "lopc", "lopc", {})).toBeNull();
+    expect(authoritativeTotals(sections, [["lopc", "lopc"]], {})).toBeNull();
+  });
+
+  it("checks a month the same way as the API, warning only", () => {
+    expect(checkMonth(2, 2)).toBe("reconciled");
+    expect(checkMonth(1, 2)).toBe("below_total");
+    expect(checkMonth(3, 2)).toBe("above_total");
+    expect(checkMonth(null, 2)).toBe("no_dimension_data");
+    expect(checkMonth(0, null)).toBe("no_authoritative_total");
+    expect(checkMonth(null, null)).toBeNull();
+    // A reported zero is a value, not a blank.
+    expect(checkMonth(0, 0)).toBe("reconciled");
+  });
+});
 
 const months = (values: Record<number, number>): (number | null)[] =>
   Array.from({ length: 12 }, (_, index) => values[index + 1] ?? null);

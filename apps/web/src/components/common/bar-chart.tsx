@@ -1,6 +1,11 @@
 "use client";
 
-import { BarChart as EBarChart, type BarSeriesOption } from "echarts/charts";
+import {
+  BarChart as EBarChart,
+  type BarSeriesOption,
+  LineChart as ELineChart,
+  type LineSeriesOption,
+} from "echarts/charts";
 import {
   GridComponent,
   type GridComponentOption,
@@ -19,10 +24,21 @@ import { cn } from "@/lib/utils";
 import { EmptyState } from "./empty-state";
 import { ChartLegend, PALETTE } from "./trend-chart";
 
-echarts.use([EBarChart, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer]);
+echarts.use([
+  EBarChart,
+  ELineChart,
+  GridComponent,
+  LegendComponent,
+  TooltipComponent,
+  CanvasRenderer,
+]);
 
 type ChartOption = echarts.ComposeOption<
-  BarSeriesOption | GridComponentOption | LegendComponentOption | TooltipComponentOption
+  | BarSeriesOption
+  | LineSeriesOption
+  | GridComponentOption
+  | LegendComponentOption
+  | TooltipComponentOption
 >;
 
 /** One value per category. null means "not reported" and draws no bar; 0 is a value. */
@@ -31,6 +47,21 @@ export type BarSeries = {
   values: (number | null)[];
   /** Defaults to the shared palette by position. */
   color?: string;
+  /** Series with the same stack id are stacked on one bar. */
+  stack?: string;
+};
+
+/**
+ * A line drawn over the bars (vertical charts only). null leaves a gap in the
+ * line; 0 is a point.
+ */
+export type LineSeries = {
+  name: string;
+  values: (number | null)[];
+  color?: string;
+  /** "right" plots against a second value axis, e.g. a cumulative total. */
+  axis?: "left" | "right";
+  dashed?: boolean;
 };
 
 const AXIS_LABEL_COLOR = "#64748b";
@@ -38,6 +69,7 @@ const AXIS_LABEL_COLOR = "#64748b";
 const UNREPORTED_LABEL_COLOR = "#b6c0cd";
 const AXIS_LINE_COLOR = "#cbd5e1";
 const GRID_COLOR = "#e2e8f0";
+const NO_LINES: LineSeries[] = [];
 
 type BarChartProps = {
   title: string;
@@ -45,6 +77,10 @@ type BarChartProps = {
   /** Category axis labels, in display order. */
   categories: string[];
   series: BarSeries[];
+  /** Lines over the bars; ignored for horizontal charts. */
+  lines?: LineSeries[];
+  /** Name of the right value axis, shown when a line uses it. */
+  rightAxisName?: string;
   /** "vertical" bars rise from the x axis; "horizontal" bars suit long category labels. */
   orientation?: "vertical" | "horizontal";
   /** Height of the plot area in pixels. */
@@ -63,6 +99,8 @@ export function BarChart({
   description,
   categories,
   series,
+  lines = NO_LINES,
+  rightAxisName,
   orientation = "vertical",
   height = 280,
   showValues = false,
@@ -71,7 +109,7 @@ export function BarChart({
   footer,
   className,
 }: BarChartProps) {
-  const hasData = series.some((s) => s.values.some((value) => value !== null));
+  const hasData = [...series, ...lines].some((s) => s.values.some((value) => value !== null));
 
   return (
     <section
@@ -92,6 +130,8 @@ export function BarChart({
           title={title}
           categories={categories}
           series={series}
+          lines={orientation === "vertical" ? lines : NO_LINES}
+          rightAxisName={rightAxisName}
           orientation={orientation}
           height={height}
           showValues={showValues}
@@ -118,6 +158,8 @@ function BarChartBody({
   title,
   categories,
   series,
+  lines,
+  rightAxisName,
   orientation,
   height,
   showValues,
@@ -125,6 +167,8 @@ function BarChartBody({
   title: string;
   categories: string[];
   series: BarSeries[];
+  lines: LineSeries[];
+  rightAxisName?: string;
   orientation: "vertical" | "horizontal";
   height: number;
   showValues: boolean;
@@ -158,15 +202,16 @@ function BarChartBody({
 
   useEffect(() => {
     chartRef.current?.setOption(
-      buildBarOption(categories, series, { hidden, orientation, showValues }),
+      buildBarOption(categories, series, { hidden, orientation, showValues, lines, rightAxisName }),
       { notMerge: true },
     );
-  }, [categories, series, hidden, orientation, showValues]);
+  }, [categories, series, lines, rightAxisName, hidden, orientation, showValues]);
 
+  const legend = [...series, ...lines];
   return (
     <div className="flex flex-1 flex-col gap-2 px-4 pt-3 pb-2">
-      {series.length > 1 && (
-        <ChartLegend series={series} hidden={hidden} onToggle={toggle} label="Series" />
+      {legend.length > 1 && (
+        <ChartLegend series={legend} hidden={hidden} onToggle={toggle} label="Series" />
       )}
       <div ref={containerRef} role="img" aria-label={`${title} chart`} style={{ height }} className="w-full" />
     </div>
@@ -191,15 +236,22 @@ export function buildBarOption(
     hidden = new Set(),
     orientation = "vertical",
     showValues = false,
+    lines = NO_LINES,
+    rightAxisName,
   }: {
     hidden?: ReadonlySet<string>;
     orientation?: "vertical" | "horizontal";
     showValues?: boolean;
+    lines?: LineSeries[];
+    rightAxisName?: string;
   } = {},
 ): ChartOption {
+  const plotted = orientation === "vertical" ? lines : NO_LINES;
   const unreported = categories.map((_, index) =>
-    series.every((s) => s.values[index] === null || s.values[index] === undefined),
+    [...series, ...plotted].every((s) => s.values[index] === null || s.values[index] === undefined),
   );
+  const rightAxis = plotted.some((line) => line.axis === "right");
+  const stacked = series.some((s) => s.stack !== undefined);
   const categoryAxis = {
     type: "category" as const,
     data: categories,
@@ -234,8 +286,10 @@ export function buildBarOption(
     },
     legend: {
       show: false,
-      data: series.map((s) => s.name),
-      selected: Object.fromEntries(series.map((s) => [s.name, !hidden.has(s.name)])),
+      data: [...series, ...plotted].map((s) => s.name),
+      selected: Object.fromEntries(
+        [...series, ...plotted].map((s) => [s.name, !hidden.has(s.name)]),
+      ),
     },
     tooltip: {
       trigger: "axis",
@@ -262,24 +316,60 @@ export function buildBarOption(
       },
     },
     xAxis: orientation === "horizontal" ? valueAxis : categoryAxis,
-    yAxis: orientation === "horizontal" ? categoryAxis : valueAxis,
-    series: series.map((s) => ({
-      type: "bar",
-      name: s.name,
-      // null stays null: ECharts draws no bar, distinct from a zero-height bar.
-      data: s.values,
-      barMaxWidth: 28,
-      itemStyle: {
-        borderRadius: orientation === "horizontal" ? [0, 3, 3, 0] : [3, 3, 0, 0],
-        ...(s.color && { color: s.color }),
-      },
-      label: {
-        show: showValues,
-        position: orientation === "horizontal" ? "right" : "top",
-        color: "#334155",
-        fontSize: 11,
-        fontWeight: 600,
-      },
-    })),
+    yAxis:
+      orientation === "horizontal"
+        ? categoryAxis
+        : rightAxis
+          ? [
+              valueAxis,
+              {
+                ...valueAxis,
+                name: rightAxisName,
+                nameTextStyle: { color: AXIS_LABEL_COLOR, fontSize: 11 },
+                splitLine: { show: false },
+              },
+            ]
+          : valueAxis,
+    series: [
+      ...series.map(
+        (s): BarSeriesOption => ({
+          type: "bar",
+          name: s.name,
+          // null stays null: ECharts draws no bar, distinct from a zero-height bar.
+          data: s.values,
+          barMaxWidth: 28,
+          ...(s.stack !== undefined && { stack: s.stack }),
+          itemStyle: {
+            // Stacked segments are square so the stack reads as one bar.
+            borderRadius: stacked ? 0 : orientation === "horizontal" ? [0, 3, 3, 0] : [3, 3, 0, 0],
+            ...(s.color && { color: s.color }),
+          },
+          label: {
+            show: showValues,
+            position: stacked ? "inside" : orientation === "horizontal" ? "right" : "top",
+            color: stacked ? "#ffffff" : "#334155",
+            fontSize: 11,
+            fontWeight: 600,
+            // A stacked zero has no height to hold a label.
+            ...(stacked && { formatter: (p: { value?: unknown }) => (p.value ? String(p.value) : "") }),
+          },
+        }),
+      ),
+      ...plotted.map(
+        (line): LineSeriesOption => ({
+          type: "line",
+          name: line.name,
+          // null leaves a gap; the line never invents a value for an unreported month.
+          data: line.values,
+          connectNulls: false,
+          yAxisIndex: line.axis === "right" ? 1 : 0,
+          symbol: "circle",
+          symbolSize: 6,
+          lineStyle: { width: 2, ...(line.dashed && { type: "dashed" as const }) },
+          ...(line.color && { itemStyle: { color: line.color }, color: line.color }),
+          z: 3,
+        }),
+      ),
+    ],
   };
 }

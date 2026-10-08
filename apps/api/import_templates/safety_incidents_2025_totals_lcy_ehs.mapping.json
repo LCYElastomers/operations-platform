@@ -1,0 +1,32 @@
+{
+  "source": "docs/2026 LCY EHS Dash Board.xlsx (SHA-256 0B94C09BEDF3C343D3250496780A2D3B66671B55741ABA0391FDE81BE8B51C10), sheet 'Incident Data' ('Total EHS Incidents' block AH70:AU72, 2025 row AI71:AT71)",
+  "metricSet": "incidents",
+  "year": 2025,
+  "notes": [
+    "Load with: python -m app.safety.legacy_import check|plan|apply <this file>. Not applied by any migration. Supplies the prior-year comparison for the 2026 Incident & Near Miss Dashboard; Incident & Near Miss reporting on the platform still starts in 2026.",
+    "Incident 2025 <- Incident Data!AI71:AT71, typed values (no formulas). February (AJ71) is a typed 0 and is stored as an explicit zero. The months sum to 41, which equals the typed 2025 HSE Incidents total Incident Data!Q3 (label P3 = 2025).",
+    "Only the Incident total is mapped. Near Miss 2025 is NOT mapped: the workbook states only an annual 38 (Incident Data!Q8), with no monthly values. 2025 PIT, Fire and Equipment Failure history blocks are NOT mapped (not approved). 2025 LOPC is already in the performance_legacy set and is read from there; it is not copied here.",
+    "The 2026 row of the same block (AI72:AT72) is NOT used: it links to Dash!G41 (May = 2) and its total AU72 = 40 is superseded by the approved 2026 mapping."
+  ],
+  "sections": [
+    {
+      "section": "incident_near_miss_totals",
+      "name": "Incident & Near Miss Totals (Incident only)",
+      "categories": [
+        {
+          "category": "incident",
+          "name": "Incident <- Incident Data!AI71:AT71 (Total EHS Incidents, 2025)",
+          "months": [5, 0, 4, 5, 2, 4, 6, 6, 4, 2, 1, 2]
+        }
+      ]
+    }
+  ],
+  "expectedYtd": [
+    {
+      "section": "incident_near_miss_totals",
+      "category": "incident",
+      "value": 41,
+      "statedIn": "Incident Data!Q3 (2025 HSE Incidents, typed)"
+    }
+  ]
+}

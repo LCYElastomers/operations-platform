@@ -21,6 +21,9 @@ class MetricCategoryRow(CamelModel):
     id: int
     code: str
     name: str
+    description: str | None = None
+    # The linked area's kind for an area category (Incidents / Near Misses by Area).
+    area_kind: str | None = None
     values: list[int | None]
     ytd: int | None = Field(description="Sum of reported months; null when none are reported.")
 
@@ -110,6 +113,17 @@ class AnalyticsKpiPartOut(CamelModel):
     complete: bool
 
 
+class AnalyticsPriorYearOut(CamelModel):
+    """The same months of the previous year."""
+
+    year: int
+    value: int | None
+    months_reported: int
+    complete: bool
+    # value(selected year) - value(prior year); null unless both are reported.
+    delta: int | None
+
+
 class AnalyticsKpiOut(CamelModel):
     key: AnalyticsKpiKey
     value: int | None
@@ -121,6 +135,80 @@ class AnalyticsKpiOut(CamelModel):
     complete: bool
     # The components of a combined KPI (combined_damage); empty otherwise.
     parts: list[AnalyticsKpiPartOut] = Field(default_factory=list)
+    # Set only for a KPI with a prior-year monthly source that has a reported month in
+    # the same period (Incidents, LOPC).
+    prior_year: AnalyticsPriorYearOut | None = None
+
+
+ReconciliationStatus = Literal[
+    "reconciled", "below_total", "above_total", "no_dimension_data", "no_authoritative_total"
+]
+
+
+class MonthReconciliationOut(CamelModel):
+    """A breakdown's month compared with its authoritative total. Informational only:
+    a difference never blocks saving and is not an error."""
+
+    month: int
+    dimension_total: int | None = Field(description="Sum of the breakdown's reported values.")
+    authoritative_total: int | None
+    # dimension_total - authoritative_total; null unless both are reported.
+    difference: int | None
+    status: ReconciliationStatus
+
+
+class AnalyticsCategoryOut(CamelModel):
+    """One breakdown category (an area, a tag, a factor), January..through month."""
+
+    code: str
+    name: str
+    description: str | None = None
+    area_kind: str | None = None
+    values: list[int | None]
+    total: int | None
+    months_reported: int
+
+
+class AnalyticsBreakdownOut(CamelModel):
+    """A breakdown section. ``categories`` are sorted by total, highest first (unreported
+    last), then display order; ``rows`` keep display order. Tag breakdowns may total
+    more than the events they describe."""
+
+    section: str
+    name: str
+    is_tag: bool = Field(description="Categories are non-exclusive tags.")
+    categories: list[AnalyticsCategoryOut]
+    rows: list[AnalyticsCategoryOut]
+    # Per month: the sum of reported category values; null when none are reported.
+    monthly_totals: list[int | None]
+    total: int | None
+
+
+class AnalyticsCumulativeOut(CamelModel):
+    """Running totals of reported values; carried through unreported months, null before
+    the first reported month."""
+
+    code: str
+    name: str
+    values: list[int | None]
+
+
+class LopcFactorsOut(CamelModel):
+    breakdown: AnalyticsBreakdownOut
+    cumulative: list[AnalyticsCumulativeOut]
+    cumulative_total: list[int | None]
+
+
+class AreaReconciliationOut(CamelModel):
+    incidents: list[MonthReconciliationOut]
+    near_misses: list[MonthReconciliationOut]
+
+
+class InjuryReconciliationOut(CamelModel):
+    # First Aid + Recordable Injury per month; null when neither is reported.
+    injuries: list[int | None]
+    injury_cause: list[MonthReconciliationOut]
+    body_part: list[MonthReconciliationOut]
 
 
 class IncidentAnalyticsResponse(CamelModel):
@@ -151,3 +239,31 @@ class IncidentAnalyticsResponse(CamelModel):
     property_damage: AnalyticsSeriesOut
     equipment_damage: AnalyticsSeriesOut
     combined_damage: AnalyticsSeriesOut
+
+    # Area. The by-area lists hold areas with a reported value, highest total first;
+    # the monthly lists hold every active area in display order.
+    incidents_by_area: list[AnalyticsCategoryOut]
+    near_misses_by_area: list[AnalyticsCategoryOut]
+    incident_area_monthly: list[AnalyticsCategoryOut]
+    near_miss_area_monthly: list[AnalyticsCategoryOut]
+    area_reconciliation: AreaReconciliationOut
+
+    # The same months of the previous year. Available when a month is reported.
+    prior_year: int
+    incidents_prior_year_monthly: AnalyticsSeriesOut
+    incidents_prior_year_available: bool
+    lopc_prior_year_monthly: AnalyticsSeriesOut
+    lopc_prior_year_available: bool
+
+    # Incident analysis.
+    lopc_contributing_factors: LopcFactorsOut
+    lopc_factor_reconciliation: list[MonthReconciliationOut]
+    near_miss_potential: AnalyticsBreakdownOut
+    near_miss_cause: AnalyticsBreakdownOut
+    injury_cause: AnalyticsBreakdownOut
+    body_part: AnalyticsBreakdownOut
+    injury_reconciliation: InjuryReconciliationOut
+
+    # Behavior has no approved source yet; nothing is recorded or returned.
+    behavior_available: bool = False
+    behavior_data: AnalyticsBreakdownOut | None = None
