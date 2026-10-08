@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronRight } from "lucide-react";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -21,6 +21,8 @@ export type MonthlyGridRow = {
   cells: MonthlyGridCell[];
   /** Calculated, read-only row total; null when no month is reported. */
   total: number | null;
+  /** A secondary row under this one with one control per column, e.g. record buttons. */
+  subRow?: { label: string; cells: React.ReactNode[] };
 };
 
 type MonthlyGridProps = {
@@ -312,9 +314,12 @@ function GridTable({
                 </tr>
               ))
             : rows.map((row, rowIndex) => (
+                <Fragment key={row.id}>
                 <tr
-                  key={row.id}
-                  className="group/row border-b last:border-b-0 hover:bg-muted/30 focus-within:bg-primary/5"
+                  className={cn(
+                    "group/row border-b last:border-b-0 hover:bg-muted/30 focus-within:bg-primary/5",
+                    row.subRow && "border-b-0",
+                  )}
                 >
                   <th
                     scope="row"
@@ -382,6 +387,26 @@ function GridTable({
                     {formatTotal(row.total)}
                   </td>
                 </tr>
+                {row.subRow && (
+                  <tr className="border-b last:border-b-0 bg-muted/20">
+                    <th
+                      scope="row"
+                      className={cn(
+                        "bg-card px-3 py-1 text-left text-xs font-normal text-muted-foreground sm:px-4",
+                        stickyStart,
+                      )}
+                    >
+                      {row.subRow.label}
+                    </th>
+                    {row.subRow.cells.map((cell, column) => (
+                      <td key={column} className={cn("h-10 p-0.5 text-right pointer-coarse:h-12", column > 0 && GRID_LINE)}>
+                        {cell}
+                      </td>
+                    ))}
+                    <td className={cn("bg-muted", stickyEnd)} />
+                  </tr>
+                )}
+                </Fragment>
               ))}
         </tbody>
         {footer && !loading && (

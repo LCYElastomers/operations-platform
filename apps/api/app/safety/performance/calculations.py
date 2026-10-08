@@ -1,7 +1,8 @@
 """Safety Performance rate calculations. Pure functions; nothing is stored.
 
-Every rate is ``events × 200,000 ÷ worked hours`` over one window of calendar
-months, and the events and the hours always come from the same months.
+Every rate is ``events × 200,000 ÷ worked hours`` (``app.safety.rates``) over
+one window of calendar months, and the events and the hours always come from
+the same months.
 
 A month is eligible for a rate only when its hours are reported, greater than
 zero, and the month is closed. An open or unreported month is never treated as
@@ -23,7 +24,8 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import Literal
 
-RATE_BASE = 200_000
+from app.safety.rates import incidence_rate
+
 FIRST_INCIDENT_YEAR = 2026
 ROLLING_MONTHS = 12
 
@@ -178,7 +180,10 @@ def rolling_window(end: Period) -> list[Period]:
 
 
 def rate(events: int, hours: Decimal) -> float:
-    return events * RATE_BASE / float(hours)
+    exact = incidence_rate(events, hours)
+    if exact is None:
+        raise ValueError("a rate needs hours above zero")
+    return float(exact)
 
 
 @dataclass(frozen=True)

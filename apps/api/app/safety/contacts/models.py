@@ -1,5 +1,10 @@
 """Supervisor Safety Contacts: the program's supervisor list and one row per contact.
 
+RETIRED. The function has no endpoints, pages or permissions any more. The
+tables (migration 0005) and their rows are kept unchanged as a historical
+record; these models remain only so the schema stays described by the
+metadata. Nothing reads or writes them, and no further data is imported.
+
 A contact is one safety contact credited to one supervisor on one date. Every
 count (per month, per supervisor, year to date, participation) is counted from
 these rows and never stored.

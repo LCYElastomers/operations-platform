@@ -12,6 +12,8 @@ from app.safety.contacts.models import ContactSupervisor, SupervisorSafetyContac
 from app.safety.models import MetricCategory, MetricSection, MonthlyMetricValue
 from app.safety.observations.models import Observation, ObservationCategory
 from app.safety.performance.models import PerformanceAnnualLegacy, PerformanceHours
+from app.safety.records.models import IncidentRecord
+from app.safety.trir.models import TrirAnnualFact
 
 __all__ = [
     "AnnualBehaviorCount",
@@ -20,6 +22,7 @@ __all__ = [
     "BehaviorCategory",
     "ContactSupervisor",
     "FinishingMeasurement",
+    "IncidentRecord",
     "IngestionBatch",
     "MetricCategory",
     "MetricSection",
@@ -29,4 +32,5 @@ __all__ = [
     "PerformanceAnnualLegacy",
     "PerformanceHours",
     "SupervisorSafetyContact",
+    "TrirAnnualFact",
 ]

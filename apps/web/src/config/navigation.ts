@@ -13,8 +13,8 @@ import {
   RefreshCw,
   ScrollText,
   TableProperties,
+  TrendingDown,
   Truck,
-  UserRoundCheck,
   Wrench,
 } from "lucide-react";
 
@@ -67,7 +67,7 @@ export const navigation: NavSection[] = [
         icon: HardHat,
         status: "in-development",
         description:
-          "Departmental safety reporting: Incident & Near Miss, Safety Observations, Supervisor Safety Contacts, and Safety Performance.",
+          "Departmental safety reporting: Incident & Near Miss, Safety Observations, Safety Performance, and TRIR Experience.",
         children: [
           { id: "safety-overview", label: "Overview", href: "/safety", exact: true },
           {
@@ -119,30 +119,6 @@ export const navigation: NavSection[] = [
             ],
           },
           {
-            id: "safety-contacts",
-            label: "Supervisor Safety Contacts",
-            description: "Safety contacts credited to supervisors, recorded one contact at a time.",
-            children: [
-              {
-                id: "safety-contacts-entry",
-                label: "Contacts",
-                href: "/safety/contacts",
-                exact: true,
-                icon: UserRoundCheck,
-                status: "in-development",
-                description: "Record supervisor safety contacts with one tap, and review recent contacts.",
-              },
-              {
-                id: "safety-contacts-dashboard",
-                label: "Dashboard",
-                href: "/safety/contacts/dashboard",
-                icon: ChartColumn,
-                status: "in-development",
-                description: "Contacts by month, monthly participation, and the supervisor × month table.",
-              },
-            ],
-          },
-          {
             id: "safety-performance",
             label: "Safety Performance",
             description: "Worked hours and TRIR, First Aid, LOPC and Property & Equipment Damage rates.",
@@ -162,6 +138,22 @@ export const navigation: NavSection[] = [
                 icon: Activity,
                 status: "in-development",
                 description: "YTD and 12-Month Rolling Average (12MRA) rates, worked hours, and annual TRIR.",
+              },
+            ],
+          },
+          {
+            id: "safety-trir",
+            label: "TRIR Experience",
+            description: "Total Recordable Incident Rate history against the industry benchmark.",
+            children: [
+              {
+                id: "safety-trir-experience",
+                label: "Experience",
+                href: "/safety/trir",
+                icon: TrendingDown,
+                status: "in-development",
+                description:
+                  "LCY TRIR by year and month with the benchmark, every calculation shown, and the methodology.",
               },
             ],
           },

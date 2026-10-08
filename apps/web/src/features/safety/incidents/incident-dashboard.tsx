@@ -16,6 +16,15 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { BarChart, type BarSeries } from "@/components/common/bar-chart";
+import {
+  DisplayControls,
+  HiddenNotice,
+  pick,
+  useDisplayPreferences,
+  visibleColumns,
+  visibleRows,
+  type DisplayPreferences,
+} from "@/components/common/display-controls";
 import { EmptyState } from "@/components/common/empty-state";
 import { FilterBar, FilterSelect } from "@/components/common/filter-bar";
 import { HeatmapTable } from "@/components/common/heatmap-table";
@@ -68,6 +77,7 @@ import { useAutomaticValue, useSiteToday } from "../use-site-calendar";
 import { defaultReportingYear, FIRST_REPORTING_YEAR, MONTH_LABELS } from "./grid";
 import { ReportingYearSelect } from "./reporting-year-select";
 import { useIncidentAnalytics } from "./use-incident-metrics";
+import { IncidentRegister, type RegisterFilters } from "./records/incident-register";
 
 const KPI_ICONS: Record<AnalyticsKpi["key"], React.ComponentType<{ className?: string }>> = {
   incidents: Siren,
@@ -91,6 +101,10 @@ type IncidentDashboardProps = {
   siteToday: string;
   /** From `?view=`; Overview when missing or unknown. */
   initialView?: DashboardView;
+  /** From `?year=`, e.g. a link from a month's records. */
+  initialYear?: number;
+  /** From `?month=` and `?eventType=`: the Incident Register's starting filters. */
+  initialRegister?: RegisterFilters;
 };
 
 type ChartDefaults = {
@@ -115,10 +129,14 @@ export function IncidentDashboard({
   description,
   siteToday,
   initialView = "overview",
+  initialYear,
+  initialRegister,
 }: IncidentDashboardProps) {
   const today = useSiteToday(siteToday);
   const currentYear = yearOf(today);
-  const yearChoice = useAutomaticValue(defaultReportingYear(currentYear));
+  const yearChoice = useAutomaticValue(defaultReportingYear(currentYear), {
+    initial: initialYear !== undefined && initialYear >= FIRST_REPORTING_YEAR && initialYear <= currentYear ? initialYear : undefined,
+  });
   const year = yearChoice.value;
   const latest = latestStartedMonth(year, { year: currentYear, month: monthOf(today) });
   // Follows the latest started month until the user picks one; a pick never
@@ -252,6 +270,9 @@ export function IncidentDashboard({
         )}
         {view === "area" && <AreaView {...viewProps} />}
         {view === "incident-analysis" && <IncidentAnalysisView {...viewProps} />}
+        {view === "register" && (
+          <IncidentRegister year={year} through={through} today={today} initial={initialRegister} />
+        )}
         {view === "behavior" && <BehaviorView {...viewProps} />}
       </Tabs>
 
@@ -437,23 +458,46 @@ function PriorYearChart({
 
 // Area --------------------------------------------------------------------------------
 
+const AREA_SERIES = [
+  { id: "incidents", label: "Incidents" },
+  { id: "near_misses", label: "Near Misses" },
+];
+
 function AreaView({ data, isError, period, months, chart }: ViewProps) {
-  const incidents = breakdownChart(data?.incidentsByArea ?? [], "Incidents", COLORS.incidents);
-  const nearMisses = breakdownChart(data?.nearMissesByArea ?? [], "Near Misses", COLORS.nearMisses);
+  const display = useDisplayPreferences("safety.incidents.area");
+  const prefs = display.preferences;
+  const shows = (id: string) => !prefs.hiddenSeries.includes(id);
+  const incidentRows = visibleRows(data?.incidentsByArea ?? [], (row) => row.values, prefs).rows;
+  const nearMissRows = visibleRows(data?.nearMissesByArea ?? [], (row) => row.values, prefs).rows;
+  const incidents = breakdownChart(incidentRows, "Incidents", COLORS.incidents);
+  const nearMisses = breakdownChart(nearMissRows, "Near Misses", COLORS.nearMisses);
+  const showAll = () => display.update({ hideEmptyRows: false, showReportedZeros: true, hideEmptyMonths: false });
   return (
     <div className="space-y-5">
-      <p className="px-1 text-sm text-muted-foreground">{NOTES.area}</p>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <p className="px-1 text-sm text-muted-foreground">{NOTES.area}</p>
+        <DisplayControls
+          preferences={prefs}
+          onChange={display.update}
+          onReset={display.reset}
+          months
+          series={AREA_SERIES}
+        />
+      </div>
       <section aria-label="Totals by area" className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+        {shows("incidents") && (
         <BarChart
           title="Incidents by Area"
           description={`Areas with at least one reported month, ${period}. Highest first.`}
           categories={incidents.categories}
           series={isError ? [] : incidents.series}
           orientation="horizontal"
-          footer={data && <BreakdownTable caption={`Incidents by Area, ${period}`} label="Area" rows={data.incidentsByArea} />}
+          footer={data && <BreakdownTable caption={`Incidents by Area, ${period}`} label="Area" rows={incidentRows} />}
           {...chart}
           height={incidents.height}
         />
+        )}
+        {shows("near_misses") && (
         <BarChart
           title="Near Misses by Area"
           description={`Areas with at least one reported month, ${period}. Highest first.`}
@@ -461,32 +505,41 @@ function AreaView({ data, isError, period, months, chart }: ViewProps) {
           series={isError ? [] : nearMisses.series}
           orientation="horizontal"
           footer={
-            data && <BreakdownTable caption={`Near Misses by Area, ${period}`} label="Area" rows={data.nearMissesByArea} />
+            data && <BreakdownTable caption={`Near Misses by Area, ${period}`} label="Area" rows={nearMissRows} />
           }
           {...chart}
           height={nearMisses.height}
         />
+        )}
       </section>
       {data && !isError && (
         <>
-          <AreaGrid
-            title="Incidents by Area and Month"
-            period={period}
-            months={months}
-            rows={data.incidentAreaMonthly}
-            reconciliation={data.areaReconciliation.incidents}
-            authoritative="Incidents"
-            rgb="37 99 235"
-          />
-          <AreaGrid
-            title="Near Misses by Area and Month"
-            period={period}
-            months={months}
-            rows={data.nearMissAreaMonthly}
-            reconciliation={data.areaReconciliation.nearMisses}
-            authoritative="Near Misses"
-            rgb="13 148 136"
-          />
+          {shows("incidents") && (
+            <AreaGrid
+              title="Incidents by Area and Month"
+              period={period}
+              months={months}
+              rows={data.incidentAreaMonthly}
+              reconciliation={data.areaReconciliation.incidents}
+              authoritative="Incidents"
+              rgb="37 99 235"
+              preferences={prefs}
+              onShowAll={showAll}
+            />
+          )}
+          {shows("near_misses") && (
+            <AreaGrid
+              title="Near Misses by Area and Month"
+              period={period}
+              months={months}
+              rows={data.nearMissAreaMonthly}
+              reconciliation={data.areaReconciliation.nearMisses}
+              authoritative="Near Misses"
+              rgb="13 148 136"
+              preferences={prefs}
+              onShowAll={showAll}
+            />
+          )}
         </>
       )}
     </div>
@@ -501,6 +554,8 @@ function AreaGrid({
   reconciliation,
   authoritative,
   rgb,
+  preferences,
+  onShowAll,
 }: {
   title: string;
   period: string;
@@ -509,9 +564,15 @@ function AreaGrid({
   reconciliation: MonthReconciliation[];
   authoritative: string;
   rgb: string;
+  preferences: DisplayPreferences;
+  onShowAll: () => void;
 }) {
+  // Totals use every row and month, shown or not.
   const columnTotals = reconciliation.map((month) => month.dimensionTotal);
   const reported = columnTotals.filter((value): value is number => value !== null);
+  const shown = visibleRows(rows, (row) => row.values, preferences);
+  const columns = visibleColumns(months.length, rows.map((row) => row.values), preferences);
+  const hiddenMonths = months.length - columns.length;
   return (
     <section aria-label={title} className="rounded-lg border bg-card">
       <header className="border-b px-4 py-3">
@@ -519,25 +580,34 @@ function AreaGrid({
         <p className="mt-0.5 text-xs text-muted-foreground">
           {period}. – is not reported; 0 is a reported zero. {reconciliationSummary(reconciliation, authoritative)}
         </p>
+        <HiddenNotice
+          hidden={shown.hidden}
+          noun={["empty row", "empty rows"]}
+          onShowAll={onShowAll}
+        />
+        <HiddenNotice hidden={hiddenMonths} noun={["empty month", "empty months"]} onShowAll={onShowAll} />
       </header>
-      {months.length === 0 ? (
+      {columns.length === 0 ? (
         <p className="px-4 py-6 text-sm text-muted-foreground">No months to show.</p>
       ) : (
         <HeatmapTable
           caption={`${title}, ${period}`}
           rowHeader="Area"
-          columns={months}
-          rows={rows.map((row) => ({
+          columns={pick(months, columns)}
+          rows={shown.rows.map((row) => ({
             id: row.code,
             label: row.name,
             description: row.description,
-            values: row.values,
+            values: pick(row.values, columns),
             total: row.total,
           }))}
-          columnTotals={columnTotals}
+          columnTotals={pick(columnTotals, columns)}
           total={reported.length ? reported.reduce((a, b) => a + b, 0) : null}
           statusLabel={`vs ${authoritative}`}
-          statuses={reconciliation.map((month) => reconciliationStatus(month, "areas", authoritative))}
+          statuses={pick(
+            reconciliation.map((month) => reconciliationStatus(month, "areas", authoritative)),
+            columns,
+          )}
           rgb={rgb}
         />
       )}
@@ -557,8 +627,13 @@ function AnalysisGroup({ title, children }: { title: string; children: React.Rea
 }
 
 function IncidentAnalysisView({ data, isError, year, period, months, chart }: ViewProps) {
+  const display = useDisplayPreferences("safety.incidents.analysis");
+  const tags = { preferences: display.preferences, onShowAll: () => display.update({ hideEmptyRows: false, showReportedZeros: true }) };
   return (
     <div className="space-y-8">
+      <div className="flex justify-end">
+        <DisplayControls preferences={display.preferences} onChange={display.update} onReset={display.reset} />
+      </div>
       <AnalysisGroup title="Containment">
         <BarChart
           title="LOPC by Month"
@@ -631,6 +706,7 @@ function IncidentAnalysisView({ data, isError, year, period, months, chart }: Vi
 
       <AnalysisGroup title="Injuries">
         <TagChart
+          {...tags}
           title="Injury Cause"
           breakdown={data?.injuryCause}
           reconciliation={data?.injuryReconciliation.injuryCause}
@@ -642,6 +718,7 @@ function IncidentAnalysisView({ data, isError, year, period, months, chart }: Vi
           chart={chart}
         />
         <TagChart
+          {...tags}
           title="Body Part"
           breakdown={data?.bodyPart}
           reconciliation={data?.injuryReconciliation.bodyPart}
@@ -656,6 +733,7 @@ function IncidentAnalysisView({ data, isError, year, period, months, chart }: Vi
 
       <AnalysisGroup title="Near misses">
         <TagChart
+          {...tags}
           title="Near-Miss Potential"
           breakdown={data?.nearMissPotential}
           note={NOTES.tags}
@@ -665,6 +743,7 @@ function IncidentAnalysisView({ data, isError, year, period, months, chart }: Vi
           chart={chart}
         />
         <TagChart
+          {...tags}
           title="Near-Miss Cause"
           breakdown={data?.nearMissCause}
           note={NOTES.tags}
@@ -798,6 +877,8 @@ function TagChart({
   isError,
   period,
   chart,
+  preferences,
+  onShowAll,
 }: {
   title: string;
   breakdown: AnalyticsBreakdown | undefined;
@@ -808,8 +889,11 @@ function TagChart({
   isError: boolean;
   period: string;
   chart: ChartDefaults;
+  preferences: DisplayPreferences;
+  onShowAll: () => void;
 }) {
-  const shown = breakdownChart(breakdown?.categories ?? [], title, color);
+  const rows = visibleRows(breakdown?.categories ?? [], (row) => row.values, preferences);
+  const shown = breakdownChart(rows.rows, title, color);
   const check = reconciliation && authoritative ? ` ${reconciliationSummary(reconciliation, authoritative)}` : "";
   return (
     <BarChart
@@ -820,11 +904,10 @@ function TagChart({
       orientation="horizontal"
       footer={
         breakdown && (
-          <BreakdownTable
-            caption={`${title}, ${period}`}
-            label="Category"
-            rows={breakdown.categories.filter((row) => row.total !== null)}
-          />
+          <>
+            <HiddenNotice hidden={rows.hidden} noun={["empty category", "empty categories"]} onShowAll={onShowAll} />
+            <BreakdownTable caption={`${title}, ${period}`} label="Category" rows={rows.rows} />
+          </>
         )
       }
       {...chart}
@@ -836,7 +919,11 @@ function TagChart({
 // Behavior ----------------------------------------------------------------------------
 
 function BehaviorView({ data, isError, year, chart }: ViewProps) {
-  const behavior = data?.behavior;
+  const display = useDisplayPreferences("safety.incidents.behavior");
+  const all = data?.behavior;
+  // Zero rows add nothing to the cumulative shares, so hiding them leaves the others unchanged.
+  const shownRows = all ? visibleRows(all.categories, (row) => [row.count], display.preferences) : null;
+  const behavior = all && shownRows ? { ...all, categories: shownRows.rows } : all;
   if (isError) return chart.emptyState;
   if (behavior && !behavior.available) {
     return (
@@ -858,6 +945,16 @@ function BehaviorView({ data, isError, year, chart }: ViewProps) {
       : `No Incident total reported for ${year}`;
   return (
     <div className="space-y-5">
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {shownRows && (
+          <HiddenNotice
+            hidden={shownRows.hidden}
+            noun={["behavior with a reported zero", "behaviors with a reported zero"]}
+            onShowAll={() => display.update({ showReportedZeros: true })}
+          />
+        )}
+        <DisplayControls preferences={display.preferences} onChange={display.update} onReset={display.reset} />
+      </div>
       <section aria-label={`Behavior ${year}`} className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <MetricCard
           label="Behavior Tags"

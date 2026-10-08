@@ -42,6 +42,9 @@ import { yearOf } from "../site-calendar";
 import { useAutomaticValue, useSiteToday } from "../use-site-calendar";
 import { ReportingYearSelect } from "./reporting-year-select";
 import { useIncidentMetrics, useSaveIncidentMetrics } from "./use-incident-metrics";
+import type { EventType } from "./records/api";
+import { useMonthRecords } from "./records/month-records";
+import { EVENT_CATEGORY_CODES, TOTALS_SECTION } from "./records/record-data";
 
 function useUnsavedChangesWarning(active: boolean) {
   useEffect(() => {
@@ -52,16 +55,22 @@ function useUnsavedChangesWarning(active: boolean) {
   }, [active]);
 }
 
+type RecordSubRow = (eventType: EventType) => MonthlyGridRow["subRow"];
+
 /** Rows only: categories are never summed into a section total (see MetricSectionBlock). */
-function sectionRows(section: MetricSectionBlock, draft: Draft): MonthlyGridRow[] {
+function sectionRows(section: MetricSectionBlock, draft: Draft, recordRow?: RecordSubRow): MonthlyGridRow[] {
   const states = draftSectionValues(section, draft);
-  return section.categories.map((category, index) => ({
-    id: String(category.id),
-    label: category.name,
-    description: category.description,
-    cells: states[index].map(({ text, dirty, invalid }) => ({ text, dirty, invalid })),
-    total: total(states[index].map((cell) => cell.value)),
-  }));
+  return section.categories.map((category, index) => {
+    const eventType = section.code === TOTALS_SECTION ? EVENT_CATEGORY_CODES[category.code] : undefined;
+    return {
+      id: String(category.id),
+      label: category.name,
+      description: category.description,
+      cells: states[index].map(({ text, dirty, invalid }) => ({ text, dirty, invalid })),
+      total: total(states[index].map((cell) => cell.value)),
+      subRow: eventType && recordRow ? recordRow(eventType) : undefined,
+    };
+  });
 }
 
 /**
@@ -107,10 +116,11 @@ type SectionGridsProps = {
   editable: boolean;
   onCellChange: (rowId: string, column: number, text: string) => void;
   onCellRevert: (rowId: string, column: number) => void;
+  recordRow?: RecordSubRow;
 };
 
 /** Mounted only once data has loaded in the browser, so window is available. */
-function SectionGrids({ sections, draft, editable, onCellChange, onCellRevert }: SectionGridsProps) {
+function SectionGrids({ sections, draft, editable, onCellChange, onCellRevert, recordRow }: SectionGridsProps) {
   const [compact] = useState(() => window.matchMedia(COMPACT_LAYOUT_QUERY).matches);
   const [chosen, setChosen] = useState(readOpenSections);
 
@@ -133,7 +143,7 @@ function SectionGrids({ sections, draft, editable, onCellChange, onCellRevert }:
   });
 
   const grid = (section: MetricSectionBlock, title: string, breakdown: boolean) => {
-    const rows = sectionRows(section, draft);
+    const rows = sectionRows(section, draft, recordRow);
     const monthly = draftMonthlyTotals(section, draft);
     return (
       <MonthlyGrid
@@ -311,7 +321,8 @@ type IncidentDataEntryProps = {
 };
 
 export function IncidentDataEntry({ title, description, siteToday }: IncidentDataEntryProps) {
-  const currentYear = yearOf(useSiteToday(siteToday));
+  const today = useSiteToday(siteToday);
+  const currentYear = yearOf(today);
   const [draft, setDraft] = useState<Draft>({});
   const [notice, setNotice] = useState<string | null>(null);
   const [behaviorDirty, setBehaviorDirty] = useState(false);
@@ -323,6 +334,7 @@ export function IncidentDataEntry({ title, description, siteToday }: IncidentDat
   const year = yearChoice.value;
   const metrics = useIncidentMetrics(year);
   const save = useSaveIncidentMetrics(year);
+  const records = useMonthRecords(year, today);
 
   const data = metrics.data;
   const summary = useMemo(
@@ -561,8 +573,10 @@ export function IncidentDataEntry({ title, description, siteToday }: IncidentDat
           editable={editable}
           onCellChange={setCell}
           onCellRevert={revertCell}
+          recordRow={records.subRow}
         />
       )}
+      {records.dialog}
 
       <AnnualBehaviorEntry key={year} year={year} onDirtyChange={setBehaviorDirty} />
     </div>

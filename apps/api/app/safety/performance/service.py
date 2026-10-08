@@ -10,6 +10,7 @@ import datetime as dt
 import logging
 import uuid
 from collections.abc import Collection
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
@@ -276,6 +277,26 @@ class _Facts:
                     source, stored.get((year, month), {}), closed=closed
                 )
         self.years_with_data = sorted({period[0] for period in self.records}, reverse=True)
+
+
+@dataclass(frozen=True)
+class TrirInputs:
+    """The Safety Performance facts a TRIR is calculated from: monthly worked
+    hours (``total_hours``), monthly TRIR numerators (``MonthCounts.trir``) and
+    the annual legacy rows. Read-only; TRIR Experience stores no hours."""
+
+    hours: dict[Period, MonthHours]
+    counts: dict[Period, MonthCounts]
+    annual_legacy: dict[int, AnnualLegacy]
+
+
+def trir_inputs(repository: PerformanceRepository, years: Collection[int]) -> TrirInputs:
+    facts = _Facts(repository, years)
+    legacy = {
+        y: AnnualLegacy(r.values.recordables, r.values.total_hours)
+        for y, r in repository.annual_legacy().items()
+    }
+    return TrirInputs(facts.hours, facts.counts, legacy)
 
 
 def _float(value: Decimal | None) -> float | None:

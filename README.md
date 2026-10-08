@@ -100,15 +100,25 @@ uv run pytest
 uv run ruff check .
 uv run ruff format --check .
 
-# Optional: PostgreSQL integration tests (migrations, persistence, repository).
-# Point at a disposable database whose name contains "test"; the tests run
-# migrations up and down against it. Set it up like production: the `core`,
-# `quality` and `safety` schemas exist and the role has USAGE, CREATE on them
-# (the `core` schema is required; the tests refuse to run without it).
-# The session ends at base, so run `alembic upgrade head` against it afterwards
-# if you use it for local development. The 0003 downgrade refuses while Safety
-# values or audit events exist, so clear those first. Skipped when unset.
-TEST_DATABASE_URL=postgresql+psycopg://<user>:<password>@localhost:5432/operations_platform_test uv run pytest
+# PostgreSQL integration tests (migrations, persistence, repository) are
+# skipped unless TEST_DATABASE_URL is set. Two modes (TEST_DATABASE_MODE):
+#
+# disposable (default): the suite migrates base -> head -> base and wipes data,
+# so it only accepts a generated name op_disposable_test_<12 hex>. The runner
+# creates that database (with the managed schemas), runs pytest against it and
+# drops it afterwards, also on failure. The admin role needs CREATE DATABASE;
+# keep its password in PGPASSWORD or ~/.pgpass, not in the URL you type.
+DISPOSABLE_DATABASE_ADMIN_URL=postgresql+psycopg://<admin-user>@localhost:5432/postgres \
+  uv run python tests/run_disposable_database.py -q
+#
+# shared: runs against the populated operations_platform_test without
+# migrating or wiping it; tests needing an empty database are deselected and
+# writes are rolled back. The database must already be at head
+# (`uv run alembic upgrade head` with DATABASE_URL pointing at it).
+TEST_DATABASE_MODE=shared TEST_DATABASE_URL=<operations_platform_test url> uv run pytest
+#
+# operations_platform and operations_platform_test are refused in disposable
+# mode, and shared mode accepts only operations_platform_test.
 
 # Web
 cd apps/web
@@ -128,11 +138,12 @@ apps/web/src/
   components/layout/      AppShell, AppSidebar, AppHeader
   components/common/      PageHeader, MetricCard, FilterBar, DataTable,
                           TrendChart, BarChart, MonthlyGrid, StatusBadge,
-                          EmptyState
+                          EmptyState, DisplayControls
   components/modules/     ModuleNotConfigured (standard page for modules
                           without a connected data source)
   components/system/      API health status
-  components/ui/          shadcn/ui primitives
+  components/ui/          shadcn/ui primitives and Dialog (native <dialog>:
+                          full screen on phones, centred from `sm`)
   lib/                    API client, navigation helpers, utilities
 ```
 
@@ -193,6 +204,23 @@ startup. Autogenerate only inspects application-owned schemas (`core`,
 Use a least-privilege database role for the application. From inside the API
 container, the host database is reachable as `host.docker.internal`.
 
+Migration sequence: `0001`–`0002` Quality finishing measurements and
+ingestion, `0003` audit events and Incident & Near Miss,
+`0004` Observations, `0005` Supervisor Safety Contacts (retired, tables
+kept), `0006` Safety Performance, `0007` incident dimensions, `0008`
+Behavior, `0009` incident records and TRIR history. Migrations seed
+reference data only; legacy values are loaded afterwards with the import
+CLIs, in this order: incident totals (`app.safety.legacy_import`), Safety
+Performance hours, Behavior, TRIR history, then reviewed incident
+narratives. Each has `check`, `plan` and `apply`; `apply` is audited and
+idempotent.
+
+**Back up before upgrading production.** Downgrades are not a rollback for
+data: `0002`–`0009` each refuse to downgrade while their tables hold data,
+so restoring the backup is the rollback once anything was imported.
+The release runbook and data-quality report for 0009 are in
+[`docs/safety-release-0009/`](docs/safety-release-0009/).
+
 ### Schemas
 
 The database uses one PostgreSQL schema per area. The schemas are created
@@ -240,6 +268,9 @@ Current revisions:
 | `0004`   | Creates `safety.observation_categories` (seeded) and `safety.observations`; seeds the legacy `observations_legacy` metric sections and categories (no values) |
 | `0005`   | Creates `safety.contact_supervisors` and `safety.supervisor_safety_contacts`; seeds nothing (no supervisors, contacts or targets) |
 | `0006`   | Creates `safety.performance_hours` and `safety.performance_annual_legacy`; seeds the `performance_legacy` metric sections and categories (no hours, annual figures or values) |
+| `0007`   | Creates `safety.areas` (seeded); adds `area_id` and `description` to `safety.metric_categories`; seeds seven Incident & Near Miss dimension sections (no values) |
+| `0008`   | Creates `safety.behavior_categories` (24, seeded) and `safety.annual_behavior_counts` (no values) |
+| `0009`   | Creates `safety.incident_records` and `safety.trir_annual_facts`; seeds nothing and changes no existing table |
 
 Downgrading `0002` drops `core.ingestion_batches` and the versioning
 columns. It refuses to run while superseded measurement versions exist,
@@ -251,6 +282,9 @@ Downgrading `0004` likewise refuses while any observation or legacy
 observation value exists. Downgrading `0005` refuses while any supervisor or
 supervisor safety contact exists. Downgrading `0006` refuses while any
 worked-hours row, annual legacy row or `performance_legacy` value exists.
+Downgrading `0007` refuses while dimension or area-linked values exist,
+`0008` while Behavior counts exist, and `0009` while any incident record or
+TRIR history row exists.
 
 Explicit constraint names in migrations are wrapped in `op.f()`; otherwise the
 `ck_%(table_name)s_%(constraint_name)s` naming convention prefixes them a
@@ -679,20 +713,28 @@ user through `get_user_principal`. Adding authentication later replaces only
 
 Permissions are defined once in `app/core/permissions.py` as
 `<module>[.<function>].<action>`. A grant covers its scope and every function
-under it, and `edit` implies `view`:
+under it. Actions are `view` < `edit` < `manage`, each implying the ones
+before it; `manage` (void, reclassify, administrative imports) is never
+implied by `edit`:
 
 | Granted                    | Satisfies                                                         |
 | -------------------------- | ----------------------------------------------------------------- |
-| `safety.view`              | `safety.view`, `safety.incidents.view`, `safety.observations.view`, `safety.contacts.view`, `safety.performance.view` |
-| `safety.edit`              | everything above plus `safety.edit`, `safety.incidents.edit`, `safety.observations.edit`, `safety.contacts.edit`, `safety.performance.edit` |
-| `safety.incidents.view`    | `safety.incidents.view` only                                      |
-| `safety.incidents.edit`    | `safety.incidents.view`, `safety.incidents.edit`                  |
+| `safety.view`              | every Safety `view` permission, including `safety.incidents.records.view`, `safety.incidents.history.view` and `safety.trir.view` |
+| `safety.edit`              | everything above plus every Safety `edit` permission, including `safety.incidents.records.edit` |
+| `safety.manage`            | everything above plus `safety.incidents.records.manage` and `safety.trir.manage` |
+| `safety.incidents.view`    | `safety.incidents.view` and the nested `records.view`, `history.view` |
+| `safety.incidents.edit`    | the above plus `safety.incidents.edit`, `safety.incidents.records.edit` |
+| `safety.incidents.records.view` / `.edit` / `.manage` | Individual records: read / create and edit / void and reclassify |
+| `safety.incidents.history.view` | A record's audit history                                  |
 | `safety.observations.view` | `safety.observations.view` only                                   |
 | `safety.observations.edit` | `safety.observations.view`, `safety.observations.edit`            |
-| `safety.contacts.view`     | `safety.contacts.view` only                                       |
-| `safety.contacts.edit`     | `safety.contacts.view`, `safety.contacts.edit`                    |
 | `safety.performance.view`  | `safety.performance.view` only                                    |
 | `safety.performance.edit`  | `safety.performance.view`, `safety.performance.edit`              |
+| `safety.trir.view`         | TRIR Experience                                                   |
+| `safety.trir.manage`       | TRIR history imports (operator CLI; no endpoint writes TRIR facts) |
+
+The `safety.contacts.*` permissions were removed with Supervisor Safety
+Contacts (see "Retired: Supervisor Safety Contacts").
 
 Endpoints always require the most specific permission (for example
 `safety.incidents.view` or `safety.observations.edit`), so grants can be
@@ -867,6 +909,98 @@ denominator "Total Number of Incident Reports 2025", but it is the 2026
 Incident total; the owner confirmed the counts are 2026 and the label is kept
 in the mapping as a recorded discrepancy.
 
+### Individual Incident and Near Miss records
+
+Migration `0009` adds `safety.incident_records`: one row per documented
+Incident or Near Miss. **The monthly totals stay authoritative**; records
+document them and never change them, and no total is derived from records.
+
+| Endpoint (`/api/v1/safety/incidents/...`)    | Permission                        | Purpose |
+| -------------------------------------------- | --------------------------------- | ------- |
+| `GET records?year=&through=&month=&eventType=&areaId=&classificationId=&status=&search=` | `safety.incidents.records.view` | Records oldest first, `total`, and `canEdit` / `canManage` / `canViewHistory`. Active only unless `status` (repeatable) says otherwise. `search` matches the description or the number in any accepted form |
+| `GET records/options`                        | `safety.incidents.records.view`   | Areas and Incident Classifications a record can reference |
+| `GET records/reconciliation?year=`           | `safety.incidents.records.view`   | Per month and event type: total, documented count, state (below) |
+| `GET records/{id}`                           | `safety.incidents.records.view`   | One record |
+| `GET records/{id}/history`                   | `safety.incidents.history.view`   | Its audit events, oldest first |
+| `POST records`                               | `safety.incidents.records.edit`   | Create, for a given reporting month |
+| `PUT records/{id}`                           | `safety.incidents.records.edit`   | Edit; send the loaded `version` |
+| `POST records/{id}/void`                     | `safety.incidents.records.manage` | Void with a reason; send `version` |
+| `POST records/{id}/reclassify`               | `safety.incidents.records.manage` | Mark it reclassified to the other event type, creating the replacement or linking an existing active one |
+
+- Fields: optional `incidentNumber` (normalized, e.g. `lcy 2026 37` becomes
+  `LCY-2026-037`; unique when present), `eventType` (`incident` /
+  `near_miss`), required `incidentDate`, non-blank `description`, nullable
+  area and classification (an active Incident Classification category),
+  `status` (`active` / `voided` / `reclassified`) with reason and related
+  record, `source` (`manual` / `legacy_import`), created/updated by and at,
+  and `version`.
+- The reporting month is the date's month. The date must fall in the month
+  the record is entered for (`422 date_outside_month`) and not after today in
+  Baytown (`422 future_date`); an edit never moves a record to another
+  month. Other `422` errors:
+  `duplicate_incident_number`, `invalid_classification`, `record_inactive`
+  (only active records change), `invalid_replacement`.
+- A stale `version` returns `409 edit_conflict` with the current record and
+  writes nothing.
+- There is no hard delete. Voided and reclassified records are kept and
+  hidden unless "Show voided and reclassified" / "Show inactive" is on.
+- Every write is audited in the same transaction (`safety.incident_record` /
+  `incident-records/<id>`). The legacy `source_reference` (workbook location
+  and passage hash) is stored and audited but never returned by any endpoint,
+  including history.
+- The UI hides each action the user's `can*` flags do not allow; the API
+  enforces the same permissions.
+
+**Reconciliation** compares each month's stored total with its active
+records. States: `reconciled`, `records_missing` (total > documented),
+`records_exceed_total`, `total_unreported_with_records` (records but no
+total), `explicit_zero_with_records` (a reported 0 with records), and
+`no_total_and_no_records`. They are warnings only: nothing is blocked and
+nothing is adjusted.
+
+**Data Entry.** On the Incident & Near Miss Totals grid, the Incident and
+Near Miss rows have a "Records" sub-row with a visible button per started
+month: "Add" when nothing is documented, otherwise the documented count
+(with "!" on a warning state). Its accessible name says what it does, e.g.
+"Manage 3 Incident records for January 2026". It opens a dialog titled
+"January 2026 Incidents" with the total, documented count, reconciliation
+status, Add record, View history, Edit, Void, Reclassify and an "Open
+Incident Register" link. No action is labelled Delete, and nothing relies on
+right-click.
+
+### Incident Register
+
+The Dashboard's Incident Register tab (`?view=register`, also
+`&month=&eventType=`) lists records in month groups, newest month first. Each
+group shows the month's total against the documented count and its
+reconciliation state. Columns: number, date, type, classification, area,
+description, status. Filters: Year and Through (the page filters), Month,
+Event type, Area, Classification, Status, Search, Show inactive. Actions: Add
+Incident, Add Near Miss, Edit, History, Void, Reclassify. Below the `md`
+breakpoint the table becomes a card list.
+
+### Importing legacy narratives as records
+
+The workbook's narrative comments are a legacy source, read from a copy and
+never modified. Nothing is imported without review:
+
+```bash
+cd apps/api
+uv run python -m app.safety.records.legacy_import extract import_templates/safety_incident_records_2026_lcy_ehs.extract.json <copy of workbook.xlsx> <out-dir>
+#   -> <out-dir>/incident_records_review.json and .csv (for reviewers)
+uv run python -m app.safety.records.legacy_import check  <review.json>   # no database
+uv run python -m app.safety.records.legacy_import report <review.json>   # no database
+uv run python -m app.safety.records.legacy_import plan   <review.json>   # documented vs totals
+uv run python -m app.safety.records.legacy_import apply  <review.json>   # audited as legacy-import
+```
+
+`extract` verifies the workbook's SHA-256 is unchanged and recommends
+`include` only for passages with an event date in their month; everything
+else is `exclude` with a reason. Reviewers edit the JSON (`decision`, and
+dates or fields only from the source). Dates, numbers, areas and
+classifications are never invented. `apply` is idempotent (a stored source
+reference is skipped) and blocked by a number used by another record.
+
 ### Dashboard
 
 The Incident & Near Miss Dashboard (`/safety/incidents/dashboard`,
@@ -938,6 +1072,31 @@ Definitions:
 - No targets, scores or red/yellow/green colours. Every chart has a data
   table alternative.
 
+**Tabs.** Overview, Area, Incident Analysis, Incident Register, Behavior. The
+tab is kept in `?view=` (`overview`, `area`, `incident-analysis`, `register`,
+`behavior`); an unknown value shows Overview.
+
+**Display controls** (`DisplayControls` in
+`apps/web/src/components/common/display-controls.tsx`) on Area, Incident
+Analysis, Behavior, the Incident Register and TRIR Experience:
+
+| Control             | Default | Effect |
+| ------------------- | ------- | ------ |
+| Hide empty rows     | on      | Hides a row only when every cell is null (unreported) |
+| Show reported zeros | on      | Off also hides rows holding only reported 0s and blanks |
+| Hide empty months   | off     | Hides months with no reported value in any row |
+| Series              | all     | Chooses the plotted series, e.g. Incidents / Near Misses |
+| Reset               |         | Back to the defaults |
+
+They change what is shown, never the data: totals and KPIs always include
+hidden rows and months, null is never shown as 0, and a notice such as
+"5 empty rows hidden" offers "Show all". Preferences are kept per surface
+in the browser's `localStorage` (`display:safety.incidents.area`,
+`…analysis`, `…behavior`, `…register`, `display:safety.trir`). They are
+presentation preferences, not safety data, so they are not stored on the
+server or audited; they do not follow the user to another browser, and
+clearing site data resets them.
+
 Future work (Phase 2): area analytics (incidents or near misses by area,
 area by classification, PSIF by area), Near Miss Cause, Near Miss Potential,
 LOPC contributing factors, Process Safety Incidents, and the Behavior Pareto.
@@ -962,15 +1121,16 @@ becomes multi-site. Audit timestamps stay UTC.
   build-time year is baked into HTML.
 - While a page stays open, `useSiteToday` re-checks the Baytown date every
   minute and when the tab becomes visible. Defaults (reporting year, the
-  Observations month and observed date, the Contacts date, the Incident &
-  Near Miss Dashboard through month) move to the new
+  Observations month and observed date, the Incident & Near Miss Dashboard
+  through month) move to the new
   day; a value the user chose is kept until they change it or press "Use
   today". A default never moves while it holds unsaved work (Incident &
   Near Miss or Safety Performance hours being edited, an Observation being
   edited or deleted, a chosen "through" month).
 - Year selectors always offer the current Baytown year, the four before it,
   and every year with data, from each module's first year: 2026 for Incident
-  & Near Miss, 2000 for Observations, Contacts and Safety Performance.
+  & Near Miss, 2000 for Observations and Safety Performance, 2021 for TRIR
+  Experience.
 
 ## Safety > Safety Observations
 
@@ -1032,16 +1192,38 @@ it with the same `legacy_import` CLI as Incident & Near Miss. No legacy
 observation values have been imported, and the application shows none of
 them.
 
-## Safety > Supervisor Safety Contacts
+## Retired: Supervisor Safety Contacts
 
-Routes: `/safety/contacts` (tally board, recent contacts, supervisor list) and
-`/safety/contacts/dashboard`. Code lives in `apps/api/app/safety/contacts/`
-and `apps/web/src/features/safety/contacts/`.
+Supervisor Safety Contacts (SSC) was retired in this release. **Its data is
+kept**; only the pages and API were removed.
+
+- Removed: the navigation entry, the Safety overview card, the pages
+  `/safety/contacts` and `/safety/contacts/dashboard`, the
+  `/api/v1/safety/contacts/...` endpoints (now `404`), the
+  `safety.contacts.view/edit` permissions, and their tests.
+- `/safety/contacts` and anything under it redirect (temporary, `307`) to
+  `/safety` (`next.config.ts`), following the retired Incident Analytics
+  pattern.
+- Kept unchanged: the tables `safety.contact_supervisors` and
+  `safety.supervisor_safety_contacts` (migration `0005`), their constraints
+  and indexes, their rows, and their audit events. The SQLAlchemy models in
+  `apps/api/app/safety/contacts/models.py` stay so the schema remains mapped;
+  `tests/test_safety_contacts_database.py` checks the tables and that stored
+  rows stay readable, and `tests/test_safety_contacts_retired.py` checks
+  that no endpoint or permission remains.
+- No migration drops or changes them. Removing the data would need its own
+  reviewed migration and an export first.
+
+The previous documentation follows for reference to the stored data.
+
+<details>
+<summary>Former Supervisor Safety Contacts reference</summary>
 
 Each contact is one record: one contact credited to one supervisor on one
 date. Nothing else is captured (no contacted person, area, notes, type or
 checklist). Supervisors are a program list maintained in the application,
-not an employee directory or user accounts.
+not an employee directory or user accounts. The endpoints below no longer
+exist.
 
 | Endpoint                                                | Permission             | Purpose |
 | ------------------------------------------------------- | ---------------------- | ------- |
@@ -1088,6 +1270,8 @@ targets. The template
 [`apps/api/import_templates/safety_contacts_legacy.template.json`](apps/api/import_templates/safety_contacts_legacy.template.json)
 names the source cells only; nothing in the platform reads it. No legacy
 contact data has been imported.
+
+</details>
 
 ## Safety > Safety Performance
 
@@ -1171,6 +1355,87 @@ and blank damage months (Feb, Oct) stay null, so the First Aid and Damage
 12MRA through August 2026 are unavailable. Rates!I28 (December 2025
 equipment failure) is excluded as a conflict. The workbook does not state
 which workers the hours cover. There is no contractor-hours field.
+
+## Safety > TRIR Experience
+
+Route: `/safety/trir` (Safety > TRIR Experience > Experience). A standalone
+module comparing LCY's Total Recordable Incident Rate with the industry
+benchmark. Code lives in `apps/api/app/safety/trir/` and
+`apps/web/src/features/safety/trir/`; the shared rate arithmetic is
+`app/safety/rates.py`.
+
+**TRIR = recordable cases × 200,000 ÷ worked hours.** TIR (all incidents ×
+200,000 ÷ hours) is a different measure: it appears only as the legacy
+workbook figure and is never used or labelled as TRIR.
+
+- **Numerator:** from 2026, Incident & Near Miss Recordable Injury +
+  Occupational Illness; before 2026, the pre-platform recordable counts.
+- **Denominator:** Safety Performance "Monthly Hours Worked (Total)". TRIR
+  Experience stores no monthly hours and never copies them; there is one
+  hours source. Years with no monthly hours (2021–2024) use the annual
+  man-hours of the approved history.
+- **Cutoff:** year to date runs January through the Through month (default:
+  the latest month for which every month from January is closed in Safety
+  Performance); the rolling 12-month rate needs all 12 months complete. An
+  open, unreported, zero-hour or unconfirmed month is never zero: the rate is
+  unavailable and the blocking months are listed.
+- **Precision:** calculated with `Decimal` at full precision, displayed
+  rounded half-up to 2 places. Every displayed TRIR has "View calculation"
+  showing the formula, numerator and denominator with their sources, the
+  period, the exact and displayed values, and any missing months. The page
+  has a Methodology section; `GET /methodology` returns the same text.
+- **Benchmark:** the Bureau of Labor Statistics industry average recorded in
+  the history per year. The industry (NAICS) and BLS release year are not
+  stated in the source. A year without a benchmark shows the latest earlier
+  one, labelled with its year.
+
+| Endpoint (`/api/v1/safety/trir/...`, `safety.trir.view`) | Purpose |
+| --------------------------- | ------- |
+| `experience?year=&through=` | Everything the page shows |
+| `current?year=&through=`    | Year-to-date calculation |
+| `calculation?year=&through=` | YTD and rolling-12 calculation detail |
+| `history?year=&through=`    | One row per year, the selected year live |
+| `monthly?year=`             | Per month: hours, recordables, status, YTD |
+| `benchmarks`                | Benchmark by year |
+| `status?year=&through=`     | Whether the current figure is complete |
+| `reconciliation?year=&through=` | Recalculated vs legacy, live vs workbook snapshot, history vs Safety Performance annual rows (warnings only) |
+| `methodology`               | Formula, sources, cutoff, rounding, tolerance |
+
+All endpoints are read-only. No workbook cell coordinates are returned; the
+source cells stay in the mapping file and the audit trail.
+
+### Importing TRIR history
+
+Migration `0009` adds `safety.trir_annual_facts` (one row per year: annual
+recordables, Incident count, annual man-hours, benchmark, legacy displayed
+TRIR and TIR). It is seeded only from the reviewed mapping
+`apps/api/import_templates/safety_trir_experience_history_lcy_ehs.mapping.json`
+(2021–2026), with an operator command that requires `safety.trir.manage` by
+policy:
+
+```bash
+cd apps/api
+uv run python -m app.safety.trir.legacy_import check import_templates/safety_trir_experience_history_lcy_ehs.mapping.json  # no database
+uv run python -m app.safety.trir.legacy_import plan  import_templates/safety_trir_experience_history_lcy_ehs.mapping.json
+uv run python -m app.safety.trir.legacy_import apply import_templates/safety_trir_experience_history_lcy_ehs.mapping.json  # audited as legacy-import
+```
+
+`check` recalculates every year and blocks `apply` on a mismatch with the
+legacy figure. A stored year that differs from the file blocks `apply`;
+equal years are skipped, so it is idempotent. Blank source cells stay null.
+
+TRIR EXP. is an annual source: each column heading (2021–2026) is the
+temporal key of the values under it. Rows are keyed by integer
+`reporting_year` only. No month or day is required or invented (no
+31 December dates), and annual rows are never reported as missing dates.
+That applies only to this history: individual Incident and Near Miss records
+still need a real `incidentDate`.
+
+2025 and 2026 are calculated live from Safety Performance. Their history
+rows are the workbook snapshot, kept for provenance and reconciliation. The
+2026 man-hours (145,194, January–August) are a snapshot, never an annual
+denominator: from 2026, a year without Safety Performance monthly hours
+shows TRIR as unavailable instead of falling back to the history row.
 
 ## shadcn/ui
 

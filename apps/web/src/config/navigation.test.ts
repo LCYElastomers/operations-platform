@@ -14,10 +14,9 @@ const requiredRoutes = [
   "/safety/incidents/dashboard",
   "/safety/observations",
   "/safety/observations/dashboard",
-  "/safety/contacts",
-  "/safety/contacts/dashboard",
   "/safety/performance/data-entry",
   "/safety/performance/dashboard",
+  "/safety/trir",
   "/environmental",
   "/procurement",
   "/sales",
@@ -77,12 +76,23 @@ describe("navigation config", () => {
     expect(trail.map((item) => item.label)).toEqual(["Safety", "Safety Observations", label]);
   });
 
-  it.each([
-    ["/safety/contacts", "Contacts"],
-    ["/safety/contacts/dashboard", "Dashboard"],
-  ])("nests %s under Safety > Supervisor Safety Contacts", (route, label) => {
-    const trail = findNavTrail(navigation, route);
-    expect(trail.map((item) => item.label)).toEqual(["Safety", "Supervisor Safety Contacts", label]);
+  it("has no Supervisor Safety Contact entry", () => {
+    const labels: string[] = [];
+    const hrefs: (string | undefined)[] = [];
+    const collect = (items: typeof moduleItems) =>
+      items.forEach((item) => {
+        labels.push(item.label, item.description ?? "");
+        hrefs.push(item.href);
+        if (item.children) collect(item.children);
+      });
+    navigation.forEach((section) => collect(section.items));
+    expect(labels.join(" ")).not.toMatch(/supervisor safety contact/i);
+    expect(hrefs.filter((href) => href?.startsWith("/safety/contacts"))).toEqual([]);
+  });
+
+  it("nests TRIR Experience under Safety", () => {
+    const trail = findNavTrail(navigation, "/safety/trir");
+    expect(trail.map((item) => item.label)).toEqual(["Safety", "TRIR Experience", "Experience"]);
   });
 
   it.each([
@@ -99,16 +109,9 @@ describe("navigation config", () => {
       "Overview",
       "Incident & Near Miss",
       "Safety Observations",
-      "Supervisor Safety Contacts",
       "Safety Performance",
+      "TRIR Experience",
     ]);
-  });
-
-  it("marks only the Contacts page active on its dashboard", () => {
-    expect(findNavTrail(navigation, "/safety/contacts/dashboard").at(-1)?.id).toBe(
-      "safety-contacts-dashboard",
-    );
-    expect(findNavTrail(navigation, "/safety/contacts").at(-1)?.id).toBe("safety-contacts-entry");
   });
 
   it("marks only the Observations page active on its dashboard", () => {

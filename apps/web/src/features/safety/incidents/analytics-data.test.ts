@@ -30,6 +30,7 @@ describe("dashboard views", () => {
     expect(parseView("area")).toBe("area");
     expect(parseView("incident-analysis")).toBe("incident-analysis");
     expect(parseView("behavior")).toBe("behavior");
+    expect(parseView("register")).toBe("register");
     expect(parseView(["area", "behavior"])).toBe("area");
     expect(parseView(undefined)).toBe("overview");
     expect(parseView("")).toBe("overview");

@@ -159,6 +159,7 @@ def test_foreign_keys_and_check_constraints(engine: Engine) -> None:
     }
 
 
+@pytest.mark.empty_database
 def test_no_values_are_seeded(session: Session) -> None:
     assert session.scalars(select(MonthlyMetricValue)).all() == []
 
@@ -175,6 +176,7 @@ def test_inactive_categories_are_hidden(
     assert "fire" not in names
 
 
+@pytest.mark.empty_database
 def test_save_round_trip_with_audit(session: Session, repository: NonCommittingRepository) -> None:
     first_aid = category_id(repository, "incident_classification", "first_aid")
     near_miss = category_id(repository, "incident_near_miss_totals", "near_miss")
@@ -293,6 +295,7 @@ def test_analytics_read_the_seeded_definitions_and_write_nothing(
     assert session.scalar(select(func.count()).select_from(MonthlyMetricValue)) == value_rows
 
 
+@pytest.mark.empty_database
 def test_stale_previous_value_is_a_conflict(repository: NonCommittingRepository) -> None:
     first_aid = category_id(repository, "incident_classification", "first_aid")
     service.save_changes(
@@ -328,6 +331,7 @@ def _value_row(category: int, **overrides: object) -> dict[str, object]:
     return row
 
 
+@pytest.mark.empty_database
 def test_duplicate_cells_are_rejected_by_the_database(
     session: Session, repository: DatabaseSafetyMetricsRepository
 ) -> None:

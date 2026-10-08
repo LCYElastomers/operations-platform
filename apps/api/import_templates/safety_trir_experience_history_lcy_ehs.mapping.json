@@ -1,0 +1,72 @@
+{
+  "source": "2026 LCY EHS Dash Board.xlsx, sheet 'TRIR EXP.'",
+  "benchmarkSource": "Bureau of Labor Statistics industry average, as stated in the source ('Bureau of labor Statistics industry avg.'); the industry (NAICS) and the BLS release year are not stated",
+  "notes": [
+    "Annual history only. Monthly hours are never imported here; they stay in Safety Performance.",
+    "Years 2021-2024 have no monthly records: their typed annual man-hours (H15:K15) are the TRIR denominator for those years.",
+    "2025 and 2026 have monthly hours in Safety Performance and are calculated live from them. Their rows here are the workbook snapshot, kept only for reconciliation.",
+    "LCY TRIR 2021-2024 (H18:K18) are typed values rounded to 2 decimals (3.4 to 1). 2025-2026 (L18, M18) are formulas Recordable x 200000 / Man Hours.",
+    "TIR (L17, M17) is Incident x 200000 / Man Hours: an all-incident rate, not TRIR. It is kept as a legacy measure only.",
+    "Incident counts are blank for 2021-2024 (H9:K9). L9 (2025) is typed as 41, the same figure as the 2026 count M9 ('Incident Data'!N7); it is not confirmed as the 2025 count.",
+    "M15 (2026 man hours) is =Rates!M42, the sum of January-August 2026 monthly hours (145,194); the snapshot is therefore through August 2026."
+  ],
+  "years": [
+    {
+      "year": 2021,
+      "recordableCount": {"value": 1, "sourceCell": "H8"},
+      "incidentCount": {"value": null, "sourceCell": "H9"},
+      "annualManHours": {"value": "172301", "sourceCell": "H15"},
+      "industryBenchmark": {"value": "2.7", "sourceCell": "H19"},
+      "legacyDisplayedTrir": {"value": "1.16", "sourceCell": "H18"},
+      "legacyTir": {"value": null, "sourceCell": "H17"}
+    },
+    {
+      "year": 2022,
+      "recordableCount": {"value": 3, "sourceCell": "I8"},
+      "incidentCount": {"value": null, "sourceCell": "I9"},
+      "annualManHours": {"value": "176350", "sourceCell": "I15"},
+      "industryBenchmark": {"value": "1.9", "sourceCell": "I19"},
+      "legacyDisplayedTrir": {"value": "3.4", "sourceCell": "I18"},
+      "legacyTir": {"value": null, "sourceCell": "I17"},
+      "note": "Conflicts with the 2022 monthly table on the Rates sheet, whose hours sum to 425,039.90 with 0 recordables. TRIR EXP. (176,350 hours, 3 recordables) is used; the conflict is unresolved."
+    },
+    {
+      "year": 2023,
+      "recordableCount": {"value": 1, "sourceCell": "J8"},
+      "incidentCount": {"value": null, "sourceCell": "J9"},
+      "annualManHours": {"value": "168563", "sourceCell": "J15"},
+      "industryBenchmark": {"value": "1.9", "sourceCell": "J19"},
+      "legacyDisplayedTrir": {"value": "1.19", "sourceCell": "J18"},
+      "legacyTir": {"value": null, "sourceCell": "J17"}
+    },
+    {
+      "year": 2024,
+      "recordableCount": {"value": 1, "sourceCell": "K8"},
+      "incidentCount": {"value": null, "sourceCell": "K9"},
+      "annualManHours": {"value": "174706", "sourceCell": "K15"},
+      "industryBenchmark": {"value": "1.9", "sourceCell": "K19"},
+      "legacyDisplayedTrir": {"value": "1.14", "sourceCell": "K18"},
+      "legacyTir": {"value": null, "sourceCell": "K17"}
+    },
+    {
+      "year": 2025,
+      "recordableCount": {"value": 0, "sourceCell": "L8"},
+      "incidentCount": {"value": 41, "sourceCell": "L9"},
+      "annualManHours": {"value": "191751", "sourceCell": "L15"},
+      "industryBenchmark": {"value": "1.9", "sourceCell": "L19"},
+      "legacyDisplayedTrir": {"value": "0", "sourceCell": "L18"},
+      "legacyTir": {"value": "42.76379262689634", "sourceCell": "L17"},
+      "note": "The Incident count 41 is a typed value equal to the 2026 count; it is not confirmed as the 2025 count."
+    },
+    {
+      "year": 2026,
+      "recordableCount": {"value": 1, "sourceCell": "M8"},
+      "incidentCount": {"value": 41, "sourceCell": "M9"},
+      "annualManHours": {"value": "145194", "sourceCell": "M15"},
+      "industryBenchmark": {"value": "1.9", "sourceCell": "M19"},
+      "legacyDisplayedTrir": {"value": "1.3774673884595783", "sourceCell": "M18"},
+      "legacyTir": {"value": "56.476162926842704", "sourceCell": "M17"},
+      "note": "Workbook snapshot through August 2026 (its man-hours are the January-August monthly hours). The 2026 benchmark repeats the 2025 figure; a 2026 BLS figure cannot have been published yet."
+    }
+  ]
+}

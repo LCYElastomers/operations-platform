@@ -25,6 +25,12 @@ const nextConfig: NextConfig = {
         destination: "/safety/incidents/dashboard",
         permanent: true,
       },
+      // Supervisor Safety Contacts was retired; its data is kept but no page shows it.
+      {
+        source: "/safety/contacts/:path*",
+        destination: "/safety",
+        permanent: false,
+      },
     ];
   },
   async rewrites() {

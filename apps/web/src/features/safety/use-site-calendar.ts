@@ -38,9 +38,13 @@ export type AutomaticValue<T> = {
  * While `hold` is true an automatic value stays where it is, so unsaved work
  * is never moved to another period; it catches up once `hold` is false.
  * `automatic` is compared with Object.is, so keep object values stable.
+ * `initial`, when given, starts as the user's choice (e.g. from a link).
  */
-export function useAutomaticValue<T>(automatic: T, { hold = false } = {}): AutomaticValue<T> {
-  const [chosen, setChosen] = useState<{ value: T } | null>(null);
+export function useAutomaticValue<T>(
+  automatic: T,
+  { hold = false, initial }: { hold?: boolean; initial?: T } = {},
+): AutomaticValue<T> {
+  const [chosen, setChosen] = useState<{ value: T } | null>(initial === undefined ? null : { value: initial });
   const [shown, setShown] = useState(automatic);
   if (!hold && !Object.is(shown, automatic)) setShown(automatic);
 

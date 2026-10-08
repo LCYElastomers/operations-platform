@@ -5,9 +5,6 @@ import { createRoot, hydrateRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup, renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ContactDashboard } from "./contacts/contact-dashboard";
-import { FIRST_CONTACT_YEAR } from "./contacts/contact-data";
-import { ContactsPage } from "./contacts/contacts-page";
 import { emptyAnalyticsExtras } from "./incidents/analytics.fixture";
 import type { AnalyticsSeries, IncidentAnalyticsResponse } from "./incidents/api";
 import { FIRST_REPORTING_YEAR } from "./incidents/grid";
@@ -48,7 +45,6 @@ const LAST_MINUTE_OF_2026 = "2027-01-01T05:59:00Z"; // 23:59 CST, 31 December 20
 const LAST_SECOND_OF_2026 = "2027-01-01T05:59:59Z";
 const LAST_MINUTE_OF_2027 = "2028-01-01T05:59:00Z"; // 23:59 CST, 31 December 2027
 const MINUTE = 60_000;
-const DAY = 24 * 60 * MINUTE;
 
 type Page = (siteToday: string) => ReactElement;
 
@@ -57,14 +53,8 @@ const YEAR_PAGES: [string, Page][] = [
   ["Incident & Near Miss Dashboard", (today) => <IncidentDashboard title="Dashboard" siteToday={today} />],
   ["Safety Observations", (today) => <ObservationsPage title="Observations" siteToday={today} />],
   ["Safety Observations Dashboard", (today) => <ObservationDashboard title="Dashboard" siteToday={today} />],
-  ["Supervisor Safety Contacts Dashboard", (today) => <ContactDashboard title="Dashboard" siteToday={today} />],
   ["Safety Performance Data Entry", (today) => <PerformanceDataEntry title="Data Entry" siteToday={today} />],
   ["Safety Performance Dashboard", (today) => <PerformanceDashboard title="Dashboard" siteToday={today} />],
-];
-
-const ALL_PAGES: [string, Page][] = [
-  ...YEAR_PAGES,
-  ["Supervisor Safety Contacts", (today) => <ContactsPage title="Contacts" siteToday={today} />],
 ];
 
 // API --------------------------------------------------------------------------------
@@ -189,10 +179,6 @@ async function type(input: HTMLInputElement, value: string) {
   });
 }
 
-function button(text: string): HTMLButtonElement | undefined {
-  return [...container.querySelectorAll("button")].find((element) => element.textContent?.trim() === text);
-}
-
 beforeEach(() => {
   requested = [];
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -281,11 +267,6 @@ describe("module year floors", () => {
       [2026, 2025, 2024, 2023, 2022],
     ],
     [
-      "Supervisor Safety Contacts Dashboard",
-      (t: string) => <ContactDashboard title="D" siteToday={t} />,
-      [2026, 2025, 2024, 2023, 2022],
-    ],
-    [
       "Safety Performance Dashboard",
       (t: string) => <PerformanceDashboard title="D" siteToday={t} />,
       [2026, 2025, 2024, 2023, 2022],
@@ -307,9 +288,8 @@ describe("module year floors", () => {
       />,
     );
 
-  it("lets Observations and Contacts offer a pre-2026 year the API returns", () => {
+  it("lets Observations offer a pre-2026 year the API returns", () => {
     expect(offered(FIRST_OBSERVATION_YEAR)).toContain('value="2019"');
-    expect(offered(FIRST_CONTACT_YEAR)).toContain('value="2019"');
   });
 
   it("keeps Incident & Near Miss at 2026 and later", () => {
@@ -319,43 +299,6 @@ describe("module year floors", () => {
 });
 
 // Long-open pages --------------------------------------------------------------------
-
-describe("Supervisor Safety Contacts date", () => {
-  const page: Page = (today) => <ContactsPage title="Contacts" siteToday={today} />;
-  const dateInput = () => container.querySelector<HTMLInputElement>('input[type="date"]')!;
-
-  it("follows the Baytown date while untouched", async () => {
-    at(LAST_MINUTE_OF_2026);
-    await render(page);
-    expect(dateInput().value).toBe("2026-12-31");
-    expect(dateInput().max).toBe("2026-12-31");
-    expect(button("Use today")).toBeUndefined();
-
-    await wait(MINUTE);
-
-    expect(dateInput().value).toBe("2027-01-01");
-    expect(dateInput().max).toBe("2027-01-01");
-    expect(requested).toContain("/api/v1/safety/contacts/summary?year=2027&month=1");
-  });
-
-  it("keeps a date the user entered, and Use today follows the site date again", async () => {
-    at(LAST_MINUTE_OF_2026);
-    await render(page);
-    await type(dateInput(), "2026-12-30");
-    expect(button("Use today")).toBeDefined();
-
-    await wait(MINUTE);
-    expect(dateInput().value).toBe("2026-12-30");
-    expect(dateInput().max).toBe("2027-01-01");
-
-    await act(async () => button("Use today")!.click());
-    expect(dateInput().value).toBe("2027-01-01");
-    expect(button("Use today")).toBeUndefined();
-
-    await wait(DAY);
-    expect(dateInput().value).toBe("2027-01-02");
-  });
-});
 
 describe("Safety Observations period and draft date", () => {
   const page: Page = (today) => <ObservationsPage title="Observations" siteToday={today} />;
@@ -494,7 +437,7 @@ describe("useAutomaticValue", () => {
 
 // Hydration --------------------------------------------------------------------------
 
-describe.each(ALL_PAGES)("%s hydration", (_name, page) => {
+describe.each(YEAR_PAGES)("%s hydration", (_name, page) => {
   async function hydrate(serverToday: string) {
     const errors = vi.spyOn(console, "error");
     const recoverable = vi.fn();
@@ -522,8 +465,6 @@ describe.each(ALL_PAGES)("%s hydration", (_name, page) => {
 
     expect(recoverable).not.toHaveBeenCalled();
     expect(errors).not.toHaveBeenCalled();
-    const control = container.querySelector<HTMLInputElement>('input[type="date"]');
-    if (page === ALL_PAGES.at(-1)![1]) expect(control!.value).toBe("2027-01-01");
-    else expect(Number(yearSelect().value)).toBe(2027);
+    expect(Number(yearSelect().value)).toBe(2027);
   });
 });

@@ -1011,7 +1011,7 @@ def test_invalid_periods_are_rejected(editor: TestClient, year: int, month: int)
         ((P.SAFETY_VIEW,), 200, 403),
         ((P.SAFETY_EDIT,), 200, 200),
         ((P.SAFETY_INCIDENTS_EDIT,), 403, 403),
-        ((P.SAFETY_CONTACTS_EDIT,), 403, 403),
+        ((P.SAFETY_OBSERVATIONS_EDIT,), 403, 403),
         ((), 403, 403),
     ],
 )

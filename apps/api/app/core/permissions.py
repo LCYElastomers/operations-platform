@@ -2,10 +2,13 @@
 
 Names are ``<module>[.<function>].<action>``. A grant covers its own scope and
 every function nested under it, so ``safety.view`` covers
-``safety.incidents.view``; ``edit`` implies ``view`` at the same scope.
+``safety.incidents.view``. Actions are ``view`` < ``edit`` < ``manage``: each
+implies the ones before it at the same scope. ``manage`` is for corrections
+that change what a record means (void, reclassify) and for administrative
+imports, so ``edit`` alone never grants them.
 Endpoints require the most specific permission (for example
-``safety.incidents.edit``), so finer-grained grants can be introduced later
-without changing the endpoints.
+``safety.incidents.records.edit``), so finer-grained grants can be introduced
+later without changing the endpoints.
 
 New functions follow the same scheme. Add them here when the function is built.
 """
@@ -17,17 +20,30 @@ from enum import StrEnum
 class Permission(StrEnum):
     SAFETY_VIEW = "safety.view"
     SAFETY_EDIT = "safety.edit"
+    SAFETY_MANAGE = "safety.manage"
     SAFETY_INCIDENTS_VIEW = "safety.incidents.view"
     SAFETY_INCIDENTS_EDIT = "safety.incidents.edit"
+    # Individual Incident and Near Miss records.
+    SAFETY_INCIDENT_RECORDS_VIEW = "safety.incidents.records.view"
+    SAFETY_INCIDENT_RECORDS_EDIT = "safety.incidents.records.edit"
+    # Void and reclassify.
+    SAFETY_INCIDENT_RECORDS_MANAGE = "safety.incidents.records.manage"
+    # The audit history of a record.
+    SAFETY_INCIDENT_HISTORY_VIEW = "safety.incidents.history.view"
     SAFETY_OBSERVATIONS_VIEW = "safety.observations.view"
     SAFETY_OBSERVATIONS_EDIT = "safety.observations.edit"
-    SAFETY_CONTACTS_VIEW = "safety.contacts.view"
-    SAFETY_CONTACTS_EDIT = "safety.contacts.edit"
     SAFETY_PERFORMANCE_VIEW = "safety.performance.view"
     SAFETY_PERFORMANCE_EDIT = "safety.performance.edit"
+    SAFETY_TRIR_VIEW = "safety.trir.view"
+    # TRIR historical facts imports (operator command; no endpoint writes them).
+    SAFETY_TRIR_MANAGE = "safety.trir.manage"
 
 
-_IMPLIED_ACTIONS = {"view": frozenset({"view"}), "edit": frozenset({"view", "edit"})}
+_IMPLIED_ACTIONS = {
+    "view": frozenset({"view"}),
+    "edit": frozenset({"view", "edit"}),
+    "manage": frozenset({"view", "edit", "manage"}),
+}
 
 
 def grants(granted: Permission, required: Permission) -> bool:

@@ -1,8 +1,9 @@
 """PostgreSQL integration tests for quality.finishing_measurements.
 
-Run with TEST_DATABASE_URL pointing at a disposable database whose name
-contains "test", e.g.
-postgresql+psycopg://user:password@localhost:5432/operations_platform_test
+Run through tests/run_disposable_database.py, which creates a throwaway
+database, points TEST_DATABASE_URL at it and drops it afterwards. With
+TEST_DATABASE_MODE=shared the populated shared test database is used without
+migrating it (see postgres_support.py).
 
 As in production, the `core` schema must already exist and the role needs
 USAGE and CREATE on it (and on `quality`, or CREATE on the database).
@@ -49,7 +50,7 @@ pytestmark = requires_postgres
 SYNCED_AT = dt.datetime(2026, 10, 2, 12, 0, tzinfo=dt.UTC)
 SOURCE = "access-test"
 BASE = "/api/v1/quality/moisture"
-HEAD = "0008"
+HEAD = "0009"
 
 
 @pytest.fixture
@@ -109,6 +110,7 @@ def test_alembic_history_is_linear() -> None:
     script = ScriptDirectory.from_config(alembic_config())
 
     assert script.get_heads() == [HEAD]
+    assert script.get_revision("0009").down_revision == "0008"
     assert script.get_revision("0008").down_revision == "0007"
     assert script.get_revision("0007").down_revision == "0006"
     assert script.get_revision("0006").down_revision == "0005"
@@ -184,6 +186,7 @@ def test_model_matches_migration(engine: Engine) -> None:
         assert compare_metadata(context, Base.metadata) == []
 
 
+@pytest.mark.destructive
 def test_downgrades_remove_objects_and_upgrade_restores_them(engine: Engine) -> None:
     columns = ("source_record_key", "ingestion_batch_id", "superseded_at", "superseded_by_batch_id")
     with engine.begin() as connection:
@@ -207,6 +210,7 @@ def test_downgrades_remove_objects_and_upgrade_restores_them(engine: Engine) -> 
         assert current_revision(connection) == HEAD
 
 
+@pytest.mark.destructive
 def test_downgrade_refuses_to_discard_superseded_versions(engine: Engine) -> None:
     with engine.connect() as connection:
         transaction = connection.begin()

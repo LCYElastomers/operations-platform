@@ -274,6 +274,7 @@ beforeEach(() => {
 
 afterEach(async () => {
   await act(async () => root?.unmount());
+  window.localStorage.clear();
   root = null;
   container.remove();
   queryClient.clear();
@@ -619,15 +620,15 @@ describe("Incident & Near Miss Dashboard views", () => {
       [...grid.querySelectorAll("tbody tr")].find((tr) => tr.querySelector("th")!.textContent!.startsWith(label))!;
     const cells = (label: string) => [...row(label).querySelectorAll("td")].map((td) => td.textContent);
     expect(cells("Lab")).toEqual(["0", "–Not reported", "0"]);
-    expect(cells("Admin")).toEqual(["–Not reported", "–Not reported", "–Not reported"]);
     expect(row("100").querySelector("th")!.getAttribute("title")).toBe("Ingredient Prep");
-    // Area rows stay in display order; the footer adds the reported areas.
-    expect([...grid.querySelectorAll("tbody th")].map((th) => th.childNodes[0].textContent)).toEqual([
-      "100",
-      "Lab",
-      "MUNDY",
-      "Admin",
-    ]);
+    // Area rows stay in display order; an all-blank area is hidden by default, a reported 0 is not.
+    const areas = () => [...grid.querySelectorAll("tbody th")].map((th) => th.childNodes[0].textContent);
+    expect(areas()).toEqual(["100", "Lab", "MUNDY"]);
+    expect(grid.textContent).toContain("1 empty row hidden");
+    const showAll = [...grid.querySelectorAll("button")].find((b) => b.textContent === "Show all")!;
+    await act(async () => showAll.click());
+    expect(areas()).toEqual(["100", "Lab", "MUNDY", "Admin"]);
+    expect(cells("Admin")).toEqual(["–Not reported", "–Not reported", "–Not reported"]);
     expect([...grid.querySelectorAll("tfoot tr")[0].querySelectorAll("td")].map((td) => td.textContent)).toEqual([
       "2",
       "3",
@@ -728,5 +729,139 @@ describe("Incident & Near Miss Dashboard views", () => {
       await act(async () => root?.unmount());
       root = null;
     }
+  });
+});
+
+describe("Incident Register", () => {
+  afterEach(() => window.history.replaceState(null, "", "/"));
+
+  /** Test fixture, not production data. */
+  const record = (id: number, month: number, eventType: "incident" | "near_miss", status = "active") => ({
+    id,
+    incidentNumber: `ZZT-2026-00${id}`,
+    eventType,
+    incidentDate: `2026-0${month}-0${id}`,
+    reportingYear: 2026,
+    reportingMonth: month,
+    description: `Fixture description ${id}.`,
+    areaId: null,
+    areaCode: null,
+    areaName: id === 1 ? "Lab" : null,
+    classificationCategoryId: null,
+    classificationCode: null,
+    classificationName: id === 1 ? "First Aid" : null,
+    status,
+    statusReason: status === "active" ? null : "Fixture reason",
+    relatedIncidentId: null,
+    relatedIncidentNumber: null,
+    source: "manual",
+    version: 1,
+    createdAt: "2026-02-01T00:00:00Z",
+    createdBy: "fixture",
+    updatedAt: "2026-02-01T00:00:00Z",
+    updatedBy: "fixture",
+  });
+  const permissions = { canEdit: true, canManage: true, canViewHistory: true };
+  const reconciliation = {
+    year: 2026,
+    ...permissions,
+    months: [
+      { month: 1, eventType: "incident", monthlyTotal: 1, documented: 1, state: "reconciled" },
+      { month: 1, eventType: "near_miss", monthlyTotal: 2, documented: 0, state: "records_missing" },
+      { month: 2, eventType: "incident", monthlyTotal: null, documented: 1, state: "total_unreported_with_records" },
+      { month: 2, eventType: "near_miss", monthlyTotal: 0, documented: 0, state: "reconciled" },
+    ],
+  };
+
+  function stubRegister() {
+    stubApi((url) => {
+      if (url.pathname.endsWith("/records/reconciliation")) return ok(reconciliation);
+      if (url.pathname.endsWith("/records/options")) return ok({ areas: [], classifications: [] });
+      if (url.pathname.endsWith("/records")) {
+        const statuses = url.searchParams.getAll("status");
+        const records = [record(1, 1, "incident"), record(2, 2, "incident")];
+        if (statuses.includes("voided")) records.push(record(3, 2, "near_miss", "voided"));
+        return ok({ records, total: records.length, ...permissions });
+      }
+      return ok(withBreakdowns());
+    });
+  }
+
+  it("is a tab between Incident Analysis and Behavior, opened from ?view=register", async () => {
+    stubRegister();
+    await render("2026-02-10T15:00:00Z", "register");
+
+    expect([...container.querySelectorAll('[role="tab"]')].map((t) => t.textContent)).toEqual([
+      "Overview",
+      "Area",
+      "Incident Analysis",
+      "Incident Register",
+      "Behavior",
+    ]);
+    expect(tab("Incident Register").getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("groups records by month with the total, documented count and status, newest month first", async () => {
+    stubRegister();
+    await render("2026-02-10T15:00:00Z", "register");
+
+    const groups = [...container.querySelectorAll('[role="tabpanel"] section')];
+    expect(groups.map((g) => g.querySelector("h3")!.textContent)).toEqual(["February 2026", "January 2026"]);
+    expect(groups[1].textContent).toContain("Incidents: total 1 · documented 1");
+    expect(groups[1].textContent).toContain("Records match the total");
+    expect(groups[1].textContent).toContain("Near Misses: total 2 · documented 0");
+    expect(groups[1].textContent).toContain("Fewer records than the total");
+    expect(groups[0].textContent).toContain("Incidents: total not reported · documented 1");
+    const row = groups[1].querySelector("tbody tr")!;
+    expect([...row.querySelectorAll("th, td")].slice(0, 7).map((c) => c.textContent)).toEqual([
+      "ZZT-2026-001",
+      "Jan 1, 2026",
+      "Incident",
+      "First Aid",
+      "Lab",
+      "Fixture description 1.",
+      "Active",
+    ]);
+    const labels = [...container.querySelectorAll("button[aria-label]")].map((b) => b.getAttribute("aria-label"));
+    expect(labels).toEqual(
+      expect.arrayContaining(["Edit ZZT-2026-001", "View history ZZT-2026-001", "Void ZZT-2026-001", "Reclassify ZZT-2026-001"]),
+    );
+    expect(text()).toContain("Add Incident");
+    expect(text()).toContain("Add Near Miss");
+    expect(text()).not.toMatch(/delete/i);
+  });
+
+  it("asks for the Through month and filters, and shows inactive records only on request", async () => {
+    stubRegister();
+    await render("2026-02-10T15:00:00Z", "register");
+    const listRequests = () => requested.filter((u) => u.pathname.endsWith("/records"));
+    expect(listRequests().at(-1)!.search).toBe("?year=2026&through=2&status=active");
+
+    const inactive = [...container.querySelectorAll("label")].find((l) => l.textContent === "Show inactive")!;
+    await act(async () => inactive.querySelector("input")!.click());
+    await settle();
+
+    expect(listRequests().at(-1)!.searchParams.getAll("status")).toEqual(["active", "voided", "reclassified"]);
+    expect(text()).toContain("Voided");
+    await choose(select("Month"), 1);
+    expect(listRequests().at(-1)!.searchParams.get("month")).toBe("1");
+    expect(listRequests().at(-1)!.searchParams.get("through")).toBeNull();
+  });
+
+  it("opens Void as a reasoned action, never a deletion", async () => {
+    stubRegister();
+    await render("2026-02-10T15:00:00Z", "register");
+    const voidButton = container.querySelector<HTMLButtonElement>('button[aria-label="Void ZZT-2026-001"]')!;
+    await act(async () => voidButton.click());
+    await settle();
+
+    const dialog = container.querySelector("dialog")!;
+    expect(dialog.querySelector("h2")!.textContent).toBe("ZZT-2026-001");
+    expect(dialog.textContent).toContain("A voided record stays on file with its history");
+    expect(dialog.textContent).toContain("Reason");
+    const buttons = [...dialog.querySelectorAll("button")].map((b) => `${b.textContent} ${b.getAttribute("aria-label") ?? ""}`);
+    expect(buttons.map((b) => b.trim())).toContain("Void record");
+    expect(buttons.join(" ")).not.toMatch(/delete/i);
+    expect(dialog.textContent).toContain("Nothing is deleted.");
   });
 });

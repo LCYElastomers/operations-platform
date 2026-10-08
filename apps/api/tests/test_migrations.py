@@ -164,7 +164,7 @@ def test_incident_dimensions_migration_creates_areas_and_definitions_only(upgrad
 
 
 def test_behavior_migration_stores_annual_counts_without_months(upgrade_sql: str) -> None:
-    behavior_sql = _segment(upgrade_sql, "0007 -> 0008")
+    behavior_sql = _segment(upgrade_sql, "0007 -> 0008", "0008 -> 0009")
     assert "CREATE TABLE safety.behavior_categories" in behavior_sql
     assert "CREATE TABLE safety.annual_behavior_counts" in behavior_sql
     counts_table = behavior_sql.split("CREATE TABLE safety.annual_behavior_counts", 1)[1]
@@ -182,3 +182,29 @@ def test_behavior_migration_stores_annual_counts_without_months(upgrade_sql: str
     assert "metric_sections" not in behavior_sql
     assert "DROP" not in behavior_sql
     assert "ALTER TABLE" not in behavior_sql
+
+
+def test_records_migration_creates_records_and_trir_history_only(upgrade_sql: str) -> None:
+    sql = _segment(upgrade_sql, "0008 -> 0009")
+    assert "CREATE TABLE safety.incident_records" in sql
+    assert "CREATE TABLE safety.trir_annual_facts" in sql
+    records = sql.split("CREATE TABLE safety.incident_records", 1)[1].split(";", 1)[0]
+    # The reporting month is derived from the date, never stored.
+    assert "incident_date DATE NOT NULL" in records
+    assert "month" not in records.lower()
+    assert "REFERENCES safety.areas (id) ON DELETE RESTRICT" in records
+    assert "REFERENCES safety.metric_categories (id) ON DELETE RESTRICT" in records
+    assert "REFERENCES safety.incident_records (id) ON DELETE RESTRICT" in records
+    assert (
+        "CREATE UNIQUE INDEX uq_incident_records_incident_number "
+        "ON safety.incident_records (incident_number) WHERE incident_number IS NOT NULL"
+    ) in sql
+    assert "CREATE TRIGGER trg_incident_records_classification_rule" in sql
+    facts = sql.split("CREATE TABLE safety.trir_annual_facts", 1)[1].split(";", 1)[0]
+    assert "month" not in facts.lower()
+    # Schema only: nothing seeded, nothing existing altered or dropped.
+    assert "INSERT" not in sql.replace("INSERT INTO core.alembic_version", "").replace(
+        "BEFORE INSERT OR UPDATE", ""
+    ).replace("UPDATE core.alembic_version", "")
+    assert "ALTER TABLE" not in sql
+    assert "DROP" not in sql
