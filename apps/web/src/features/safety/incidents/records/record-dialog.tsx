@@ -56,7 +56,7 @@ type RecordDialogProps = {
   open: boolean;
   onClose: () => void;
   scope: RecordDialogScope;
-  /** Month scope starts on the list; Register scope opens one action. */
+  /** Month scope starts on the list (or the form, for an empty month); Register scope opens one action. */
   initialPanel?: RecordPanel;
   permissions: RecordPermissions;
   /** The Baytown date, ISO. */

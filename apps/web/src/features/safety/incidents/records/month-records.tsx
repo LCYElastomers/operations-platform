@@ -63,7 +63,7 @@ export function MonthRecordButton({
   );
 }
 
-type Opened = { eventType: EventType; month: number } | null;
+type Opened = { eventType: EventType; month: number; adding: boolean } | null;
 
 /**
  * Record buttons for the Incident and Near Miss rows of the monthly grid, and the
@@ -85,7 +85,7 @@ export function useMonthRecords(year: number, today: string) {
           month={month}
           year={year}
           canEdit={data.canEdit}
-          onOpen={() => setOpened({ eventType, month: index + 1 })}
+          onOpen={() => setOpened({ eventType, month: index + 1, adding: month.documented === 0 && data.canEdit })}
         />
       );
     });
@@ -99,6 +99,7 @@ export function useMonthRecords(year: number, today: string) {
       open
       onClose={() => setOpened(null)}
       scope={{ kind: "month", eventType: opened.eventType, year, month: opened.month, reconciliation: current ?? undefined }}
+      initialPanel={opened.adding ? { kind: "create", eventType: opened.eventType } : undefined}
       permissions={data}
       today={today}
     />

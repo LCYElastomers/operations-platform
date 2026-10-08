@@ -339,12 +339,11 @@ describe("Monthly record actions", () => {
     );
   });
 
-  it("adds a record dated in the month, refusing a blank description before sending", async () => {
+  it("opens an empty month straight on the form and adds a record dated in it, refusing a blank description", async () => {
     await render();
     await act(async () => buttonLabelled("Add Incident record for February 2026")!.click());
     await settle();
-    const add = [...dialog().querySelectorAll("button")].find((b) => b.textContent === "Add record")!;
-    await act(async () => add.click());
+    expect(dialog().textContent).toContain("Back to February 2026 Incidents");
 
     const date = dialog().querySelector<HTMLInputElement>('input[type="date"]')!;
     expect([date.min, date.max, date.value]).toEqual(["2026-02-01", "2026-02-28", "2026-02-28"]);

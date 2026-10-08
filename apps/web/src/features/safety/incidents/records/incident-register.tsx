@@ -167,7 +167,7 @@ export function IncidentRegister({ year, through, today, initial }: RegisterProp
         />
         <FilterSelect
           label="Status"
-          placeholder={showInactive ? "All statuses" : "Active"}
+          placeholder={showInactive ? "All statuses" : "Active only (default)"}
           options={(["active", "voided", "reclassified"] as const).map((value) => ({
             value,
             label: STATUS_LABELS[value],
