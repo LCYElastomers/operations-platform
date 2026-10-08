@@ -9,6 +9,7 @@ import type { BarSeries, LineSeries } from "@/components/common/bar-chart";
 import { NOTES, type DashboardView } from "./analytics-data";
 import {
   emptyAnalyticsExtras,
+  fixtureBehavior,
   fixtureBreakdown,
   fixtureCategory,
   fixtureReconciliation,
@@ -159,6 +160,21 @@ function analytics(
     ...extras,
   };
 }
+
+/** Test fixture: the approved 2026 Behavior counts, highest first. */
+const BEHAVIOR_COUNTS: [string, string, number][] = [
+  ["eyes_on_path", "Eyes On Path", 12],
+  ["pre_post_job_inspection", "Pre & Post Job Inspection", 9],
+  ["communications_of_hazards", "Communications Of Hazards", 4],
+  ["knowledge_of_task", "Knowledge of Task", 4],
+  ["energy_isolation", "Energy Isolation", 4],
+  ["pinch_points", "Pinch Points", 3],
+  ["get_assistance", "Get Assistance", 3],
+  ["line_of_fire", "Line Of Fire", 2],
+  ["ppe_hands", "PPE Hands", 2],
+  ["ppe_eye", "PPE Eye", 1],
+];
+const BEHAVIOR_2026 = fixtureBehavior(2026, BEHAVIOR_COUNTS, 41, ["Housekeeping", "Hot work"]);
 
 // API ------------------------------------------------------------------------------
 
@@ -648,6 +664,60 @@ describe("Incident & Near Miss Dashboard views", () => {
     expect(panel.textContent).not.toMatch(/\b0 behaviors?\b|zero/i);
     expect(panel.querySelector("a")).toBeNull();
     expect(panel.querySelector("[data-chart]")).toBeNull();
+  });
+
+  it("renders the 2026 Behavior Pareto with derived shares, matching its table", async () => {
+    stubApi(() => ok(analytics(2026, 9, {}, { behavior: BEHAVIOR_2026 })));
+    await render(OCTOBER_8_2026, "behavior");
+    const panel = container.querySelector('[role="tabpanel"]')!;
+
+    const kpis = panel.querySelector('section[aria-label="Behavior 2026"]')!;
+    const cards = [...kpis.children].map((element) => element.textContent);
+    expect(cards[0]).toContain("Behavior Tags44");
+    expect(cards[1]).toContain("Incident Reports41");
+    expect(cards[2]).toContain("Behaviors per Incident1.07");
+    expect(cards[2]).toContain("44 tags ÷ 41 incident reports");
+    expect(cards[2]).toContain("One incident can carry more than one behavior tag.");
+
+    const pareto = chart("Behavior Pareto, 2026");
+    const bars = [...pareto.querySelectorAll("li")].map((li) => li.textContent);
+    expect(bars).toEqual(BEHAVIOR_COUNTS.map(([, name, count]) => `${name}: ${count}`));
+    expect(pareto.getAttribute("data-lines")).toBe(
+      "Cumulative % of tags:right:27.3,47.7,56.8,65.9,75,81.8,88.6,93.2,97.7,100",
+    );
+    expect(pareto.textContent).toContain("can add up to more than 100%");
+
+    const table = pareto.querySelector("table")!;
+    expect([...table.querySelectorAll("thead th")].map((th) => th.textContent)).toEqual([
+      "Behavior",
+      "Count",
+      "% of behavior tags",
+      "% of incident reports",
+      "Cumulative % of tags",
+    ]);
+    const rows = [...table.querySelectorAll("tbody tr")].map((tr) =>
+      [...tr.querySelectorAll("th, td")].map((cell) => cell.textContent),
+    );
+    // The table lists the bars in the same order with the same counts.
+    expect(rows.map(([name, count]) => `${name}: ${count}`)).toEqual(bars);
+    expect(rows[0]).toEqual(["Eyes On Path", "12", "27.3%", "29.3%", "27.3%"]);
+    expect(rows.at(-1)).toEqual(["PPE Eye", "1", "2.3%", "2.4%", "100.0%"]);
+    expect(table.querySelector("tfoot")?.textContent).toContain("107.3% (tags per incident report; can exceed 100%)");
+    expect(pareto.textContent).toContain("Not reported for 2026 (no entry, not zero): Housekeeping, Hot work.");
+  });
+
+  it("shows a legitimate empty Behavior state for a year without Behavior counts", async () => {
+    stubApi((url) => {
+      const year = Number(url.searchParams.get("year"));
+      return ok(analytics(year, 3, {}, year === 2026 ? { behavior: BEHAVIOR_2026 } : {}));
+    });
+    await render("2027-03-10T15:00:00Z", "behavior");
+    await choose(select("Reporting year"), 2027);
+
+    const panel = container.querySelector('[role="tabpanel"]')!;
+    expect(panel.textContent).toContain("No behavior data recorded for 2027.");
+    expect(panel.querySelector("[data-chart]")).toBeNull();
+    expect(panel.querySelector("table")).toBeNull();
   });
 
   it("never shows TRIR, Process Safety or pie charts", async () => {

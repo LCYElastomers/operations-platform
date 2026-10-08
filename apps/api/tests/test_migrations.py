@@ -136,7 +136,7 @@ def test_contacts_migration_seeds_no_names_contacts_or_targets(upgrade_sql: str)
 
 
 def test_incident_dimensions_migration_creates_areas_and_definitions_only(upgrade_sql: str) -> None:
-    dimensions_sql = _segment(upgrade_sql, "0006 -> 0007")
+    dimensions_sql = _segment(upgrade_sql, "0006 -> 0007", "0007 -> 0008")
     assert "CREATE TABLE safety.areas" in dimensions_sql
     assert "area_kind IN ('process_unit', 'support', 'organization')" in dimensions_sql
     assert "ADD COLUMN area_id INTEGER" in dimensions_sql
@@ -161,3 +161,24 @@ def test_incident_dimensions_migration_creates_areas_and_definitions_only(upgrad
     assert "DROP" not in dimensions_sql
     for excluded in ("behavior", "process_safety", "psm", "electrical", "material"):
         assert f"'{excluded}" not in dimensions_sql.lower()
+
+
+def test_behavior_migration_stores_annual_counts_without_months(upgrade_sql: str) -> None:
+    behavior_sql = _segment(upgrade_sql, "0007 -> 0008")
+    assert "CREATE TABLE safety.behavior_categories" in behavior_sql
+    assert "CREATE TABLE safety.annual_behavior_counts" in behavior_sql
+    counts_table = behavior_sql.split("CREATE TABLE safety.annual_behavior_counts", 1)[1]
+    counts_table = counts_table.split(";", 1)[0]
+    assert "reporting_year SMALLINT NOT NULL" in counts_table
+    assert "month" not in counts_table.lower()
+    assert "UNIQUE (category_id, reporting_year)" in counts_table
+    assert "REFERENCES safety.behavior_categories (id) ON DELETE RESTRICT" in counts_table
+    assert "value >= 0" in counts_table
+    assert behavior_sql.count("'pre_post_job_inspection'") == 1
+    assert "'confined_space'" in behavior_sql
+    # Definitions only: no counts, and nothing existing is changed.
+    assert "INSERT INTO safety.annual_behavior_counts" not in behavior_sql
+    assert "monthly_metric_values" not in behavior_sql
+    assert "metric_sections" not in behavior_sql
+    assert "DROP" not in behavior_sql
+    assert "ALTER TABLE" not in behavior_sql

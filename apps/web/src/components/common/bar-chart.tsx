@@ -81,6 +81,10 @@ type BarChartProps = {
   lines?: LineSeries[];
   /** Name of the right value axis, shown when a line uses it. */
   rightAxisName?: string;
+  /** The right axis is a fixed 0–100% scale; right-axis line values are percentages. */
+  rightAxisPercent?: boolean;
+  /** Rotate the category labels of a vertical chart (degrees) so long labels all show. */
+  labelRotate?: number;
   /** "vertical" bars rise from the x axis; "horizontal" bars suit long category labels. */
   orientation?: "vertical" | "horizontal";
   /** Height of the plot area in pixels. */
@@ -101,6 +105,8 @@ export function BarChart({
   series,
   lines = NO_LINES,
   rightAxisName,
+  rightAxisPercent = false,
+  labelRotate,
   orientation = "vertical",
   height = 280,
   showValues = false,
@@ -132,6 +138,8 @@ export function BarChart({
           series={series}
           lines={orientation === "vertical" ? lines : NO_LINES}
           rightAxisName={rightAxisName}
+          rightAxisPercent={rightAxisPercent}
+          labelRotate={labelRotate}
           orientation={orientation}
           height={height}
           showValues={showValues}
@@ -160,6 +168,8 @@ function BarChartBody({
   series,
   lines,
   rightAxisName,
+  rightAxisPercent,
+  labelRotate,
   orientation,
   height,
   showValues,
@@ -169,6 +179,8 @@ function BarChartBody({
   series: BarSeries[];
   lines: LineSeries[];
   rightAxisName?: string;
+  rightAxisPercent: boolean;
+  labelRotate?: number;
   orientation: "vertical" | "horizontal";
   height: number;
   showValues: boolean;
@@ -202,10 +214,18 @@ function BarChartBody({
 
   useEffect(() => {
     chartRef.current?.setOption(
-      buildBarOption(categories, series, { hidden, orientation, showValues, lines, rightAxisName }),
+      buildBarOption(categories, series, {
+        hidden,
+        orientation,
+        showValues,
+        lines,
+        rightAxisName,
+        rightAxisPercent,
+        labelRotate,
+      }),
       { notMerge: true },
     );
-  }, [categories, series, lines, rightAxisName, hidden, orientation, showValues]);
+  }, [categories, series, lines, rightAxisName, rightAxisPercent, labelRotate, hidden, orientation, showValues]);
 
   const legend = [...series, ...lines];
   return (
@@ -238,15 +258,23 @@ export function buildBarOption(
     showValues = false,
     lines = NO_LINES,
     rightAxisName,
+    rightAxisPercent = false,
+    labelRotate,
   }: {
     hidden?: ReadonlySet<string>;
     orientation?: "vertical" | "horizontal";
     showValues?: boolean;
     lines?: LineSeries[];
     rightAxisName?: string;
+    rightAxisPercent?: boolean;
+    labelRotate?: number;
   } = {},
 ): ChartOption {
   const plotted = orientation === "vertical" ? lines : NO_LINES;
+  const percentSeries = new Set(
+    rightAxisPercent ? plotted.filter((line) => line.axis === "right").map((line) => line.name) : [],
+  );
+  const rotate = orientation === "vertical" && labelRotate ? labelRotate : undefined;
   const unreported = categories.map((_, index) =>
     [...series, ...plotted].every((s) => s.values[index] === null || s.values[index] === undefined),
   );
@@ -263,6 +291,7 @@ export function buildBarOption(
       fontSize: 12,
       color: (_value?: string | number, index?: number) =>
         index !== undefined && unreported[index] ? UNREPORTED_LABEL_COLOR : AXIS_LABEL_COLOR,
+      ...(rotate !== undefined && { rotate, interval: 0 }),
     },
   };
   const valueAxis = {
@@ -305,7 +334,9 @@ export function buildBarOption(
         const rows = params.map((param) => {
           const value =
             typeof param.value === "number" && Number.isFinite(param.value)
-              ? param.value.toLocaleString()
+              ? percentSeries.has(param.seriesName ?? "")
+                ? `${param.value.toFixed(1)}%`
+                : param.value.toLocaleString()
               : "Not reported";
           const marker = typeof param.marker === "string" ? param.marker : "";
           return `<div style="display:flex;justify-content:space-between;gap:16px;line-height:1.6">
@@ -327,6 +358,12 @@ export function buildBarOption(
                 name: rightAxisName,
                 nameTextStyle: { color: AXIS_LABEL_COLOR, fontSize: 11 },
                 splitLine: { show: false },
+                ...(rightAxisPercent && {
+                  min: 0,
+                  max: 100,
+                  interval: 25,
+                  axisLabel: { ...valueAxis.axisLabel, formatter: "{value}%" },
+                }),
               },
             ]
           : valueAxis,

@@ -211,6 +211,39 @@ class InjuryReconciliationOut(CamelModel):
     body_part: list[MonthReconciliationOut]
 
 
+class BehaviorParetoRowOut(CamelModel):
+    """A reported Behavior category. Shares are fractions (0.25 = 25%)."""
+
+    code: str
+    name: str
+    count: int
+    share_of_tags: float | None = Field(description="count / all Behavior tags.")
+    share_of_incident_reports: float | None = Field(
+        description="count / Incident reports. Tags overlap, so these may sum above 1."
+    )
+    cumulative_share_of_tags: float | None = Field(
+        description="Running share of all tags in Pareto order; 1 at the last category."
+    )
+
+
+class BehaviorAnalyticsOut(CamelModel):
+    """Annual Behavior Pareto for ``year``. Behavior is recorded per year, so the
+    analytics through month does not apply to it. Behavior values are tags: their
+    total need not equal the Incident total and is never reconciled with it."""
+
+    year: int
+    available: bool = Field(description="At least one category has a reported count.")
+    # Reported categories, count descending, then taxonomy display order.
+    categories: list[BehaviorParetoRowOut]
+    # Display names of active categories with no reported count, in display order.
+    unreported: list[str]
+    total_tags: int | None
+    # The stored Incident total for the whole year (sum of its reported months).
+    incident_reports: int | None
+    incident_reports_months_reported: int
+    behaviors_per_incident_report: float | None
+
+
 class IncidentAnalyticsResponse(CamelModel):
     """Read-only Incident & Near Miss analytics, calculated from the stored monthly values.
 
@@ -264,6 +297,4 @@ class IncidentAnalyticsResponse(CamelModel):
     body_part: AnalyticsBreakdownOut
     injury_reconciliation: InjuryReconciliationOut
 
-    # Behavior has no approved source yet; nothing is recorded or returned.
-    behavior_available: bool = False
-    behavior_data: AnalyticsBreakdownOut | None = None
+    behavior: BehaviorAnalyticsOut

@@ -6,6 +6,7 @@ import type {
   AnalyticsBreakdown,
   AnalyticsCategory,
   AnalyticsSeries,
+  BehaviorAnalytics,
   IncidentAnalyticsResponse,
   MonthReconciliation,
   ReconciliationStatus,
@@ -139,7 +140,46 @@ export function emptyAnalyticsExtras(year: number, months: number): Extras {
       injuryCause: fixtureReconciliation(none, none),
       bodyPart: fixtureReconciliation(none, none),
     },
-    behaviorAvailable: false,
-    behaviorData: null,
+    behavior: {
+      year,
+      available: false,
+      categories: [],
+      unreported: [],
+      totalTags: null,
+      incidentReports: null,
+      incidentReportsMonthsReported: 0,
+      behaviorsPerIncidentReport: null,
+    },
+  };
+}
+
+/** A Behavior Pareto with shares derived from the counts, as the API derives them. */
+export function fixtureBehavior(
+  year: number,
+  counts: [code: string, name: string, count: number][],
+  incidentReports: number | null,
+  unreported: string[] = [],
+): BehaviorAnalytics {
+  const tags = counts.reduce((sum, [, , count]) => sum + count, 0);
+  let running = 0;
+  return {
+    year,
+    available: counts.length > 0,
+    categories: counts.map(([code, name, count]) => {
+      running += count;
+      return {
+        code,
+        name,
+        count,
+        shareOfTags: tags ? count / tags : null,
+        shareOfIncidentReports: incidentReports ? count / incidentReports : null,
+        cumulativeShareOfTags: tags ? running / tags : null,
+      };
+    }),
+    unreported,
+    totalTags: counts.length ? tags : null,
+    incidentReports,
+    incidentReportsMonthsReported: incidentReports === null ? 0 : 12,
+    behaviorsPerIncidentReport: counts.length && incidentReports ? tags / incidentReports : null,
   };
 }

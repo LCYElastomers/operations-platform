@@ -20,6 +20,7 @@ import { ApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 
 import { describeSafetyError, editConflicts, type MetricSectionBlock } from "./api";
+import { AnnualBehaviorEntry } from "./behavior-entry";
 import {
   authoritativeTotals,
   BREAKDOWN_CHECKS,
@@ -313,10 +314,11 @@ export function IncidentDataEntry({ title, description, siteToday }: IncidentDat
   const currentYear = yearOf(useSiteToday(siteToday));
   const [draft, setDraft] = useState<Draft>({});
   const [notice, setNotice] = useState<string | null>(null);
+  const [behaviorDirty, setBehaviorDirty] = useState(false);
   // Draft cells have no year (and stay in the draft until saved), so a year
   // with unsaved or in-flight changes never moves at midnight.
   const yearChoice = useAutomaticValue(defaultReportingYear(currentYear), {
-    hold: Object.keys(draft).length > 0,
+    hold: Object.keys(draft).length > 0 || behaviorDirty,
   });
   const year = yearChoice.value;
   const metrics = useIncidentMetrics(year);
@@ -331,11 +333,13 @@ export function IncidentDataEntry({ title, description, siteToday }: IncidentDat
   const editable = data?.canEdit ?? false;
   const conflicts = editConflicts(save.error);
 
-  useUnsavedChangesWarning(dirty);
+  const anyDirty = dirty || behaviorDirty;
+
+  useUnsavedChangesWarning(anyDirty);
 
   const changeYear = (next: number) => {
     if (next === year) return;
-    if (dirty && !window.confirm(`Discard unsaved changes for ${year}?`)) return;
+    if (anyDirty && !window.confirm(`Discard unsaved changes for ${year}?`)) return;
     setDraft({});
     setNotice(null);
     save.reset();
@@ -396,7 +400,7 @@ export function IncidentDataEntry({ title, description, siteToday }: IncidentDat
   const changeCount = summary.changes.length;
 
   const leaveFor = (event: React.MouseEvent) => {
-    if (dirty && !window.confirm(`Leave without saving your changes for ${year}?`)) {
+    if (anyDirty && !window.confirm(`Leave without saving your changes for ${year}?`)) {
       event.preventDefault();
     }
   };
@@ -559,6 +563,8 @@ export function IncidentDataEntry({ title, description, siteToday }: IncidentDat
           onCellRevert={revertCell}
         />
       )}
+
+      <AnnualBehaviorEntry key={year} year={year} onDirtyChange={setBehaviorDirty} />
     </div>
   );
 }

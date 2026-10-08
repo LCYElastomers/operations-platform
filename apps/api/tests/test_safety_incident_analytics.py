@@ -21,9 +21,10 @@ from app.main import create_app
 from app.safety import analytics
 from app.safety import router as safety_router
 from app.safety.analytics import MonthNotStartedError, available_years, latest_started_month
+from app.safety.behavior.repository import BehaviorCategoryDefinition
 from app.safety.legacy_import import load_mapping
 from app.safety.repository import CategoryDefinition, SectionDefinition, StoredValues
-from app.safety.router import safety_repository
+from app.safety.router import behavior_repository, safety_repository
 from app.safety.schemas import IncidentAnalyticsResponse
 
 URL = "/api/v1/safety/incidents/analytics"
@@ -530,9 +531,20 @@ def principal(*permissions: Permission) -> UserPrincipal:
     return UserPrincipal("tester", authenticated=True, granted=frozenset(permissions))
 
 
+class NoBehavior:
+    """A Behavior repository with no categories or counts; reads only."""
+
+    def categories(self) -> list[BehaviorCategoryDefinition]:
+        return []
+
+    def counts(self, year: int) -> dict[int, int]:
+        return {}
+
+
 def make_client(repository: ReadOnlyRepository, user: UserPrincipal | None) -> Iterator[TestClient]:
     app = create_app()
     app.dependency_overrides[safety_repository] = lambda: repository
+    app.dependency_overrides[behavior_repository] = NoBehavior
     if user is not None:
         app.dependency_overrides[get_user_principal] = lambda: user
     with TestClient(app) as client:
@@ -588,8 +600,7 @@ def test_get_returns_typed_analytics(viewer: TestClient) -> None:
         "injuryCause",
         "bodyPart",
         "injuryReconciliation",
-        "behaviorAvailable",
-        "behaviorData",
+        "behavior",
     }
     assert (data["year"], data["throughMonth"], data["latestMonth"]) == (2026, 9, 10)
     assert data["availableYears"] == [2026]
@@ -602,7 +613,14 @@ def test_get_returns_typed_analytics(viewer: TestClient) -> None:
         "parts": [],
         "priorYear": None,
     }
-    assert (data["behaviorAvailable"], data["behaviorData"]) == (False, None)
+    # No Behavior counts are stored here; the denominator is still the full-year total.
+    behavior = data["behavior"]
+    assert (behavior["available"], behavior["categories"], behavior["totalTags"]) == (
+        False,
+        [],
+        None,
+    )
+    assert behavior["incidentReports"] == 41
     assert data["incidentsPriorYearAvailable"] is False
     assert [kpi["key"] for kpi in data["kpis"]] == [
         "incidents",

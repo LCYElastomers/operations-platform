@@ -12,6 +12,14 @@ from app.core.permissions import Permission
 from app.db.session import DatabaseNotConfiguredError, get_sessionmaker
 from app.safety import analytics, service
 from app.safety.analytics import MonthNotStartedError
+from app.safety.behavior import service as behavior_service
+from app.safety.behavior.repository import BehaviorRepository, DatabaseBehaviorRepository
+from app.safety.behavior.schemas import (
+    BehaviorCountsResponse,
+    SaveBehaviorCountsRequest,
+    SaveBehaviorCountsResponse,
+)
+from app.safety.behavior.service import BehaviorConflictError, UnknownBehaviorCategoryError
 from app.safety.models import MAX_REPORTING_YEAR, MIN_REPORTING_YEAR
 from app.safety.repository import DatabaseSafetyMetricsRepository, SafetyMetricsRepository
 from app.safety.schemas import (
@@ -51,7 +59,17 @@ def safety_repository() -> Iterator[SafetyMetricsRepository]:
         yield DatabaseSafetyMetricsRepository(session)
 
 
+def behavior_repository() -> Iterator[BehaviorRepository]:
+    try:
+        sessions = get_sessionmaker()
+    except DatabaseNotConfiguredError:
+        raise _database_unavailable() from None
+    with sessions() as session:
+        yield DatabaseBehaviorRepository(session)
+
+
 Repository = Annotated[SafetyMetricsRepository, Depends(safety_repository)]
+Behavior = Annotated[BehaviorRepository, Depends(behavior_repository)]
 IncidentViewer = Annotated[
     UserPrincipal, Depends(require_permission(Permission.SAFETY_INCIDENTS_VIEW))
 ]
@@ -95,13 +113,16 @@ def _now() -> dt.datetime:
 def incident_analytics(
     principal: IncidentViewer,
     repository: Repository,
+    behavior: Behavior,
     year: Annotated[int, Query(ge=MIN_REPORTING_YEAR, le=MAX_REPORTING_YEAR)],
     through: Annotated[int | None, Query(ge=1, le=12)] = None,
 ) -> IncidentAnalyticsResponse:
     """Read-only Incident & Near Miss analytics for January..through (by default the
-    latest month that has started in Baytown)."""
+    latest month that has started in Baytown). Behavior covers the whole year."""
     try:
-        return analytics.load_analytics(repository, year=year, through_month=through, now=_now())
+        return analytics.load_analytics(
+            repository, year=year, through_month=through, now=_now(), behavior=behavior
+        )
     except MonthNotStartedError as error:
         raise _error(
             status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -161,3 +182,65 @@ def save_incident_metrics(
         repository.rollback()
         raise _database_unavailable() from None
     return SaveMonthlyMetricsResponse(changed_cells=outcome.changed_cells, metrics=metrics)
+
+
+@router.get("/incidents/behavior", response_model=BehaviorCountsResponse)
+def incident_behavior(
+    principal: IncidentViewer,
+    behavior: Behavior,
+    year: Annotated[int, Query(ge=MIN_REPORTING_YEAR, le=MAX_REPORTING_YEAR)],
+) -> BehaviorCountsResponse:
+    """Annual Behavior tag counts for one reporting year."""
+    try:
+        return behavior_service.load_counts(
+            behavior, year=year, can_edit=principal.has(Permission.SAFETY_INCIDENTS_EDIT)
+        )
+    except SQLAlchemyError:
+        raise _database_unavailable() from None
+
+
+@router.patch(
+    "/incidents/behavior",
+    response_model=SaveBehaviorCountsResponse,
+    responses={
+        401: {"description": "Not signed in"},
+        403: {"description": "Missing safety.incidents.edit"},
+        409: {"description": "Stored counts changed since they were loaded; nothing saved"},
+        422: {"description": "Invalid request or unknown category; nothing saved"},
+        503: {"description": "Database unavailable; nothing saved"},
+    },
+)
+def save_incident_behavior(
+    principal: IncidentEditor,
+    behavior: Behavior,
+    request: SaveBehaviorCountsRequest,
+) -> SaveBehaviorCountsResponse:
+    """Set or clear annual Behavior counts. All changes are applied together or not at all."""
+    assert principal.user_id is not None  # noqa: S101 - require_permission admits users only
+    try:
+        outcome = behavior_service.save_counts(
+            behavior,
+            year=request.year,
+            changes=request.changes,
+            actor_id=principal.user_id,
+            now=_now(),
+        )
+        counts = behavior_service.load_counts(behavior, year=request.year, can_edit=True)
+    except UnknownBehaviorCategoryError as error:
+        raise _error(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "unknown_category",
+            "One or more categories are not active Behavior categories.",
+            categoryIds=error.category_ids,
+        ) from None
+    except BehaviorConflictError as error:
+        raise _error(
+            status.HTTP_409_CONFLICT,
+            "edit_conflict",
+            "Some counts were changed by someone else since you loaded them. Nothing was saved.",
+            conflicts=[c.model_dump(by_alias=True) for c in error.conflicts],
+        ) from None
+    except SQLAlchemyError:
+        behavior.rollback()
+        raise _database_unavailable() from None
+    return SaveBehaviorCountsResponse(changed_categories=outcome.changed_categories, counts=counts)

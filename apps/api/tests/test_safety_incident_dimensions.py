@@ -684,10 +684,12 @@ def test_prior_year_follows_the_through_month() -> None:
     assert kpi.prior_year is not None and kpi.prior_year.value == 5
 
 
-def test_behavior_has_no_source_and_returns_nothing() -> None:
+def test_without_behavior_counts_behavior_is_unavailable() -> None:
     result = load(Repository(approved()))
 
-    assert (result.behavior_available, result.behavior_data) == (False, None)
+    assert result.behavior.available is False
+    assert result.behavior.categories == []
+    assert result.behavior.total_tags is None
 
 
 def test_a_future_year_has_empty_breakdowns() -> None:

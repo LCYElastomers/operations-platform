@@ -110,6 +110,25 @@ describe("buildBarOption", () => {
     expect(option.legend).toMatchObject({ data: ["A", "Cumulative"] });
   });
 
+  it("fixes a percent right axis at 0–100% and formats its line as percentages", () => {
+    const option = buildBarOption(["A", "B"], [{ name: "Count", values: [3, 1] }], {
+      lines: [{ name: "Cumulative %", values: [75, 100], axis: "right" }],
+      rightAxisPercent: true,
+      labelRotate: 30,
+    });
+    const [left, right] = option.yAxis as { min?: number; max?: number; axisLabel?: { formatter?: string } }[];
+    expect(left.max).toBeUndefined();
+    expect(right).toMatchObject({ min: 0, max: 100, axisLabel: { formatter: "{value}%" } });
+    expect((option.xAxis as { axisLabel: object }).axisLabel).toMatchObject({ rotate: 30, interval: 0 });
+    const formatter = (option.tooltip as { formatter: (p: unknown) => string }).formatter;
+    const html = formatter([
+      { name: "A", seriesName: "Count", value: 3 },
+      { name: "A", seriesName: "Cumulative %", value: 75 },
+    ]);
+    expect(html).toContain("<strong style=\"font-variant-numeric:tabular-nums\">3</strong>");
+    expect(html).toContain("75.0%");
+  });
+
   it("ignores lines on horizontal charts", () => {
     const option = buildBarOption(["A"], [{ name: "YTD", values: [1] }], {
       orientation: "horizontal",

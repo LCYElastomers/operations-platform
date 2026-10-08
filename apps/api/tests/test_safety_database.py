@@ -549,7 +549,7 @@ def test_area_values_round_trip_with_null_and_zero(
         "reconciled",
         "no_authoritative_total",
     ]
-    assert result.behavior_available is False
+    assert result.behavior.available is False
 
 
 def test_section_codes_are_unique_per_metric_set(session: Session) -> None:

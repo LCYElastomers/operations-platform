@@ -29,13 +29,18 @@ nothing is stored. Rules:
   ``incidents`` set; LOPC from the set Safety Performance reads for that year
   (``count_source``: ``performance_legacy`` before 2026), so it is never stored
   twice.
-- Behavior has no approved source: nothing is read or returned for it.
+- Behavior is recorded as annual tag counts (``app.safety.behavior``), so the
+  through month does not apply to it. Its denominator is the stored Incident
+  total for the whole year; tags may outnumber incidents and are never
+  reconciled with them.
 """
 
 import datetime as dt
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
+from app.safety.behavior.repository import BehaviorCategoryDefinition, BehaviorRepository
+from app.safety.behavior.service import build_pareto
 from app.safety.performance.calculations import count_source
 from app.safety.repository import SafetyMetricsRepository, SectionDefinition, StoredValues
 from app.safety.schemas import (
@@ -281,8 +286,11 @@ def build_analytics(
     stored: StoredValues,
     years: list[int],
     prior: PriorYearValues = NO_PRIOR_YEAR,
+    behavior_categories: Sequence[BehaviorCategoryDefinition] = (),
+    behavior_counts: Mapping[int, int] | None = None,
 ) -> IncidentAnalyticsResponse:
-    """Analytics for ``year``, January..``through_month`` (no months when None)."""
+    """Analytics for ``year``, January..``through_month`` (no months when None).
+    Behavior covers the whole year."""
     months = range(1, through_month + 1) if through_month is not None else range(0)
     definitions = {
         (section.code, category.code): category
@@ -327,6 +335,10 @@ def build_analytics(
     injuries = [
         total(pair)
         for pair in zip(series(FIRST_AID).values, series(RECORDABLE_INJURY).values, strict=True)
+    ]
+    incident_category = definitions.get(INCIDENTS)
+    incident_year = [
+        stored.get((incident_category.id, m)) if incident_category else None for m in range(1, 13)
     ]
 
     return IncidentAnalyticsResponse(
@@ -389,6 +401,12 @@ def build_analytics(
             injury_cause=reconcile(injury_cause.monthly_totals, injuries),
             body_part=reconcile(body_part.monthly_totals, injuries),
         ),
+        behavior=build_pareto(
+            year=year,
+            categories=behavior_categories,
+            counts=behavior_counts or {},
+            incident_months=incident_year,
+        ),
     )
 
 
@@ -431,6 +449,7 @@ def load_analytics(
     year: int,
     through_month: int | None,
     now: dt.datetime,
+    behavior: BehaviorRepository | None = None,
 ) -> IncidentAnalyticsResponse:
     """Analytics through ``through_month``, or by default through the latest month of
     the year that has started in Baytown. Reads only; nothing is written or audited."""
@@ -449,4 +468,6 @@ def load_analytics(
         stored=repository.values(ids, year),
         years=available_years(today, repository.years_with_values(ids)),
         prior=_prior_year_values(repository, sections, year - 1, through),
+        behavior_categories=behavior.categories() if behavior else (),
+        behavior_counts=behavior.counts(year) if behavior else None,
     )

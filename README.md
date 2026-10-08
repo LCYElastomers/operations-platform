@@ -836,6 +836,37 @@ add the agreed Incident figure to `expectedYtd` before running `apply`.
 Incident is the explicit metric, so Incident Classification totals are not
 used to reconcile it.
 
+### Annual Behavior tagging
+
+Behavior counts are annual tags, not monthly values. Migration `0008` adds
+`safety.behavior_categories` (the 24 workbook behaviors, seeded) and
+`safety.annual_behavior_counts` (one row per category and year, no month
+column). No row means not reported; `0` is an explicit zero. One incident
+report can carry several tags, so the tags may exceed the Incident total.
+
+- `GET /api/v1/safety/incidents/behavior?year=` and `PATCH` with
+  `{ year, changes: [{ categoryId, value, previousValue }] }`: the same
+  validation, `409 edit_conflict` and audit rules as monthly saves
+  (`entity_type = safety.annual_behavior_count`, `entity_key =
+  incidents/behavior/<category>/<year>`).
+- The Incident Analytics response carries `behavior`: the Pareto (count,
+  share of tags, share of incident reports, cumulative share of tags). The
+  denominator is the stored Incident total for the whole year; no percentage
+  or denominator is stored.
+- The 2026 workbook counts are loaded with their own CLI:
+
+```bash
+cd apps/api
+uv run python -m app.safety.behavior.legacy_import check import_templates/safety_behavior_2026_lcy_ehs.mapping.json
+uv run python -m app.safety.behavior.legacy_import plan  import_templates/safety_behavior_2026_lcy_ehs.mapping.json
+uv run python -m app.safety.behavior.legacy_import apply import_templates/safety_behavior_2026_lcy_ehs.mapping.json
+```
+
+Blank workbook cells stay `null` and are never written. The sheet labels its
+denominator "Total Number of Incident Reports 2025", but it is the 2026
+Incident total; the owner confirmed the counts are 2026 and the label is kept
+in the mapping as a recorded discrepancy.
+
 ### Dashboard
 
 The Incident & Near Miss Dashboard (`/safety/incidents/dashboard`,

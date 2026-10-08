@@ -1,10 +1,11 @@
-import type { BarSeries } from "@/components/common/bar-chart";
+import type { BarSeries, LineSeries } from "@/components/common/bar-chart";
 import type { HeatmapColumnStatus } from "@/components/common/heatmap-table";
 
 import type {
   AnalyticsCategory,
   AnalyticsKpi,
   AnalyticsSeries,
+  BehaviorAnalytics,
   IncidentAnalyticsResponse,
   MonthReconciliation,
 } from "./api";
@@ -59,7 +60,40 @@ export const NOTES = {
   injuries:
     "Injury cause and body part are compared with First Aid + Recordable Injury. Body parts are tags: one injury can involve more than one.",
   priorYear: "The prior year covers the same months. A month with no entry leaves a gap; 0 is a reported zero.",
+  behavior:
+    "Behavior counts are annual tags for the whole year, not monthly values, so the Through month does not apply. One incident report can carry more than one behavior tag, so the tags can exceed the incident reports and the shares of incident reports can add up to more than 100%.",
 } as const;
+
+export const BEHAVIOR_COLOR = "#2563eb";
+export const BEHAVIOR_CUMULATIVE_COLOR = "#0f172a";
+
+/** A fraction as a percentage, e.g. 0.2727 -> "27.3%". */
+export function formatShare(value: number | null): string {
+  return value === null ? "Not available" : `${(value * 100).toFixed(1)}%`;
+}
+
+/** Count bars, highest first, with the cumulative share of tags as a 0–100% line. */
+export function behaviorPareto(behavior: BehaviorAnalytics): {
+  categories: string[];
+  series: BarSeries[];
+  lines: LineSeries[];
+} {
+  const rows = behavior.categories;
+  return {
+    categories: rows.map((row) => row.name),
+    series: [{ name: "Behavior tags", values: rows.map((row) => row.count), color: BEHAVIOR_COLOR }],
+    lines: [
+      {
+        name: "Cumulative % of tags",
+        values: rows.map((row) =>
+          row.cumulativeShareOfTags === null ? null : Math.round(row.cumulativeShareOfTags * 1000) / 10,
+        ),
+        color: BEHAVIOR_CUMULATIVE_COLOR,
+        axis: "right",
+      },
+    ],
+  };
+}
 
 export const PRIOR_YEAR_COLOR = "#94a3b8";
 

@@ -49,7 +49,7 @@ pytestmark = requires_postgres
 SYNCED_AT = dt.datetime(2026, 10, 2, 12, 0, tzinfo=dt.UTC)
 SOURCE = "access-test"
 BASE = "/api/v1/quality/moisture"
-HEAD = "0007"
+HEAD = "0008"
 
 
 @pytest.fixture
@@ -109,6 +109,7 @@ def test_alembic_history_is_linear() -> None:
     script = ScriptDirectory.from_config(alembic_config())
 
     assert script.get_heads() == [HEAD]
+    assert script.get_revision("0008").down_revision == "0007"
     assert script.get_revision("0007").down_revision == "0006"
     assert script.get_revision("0006").down_revision == "0005"
     assert script.get_revision("0005").down_revision == "0004"

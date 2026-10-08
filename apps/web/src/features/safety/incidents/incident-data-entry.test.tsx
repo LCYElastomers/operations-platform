@@ -4,7 +4,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { MetricSectionBlock, MonthlyMetricsResponse } from "./api";
+import type { BehaviorCountsResponse, MetricSectionBlock, MonthlyMetricsResponse } from "./api";
 import { IncidentDataEntry } from "./incident-data-entry";
 import { siteIsoDate } from "../site-calendar";
 
@@ -61,6 +61,19 @@ const METRICS: MonthlyMetricsResponse = {
   ],
 };
 
+/** Test fixture, not production data: one count, one explicit zero, one blank. */
+const BEHAVIOR: BehaviorCountsResponse = {
+  year: 2026,
+  canEdit: true,
+  categories: [
+    { id: 1, code: "pre_post_job_inspection", name: "Pre & Post Job Inspection", value: 9 },
+    { id: 9, code: "housekeeping", name: "Housekeeping", value: null },
+    { id: 11, code: "ppe_eye", name: "PPE Eye", value: 0 },
+  ],
+  total: 9,
+  yearsWithData: [2026],
+};
+
 let root: Root | null = null;
 let container: HTMLDivElement;
 let queryClient: QueryClient;
@@ -84,9 +97,15 @@ beforeEach(() => {
   );
   vi.stubGlobal(
     "fetch",
-    vi.fn((_path: string, init?: RequestInit) => {
-      if (init?.method === "PATCH") patches.push(JSON.parse(String(init.body)));
-      return Promise.resolve({ ok: true, status: 200, json: async () => METRICS });
+    vi.fn((path: string, init?: RequestInit) => {
+      const behavior = String(path).includes("/incidents/behavior");
+      if (init?.method === "PATCH") {
+        const body = JSON.parse(String(init.body));
+        patches.push(body);
+        const response = behavior ? { changedCategories: body.changes.length, counts: BEHAVIOR } : METRICS;
+        return Promise.resolve({ ok: true, status: 200, json: async () => response });
+      }
+      return Promise.resolve({ ok: true, status: 200, json: async () => (behavior ? BEHAVIOR : METRICS) });
     }),
   );
 });
@@ -140,7 +159,9 @@ describe("Incident & Near Miss Data Entry breakdowns", () => {
     expect(headings).toContain("E · Near-Miss Cause");
     expect(headings).toContain("F · LOPC Contributing Factor");
     expect(headings).toContain("H · Body Part");
-    expect(headings.join(" ")).not.toMatch(/Behavior|Process Safety/);
+    // Behavior is annual: only the separate annual card, never a monthly grid.
+    expect(headings.filter((h) => h?.includes("Behavior"))).toEqual(["Annual Behavior tagging, 2026"]);
+    expect(headings.join(" ")).not.toMatch(/Process Safety/);
   });
 
   it("checks areas against Incidents live, as a warning that never fills or blocks", async () => {
@@ -199,5 +220,77 @@ describe("Incident & Near Miss Data Entry breakdowns", () => {
     expect(grid("F · LOPC Contributing Factor").textContent).toContain(
       "Jan: Factors not reported, LOPC 1 · no breakdown data",
     );
+  });
+});
+
+describe("Annual Behavior tagging", () => {
+  const behaviorInput = (code: string) => container.querySelector<HTMLInputElement>(`#behavior-2026-${code}`)!;
+
+  async function typeBehavior(code: string, value: string) {
+    const element = behaviorInput(code);
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(element, value);
+      element.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  }
+
+  const saveBehavior = () =>
+    [...container.querySelectorAll("button")].find((b) => b.textContent === "Save behavior counts")!;
+
+  it("has one annual input per category, with blank and zero kept apart", async () => {
+    await render();
+    const card = grid("Annual Behavior tagging, 2026");
+
+    expect(card.textContent).toContain("not monthly values");
+    expect(card.textContent).toContain("one behavior tag");
+    const inputs = card.querySelectorAll("input");
+    expect(inputs).toHaveLength(3);
+    expect(card.textContent).not.toMatch(/\bJan\b|\bDec\b/);
+    expect(behaviorInput("pre_post_job_inspection").value).toBe("9");
+    expect(behaviorInput("housekeeping").value).toBe("");
+    expect(behaviorInput("ppe_eye").value).toBe("0");
+    expect(card.textContent).toContain("Behavior tags, 2026: 9");
+    expect(saveBehavior().disabled).toBe(true);
+  });
+
+  it("saves annual counts without a month and clears to unreported, not zero", async () => {
+    await render();
+
+    await typeBehavior("housekeeping", "0");
+    await typeBehavior("ppe_eye", "");
+    expect(grid("Annual Behavior tagging, 2026").textContent).toContain("2 unsaved changes");
+    await act(async () => saveBehavior().click());
+
+    expect(patches).toEqual([
+      {
+        year: 2026,
+        changes: [
+          { categoryId: 9, value: 0, previousValue: null },
+          { categoryId: 11, value: null, previousValue: 0 },
+        ],
+      },
+    ]);
+  });
+
+  it("refuses invalid counts", async () => {
+    await render();
+
+    await typeBehavior("housekeeping", "1.5");
+    expect(grid("Annual Behavior tagging, 2026").textContent).toContain("1 count is invalid");
+    expect(saveBehavior().disabled).toBe(true);
+  });
+
+  it("guards leaving the page with unsaved Behavior counts", async () => {
+    await render();
+    const confirm = vi.fn(() => false);
+    vi.stubGlobal("confirm", confirm);
+
+    await typeBehavior("housekeeping", "2");
+    const link = [...container.querySelectorAll("a")].find((a) => a.textContent?.includes("View dashboard"))!;
+    const click = new MouseEvent("click", { bubbles: true, cancelable: true });
+    await act(async () => link.dispatchEvent(click));
+
+    expect(confirm).toHaveBeenCalledWith("Leave without saving your changes for 2026?");
+    expect(click.defaultPrevented).toBe(true);
   });
 });

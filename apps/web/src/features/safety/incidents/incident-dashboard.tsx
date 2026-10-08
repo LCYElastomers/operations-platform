@@ -28,6 +28,7 @@ import { ApiError } from "@/lib/api-client";
 
 import {
   bars,
+  behaviorPareto,
   breakdownChart,
   classificationChart,
   COLORS,
@@ -35,6 +36,7 @@ import {
   DASHBOARD_VIEWS,
   findKpi,
   formatCount,
+  formatShare,
   incompleteSeries,
   KPI_LABELS,
   kpiCaption,
@@ -57,6 +59,7 @@ import {
   type AnalyticsCategory,
   type AnalyticsKpi,
   type AnalyticsSeries,
+  type BehaviorAnalytics,
   type IncidentAnalyticsResponse,
   type MonthReconciliation,
 } from "./api";
@@ -249,7 +252,7 @@ export function IncidentDashboard({
         )}
         {view === "area" && <AreaView {...viewProps} />}
         {view === "incident-analysis" && <IncidentAnalysisView {...viewProps} />}
-        {view === "behavior" && <BehaviorView year={year} />}
+        {view === "behavior" && <BehaviorView {...viewProps} />}
       </Tabs>
 
       {loading && <span className="sr-only">Loading Safety data</span>}
@@ -832,13 +835,128 @@ function TagChart({
 
 // Behavior ----------------------------------------------------------------------------
 
-function BehaviorView({ year }: { year: number }) {
+function BehaviorView({ data, isError, year, chart }: ViewProps) {
+  const behavior = data?.behavior;
+  if (isError) return chart.emptyState;
+  if (behavior && !behavior.available) {
+    return (
+      <EmptyState
+        icon={Users}
+        title={`No behavior data recorded for ${year}.`}
+        description="Annual behavior tag counts appear here once they are entered in Incident & Near Miss Data Entry. A behavior with no entry is not reported."
+      />
+    );
+  }
+  const loading = chart.loading || !behavior;
+  const pareto = behavior ? behaviorPareto(behavior) : { categories: [], series: [], lines: [] };
+  const incidentsCaption =
+    behavior && behavior.incidentReports !== null
+      ? `Stored Incident total, ${year}` +
+        (behavior.incidentReportsMonthsReported < 12
+          ? ` · ${behavior.incidentReportsMonthsReported} of 12 months reported`
+          : "")
+      : `No Incident total reported for ${year}`;
   return (
-    <EmptyState
-      icon={Users}
-      title={`No behavior data recorded for ${year}.`}
-      description="Behavior data has no approved source on the platform yet, so nothing is shown here."
-    />
+    <div className="space-y-5">
+      <section aria-label={`Behavior ${year}`} className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <MetricCard
+          label="Behavior Tags"
+          value={behavior?.totalTags ?? null}
+          caption={`Annual tag count, ${year}`}
+          icon={Users}
+          emphasis
+          loading={loading}
+        />
+        <MetricCard
+          label="Incident Reports"
+          value={behavior?.incidentReports ?? null}
+          caption={incidentsCaption}
+          icon={Siren}
+          emphasis
+          loading={loading}
+        />
+        <MetricCard
+          label="Behaviors per Incident"
+          value={behavior?.behaviorsPerIncidentReport ?? null}
+          precision={2}
+          caption={
+            behavior?.totalTags != null && behavior.incidentReports != null
+              ? `${behavior.totalTags} tags ÷ ${behavior.incidentReports} incident reports`
+              : "Needs tags and an Incident total"
+          }
+          detail="One incident can carry more than one behavior tag."
+          icon={ChartColumn}
+          emphasis
+          loading={loading}
+        />
+      </section>
+      <BarChart
+        title={`Behavior Pareto, ${year}`}
+        description={`Behavior tag counts for ${year}, highest first, with the cumulative share of all tags. ${NOTES.behavior}`}
+        categories={pareto.categories}
+        series={pareto.series}
+        lines={pareto.lines}
+        rightAxisName="Cumulative %"
+        rightAxisPercent
+        labelRotate={30}
+        showValues
+        loading={loading}
+        emptyState={chart.emptyState}
+        height={380}
+        footer={behavior && <BehaviorTable year={year} behavior={behavior} />}
+      />
+    </div>
+  );
+}
+
+function BehaviorTable({ year, behavior }: { year: number; behavior: BehaviorAnalytics }) {
+  return (
+    <>
+      <DataTable caption={`Behavior Pareto, ${year}`}>
+        <thead>
+          <tr className="border-b">
+            {["Behavior", "Count", "% of behavior tags", "% of incident reports", "Cumulative % of tags"].map(
+              (heading) => (
+                <th key={heading} scope="col" className="py-1 pr-4 font-medium">
+                  {heading}
+                </th>
+              ),
+            )}
+          </tr>
+        </thead>
+        <tbody>
+          {behavior.categories.map((row) => (
+            <tr key={row.code} className="border-b border-border/50">
+              <th scope="row" className="py-1 pr-4 font-normal">
+                {row.name}
+              </th>
+              <td className="py-1 pr-4">{row.count.toLocaleString()}</td>
+              <td className="py-1 pr-4">{formatShare(row.shareOfTags)}</td>
+              <td className="py-1 pr-4">{formatShare(row.shareOfIncidentReports)}</td>
+              <td className="py-1 pr-4">{formatShare(row.cumulativeShareOfTags)}</td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr>
+            <th scope="row" className="py-1 pr-4 font-medium">
+              All tags
+            </th>
+            <td className="py-1 pr-4 font-medium">{formatCount(behavior.totalTags)}</td>
+            <td className="py-1 pr-4 font-medium">100.0%</td>
+            <td className="py-1 pr-4 font-medium">
+              {formatShare(behavior.behaviorsPerIncidentReport)} (tags per incident report; can exceed 100%)
+            </td>
+            <td className="py-1 pr-4" />
+          </tr>
+        </tfoot>
+      </DataTable>
+      {behavior.unreported.length > 0 && (
+        <p className="pt-1 text-xs text-muted-foreground">
+          Not reported for {year} (no entry, not zero): {behavior.unreported.join(", ")}.
+        </p>
+      )}
+    </>
   );
 }
 

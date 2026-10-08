@@ -1,0 +1,41 @@
+{
+  "source": "docs/2026 LCY EHS Dash Board.xlsx (SHA-256 0B94C09BEDF3C343D3250496780A2D3B66671B55741ABA0391FDE81BE8B51C10), sheet 'Behavior' ('PARETO Of Behaviors Involved in Accidents', A1:C31; categories A4:A27, counts B4:B27)",
+  "year": 2026,
+  "notes": [
+    "Load with: python -m app.safety.behavior.legacy_import check|plan|apply <this file>. Requires migration 0008. Not applied by any migration.",
+    "Year: the owner decided (2026-10-08) that all current-year Safety analytical data in the workbook is 2026 data, including Behavior. The sheet labels its denominator 'Total Number of Incident Reports 2025' (A30), but B30 is =Dash!O41, the 2026 Incident total (41). The counts are therefore stored as 2026; the '2025' label is kept here as a recorded source discrepancy.",
+    "Counts are annual category totals (typed values in B4:B27). The workbook has no monthly Behavior values; none are invented and the annual counts are not spread over months.",
+    "Blank source cells (B12, B13, B16:B27) are null and are not written; they stay unreported, not 0. The sheet's 0% in C12:C27 comes from formulas over those blanks and is not a source fact.",
+    "Behavior values are tags: one incident may carry several, so the total of 44 tags exceeds the 41 incidents and is not a reconciliation failure.",
+    "Not imported: B29 (=SUM(B4:B28), 44, recorded as expectedTotal), B30 (=Dash!O41, 41; the platform uses its stored Incident total as the denominator instead), B31 (=B29/B30) and the percentages C4:C29 (=Bn/B$30), all recalculated by the platform.",
+    "Display names keep the workbook labels except A20 'PPE Respiritory', shown as 'PPE Respiratory', and A24 'Pushing & Pulling ' (trailing space trimmed). sourceLabel keeps each label verbatim."
+  ],
+  "categories": [
+    { "category": "pre_post_job_inspection", "sourceLabel": "Pre & Post Job Inspection", "sourceCell": "Behavior!A4/B4", "value": 9 },
+    { "category": "communications_of_hazards", "sourceLabel": "Communications Of Hazards", "sourceCell": "Behavior!A5/B5", "value": 4 },
+    { "category": "eyes_on_path", "sourceLabel": "Eyes On Path", "sourceCell": "Behavior!A6/B6", "value": 12 },
+    { "category": "knowledge_of_task", "sourceLabel": "Knowledge of Task", "sourceCell": "Behavior!A7/B7", "value": 4 },
+    { "category": "line_of_fire", "sourceLabel": "Line Of Fire", "sourceCell": "Behavior!A8/B8", "value": 2 },
+    { "category": "pinch_points", "sourceLabel": "Pinch Points", "sourceCell": "Behavior!A9/B9", "value": 3 },
+    { "category": "energy_isolation", "sourceLabel": "Energy Isolation", "sourceCell": "Behavior!A10/B10", "value": 4 },
+    { "category": "get_assistance", "sourceLabel": "Get Assistance", "sourceCell": "Behavior!A11/B11", "value": 3 },
+    { "category": "housekeeping", "sourceLabel": "Housekeeping", "sourceCell": "Behavior!A12/B12", "value": null },
+    { "category": "walking_working_surfaces", "sourceLabel": "Walking & Working Surfaces", "sourceCell": "Behavior!A13/B13", "value": null },
+    { "category": "ppe_eye", "sourceLabel": "PPE Eye", "sourceCell": "Behavior!A14/B14", "value": 1 },
+    { "category": "ppe_hands", "sourceLabel": "PPE Hands", "sourceCell": "Behavior!A15/B15", "value": 2 },
+    { "category": "eyes_on_task", "sourceLabel": "Eyes On Task", "sourceCell": "Behavior!A16/B16", "value": null },
+    { "category": "hot_work", "sourceLabel": "Hot work", "sourceCell": "Behavior!A17/B17", "value": null },
+    { "category": "tool_equipment_selection", "sourceLabel": "Tool Equipment Selection", "sourceCell": "Behavior!A18/B18", "value": null },
+    { "category": "ascending_descending", "sourceLabel": "Ascending / Descending", "sourceCell": "Behavior!A19/B19", "value": null },
+    { "category": "ppe_respiratory", "sourceLabel": "PPE Respiritory", "sourceCell": "Behavior!A20/B20", "value": null },
+    { "category": "tool_use", "sourceLabel": "Tool Use", "sourceCell": "Behavior!A21/B21", "value": null },
+    { "category": "lifting_lowering", "sourceLabel": "Lifting & Lowering", "sourceCell": "Behavior!A22/B22", "value": null },
+    { "category": "twisting", "sourceLabel": "Twisting", "sourceCell": "Behavior!A23/B23", "value": null },
+    { "category": "pushing_pulling", "sourceLabel": "Pushing & Pulling ", "sourceCell": "Behavior!A24/B24", "value": null },
+    { "category": "ppe_body", "sourceLabel": "PPE Body", "sourceCell": "Behavior!A25/B25", "value": null },
+    { "category": "temp_extreme", "sourceLabel": "Temp Extreme", "sourceCell": "Behavior!A26/B26", "value": null },
+    { "category": "confined_space", "sourceLabel": "Confined Space", "sourceCell": "Behavior!A27/B27", "value": null }
+  ],
+  "expectedTotal": { "value": 44, "statedIn": "Behavior!B29 'Total Number of Behaviors' (=SUM(B4:B28))" },
+  "statedIncidentReports": { "value": 41, "statedIn": "Behavior!B30 'Total Number of Incident Reports 2025' (=Dash!O41; label year is a source discrepancy, the value is the 2026 Incident total)" }
+}

@@ -209,10 +209,69 @@ export type IncidentAnalyticsResponse = {
     injuryCause: MonthReconciliation[];
     bodyPart: MonthReconciliation[];
   };
-  /** No approved behavior source exists; always false with no data. */
-  behaviorAvailable: boolean;
-  behaviorData: AnalyticsBreakdown | null;
+  behavior: BehaviorAnalytics;
 };
+
+/** Shares are fractions (0.25 = 25%); null when the denominator is unreported. */
+export type BehaviorParetoRow = {
+  code: string;
+  name: string;
+  count: number;
+  shareOfTags: number | null;
+  shareOfIncidentReports: number | null;
+  cumulativeShareOfTags: number | null;
+};
+
+/**
+ * Annual Behavior tags for the whole year (not limited by `throughMonth`). One
+ * incident may carry several tags, so the tags may exceed the incident reports
+ * and the shares of incident reports may sum above 100%.
+ */
+export type BehaviorAnalytics = {
+  year: number;
+  available: boolean;
+  /** Reported categories, highest count first; display order breaks ties. */
+  categories: BehaviorParetoRow[];
+  /** Names of categories with no stored count, in display order. */
+  unreported: string[];
+  totalTags: number | null;
+  /** The stored Incident total for the whole year. */
+  incidentReports: number | null;
+  incidentReportsMonthsReported: number;
+  behaviorsPerIncidentReport: number | null;
+};
+
+export type BehaviorCountRow = { id: number; code: string; name: string; value: number | null };
+
+export type BehaviorCountsResponse = {
+  year: number;
+  canEdit: boolean;
+  /** Every active category in display order; null means unreported, 0 an explicit zero. */
+  categories: BehaviorCountRow[];
+  total: number | null;
+  yearsWithData: number[];
+};
+
+export type BehaviorChange = { categoryId: number; value: number | null; previousValue: number | null };
+
+export type SaveBehaviorCountsResponse = { changedCategories: number; counts: BehaviorCountsResponse };
+
+export type BehaviorConflict = { categoryId: number; currentValue: number | null };
+
+const BEHAVIOR = "/api/v1/safety/incidents/behavior";
+
+export const behaviorCountKeys = {
+  all: ["safety", "incidents", "behavior"] as const,
+  year: (year: number) => [...behaviorCountKeys.all, year] as const,
+};
+
+export function fetchBehaviorCounts(year: number, signal?: AbortSignal) {
+  return apiGet<BehaviorCountsResponse>(`${BEHAVIOR}?year=${year}`, { signal });
+}
+
+export function saveBehaviorCounts(year: number, changes: BehaviorChange[]) {
+  return apiSend<SaveBehaviorCountsResponse>("PATCH", BEHAVIOR, { year, changes });
+}
 
 export const incidentAnalyticsKeys = {
   all: ["safety", "incidents", "analytics"] as const,
