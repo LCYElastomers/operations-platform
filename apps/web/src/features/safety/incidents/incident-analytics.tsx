@@ -1,6 +1,15 @@
 "use client";
 
-import { AlertTriangle, ChartColumn, Droplet, OctagonAlert, Siren, TriangleAlert } from "lucide-react";
+import {
+  AlertTriangle,
+  ChartColumn,
+  Droplet,
+  Forklift,
+  OctagonAlert,
+  Siren,
+  TriangleAlert,
+  Wrench,
+} from "lucide-react";
 
 import { BarChart } from "@/components/common/bar-chart";
 import { EmptyState } from "@/components/common/empty-state";
@@ -15,6 +24,7 @@ import {
   bars,
   classificationChart,
   COLORS,
+  combinedKpiCaption,
   findKpi,
   formatCount,
   incompleteSeries,
@@ -45,6 +55,8 @@ const KPI_ICONS: Record<AnalyticsKpi["key"], React.ComponentType<{ className?: s
   near_misses: TriangleAlert,
   lopc: Droplet,
   psif: OctagonAlert,
+  pit: Forklift,
+  combined_damage: Wrench,
 };
 const KPI_KEYS = Object.keys(KPI_ICONS) as AnalyticsKpi["key"][];
 
@@ -76,7 +88,7 @@ export function IncidentAnalytics({ title, description, siteToday }: IncidentAna
   const shownThrough = data?.throughMonth ?? null;
   const period = shownThrough === null ? String(year) : periodLabel(year, shownThrough);
   const months = monthLabels(shownThrough);
-  const nothingReported = data !== undefined && data.kpis.every((kpi) => kpi.monthsReported === 0);
+  const nothingReported = data !== undefined && data.kpis.every((kpi) => kpi.value === null);
 
   const accessDenied =
     analytics.error instanceof ApiError && (analytics.error.status === 401 || analytics.error.status === 403);
@@ -162,15 +174,16 @@ export function IncidentAnalytics({ title, description, siteToday }: IncidentAna
         </p>
       )}
 
-      <section aria-label="Year to date" className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section aria-label="Year to date" className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {KPI_KEYS.map((key) => {
           const kpi = findKpi(data, key);
+          const caption = key === "combined_damage" ? combinedKpiCaption : kpiCaption;
           return (
             <MetricCard
               key={key}
               label={KPI_LABELS[key]}
               value={kpi?.value ?? null}
-              caption={analytics.isError ? "Unavailable" : kpi ? kpiCaption(kpi, year) : undefined}
+              caption={analytics.isError ? "Unavailable" : kpi ? caption(kpi, year) : undefined}
               icon={KPI_ICONS[key]}
               emphasis
               loading={loading}

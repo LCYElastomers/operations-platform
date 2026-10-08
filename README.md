@@ -850,9 +850,11 @@ permission the page shows "not available to you" (the API answers `403`).
   that has started in Baytown (`America/Chicago`; 12 for a past year). A
   `through` month that has not started is refused (`422 month_not_started`);
   a future year without `through` returns no months.
-- Response: `year`, `throughMonth`, `latestMonth`, `availableYears`, four
-  `kpis` (`incidents`, `near_misses`, `lopc`, `psif`: `value`,
-  `monthsReported`, `throughMonth`, `complete`), and series for Incidents,
+- Response: `year`, `throughMonth`, `latestMonth`, `availableYears`, six
+  `kpis` (`incidents`, `near_misses`, `lopc`, `psif`, `pit`,
+  `combined_damage`: `value`, `monthsReported`, `throughMonth`, `complete`,
+  and `parts`, the Property Damage and Equipment Damage components of
+  `combined_damage`, empty for the others), and series for Incidents,
   Near Misses, LOPC, PSIF, PIT, Property Damage, Equipment Damage, combined
   damage, and each classification. A series has one value per month
   January..through, `total`, `monthsReported`, `unreportedMonths`, `complete`.
@@ -881,6 +883,10 @@ Definitions:
   not a count of distinct events. A combined month is null only when both
   parts are unreported, and reported only when both are. The stale
   `property_equipment_damage` section is not read by Analytics.
+- **PIT Incidents YTD** and **Property & Equipment Damage YTD** cards use the
+  same series as the charts. The damage card shows its composition (e.g.
+  "6 property · 8 equipment"); when either part has unreported months its
+  total adds the reported months and is labelled partial, never complete.
 - **PSIF** is shown as recorded. The application does not define PSIF, and
   shows no PSIF frequency, share, ratio, severity or rating; it is not
   merged with the Near Miss Potential "SIF".

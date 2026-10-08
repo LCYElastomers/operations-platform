@@ -78,12 +78,22 @@ export type AnalyticsSeries = {
   complete: boolean;
 };
 
-export type AnalyticsKpi = {
-  key: "incidents" | "near_misses" | "lopc" | "psif";
+export type AnalyticsKpiPart = {
+  code: string;
+  name: string;
   value: number | null;
+  complete: boolean;
+};
+
+export type AnalyticsKpi = {
+  key: "incidents" | "near_misses" | "lopc" | "psif" | "pit" | "combined_damage";
+  value: number | null;
+  /** For a combined KPI, the months every part reported. */
   monthsReported: number;
   throughMonth: number | null;
   complete: boolean;
+  /** The components of a combined KPI (combined_damage); empty otherwise. */
+  parts: AnalyticsKpiPart[];
 };
 
 /**

@@ -265,6 +265,10 @@ def test_analytics_read_the_seeded_definitions_and_write_nothing(
         "near_misses": None,
         "lopc": 1,
         "psif": None,
+        # pit_accident only; the pit section's 1 is not added. Property 1 +
+        # equipment 2; the stale combined section's 1 is not read.
+        "pit": 1,
+        "combined_damage": 3,
     }
     assert (result.pit.code, result.pit.total) == ("pit_accident", 1)
     assert result.combined_damage.values == [3, None]

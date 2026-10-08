@@ -129,7 +129,14 @@ def test_approved_2026_totals_through_september() -> None:
     result = load(ReadOnlyRepository(approved_2026()))
 
     assert result.through_month == 9
-    assert kpis(result) == {"incidents": 41, "near_misses": 31, "lopc": 14, "psif": 5}
+    assert kpis(result) == {
+        "incidents": 41,
+        "near_misses": 31,
+        "lopc": 14,
+        "psif": 5,
+        "pit": 9,
+        "combined_damage": 14,
+    }
     assert result.property_damage.total == 6
     assert result.equipment_damage.total == 8
     assert result.combined_damage.total == 14
@@ -219,6 +226,137 @@ def test_pit_is_the_pit_accident_classification_and_the_pit_section_is_not_read(
     )
     assert analytics.PIT == ("incident_classification", "pit_accident")
     assert "pit" not in {row.section for row in result.classifications}
+    assert kpis(result)["pit"] == 2
+
+
+def test_approved_pit_kpi_is_9_and_not_doubled_by_the_pit_section() -> None:
+    stored = approved_2026()
+    pit_section = sum(v for (c, _, m), v in stored.items() if c == IDS[("pit", "pit")] and m <= 9)
+
+    result = load(ReadOnlyRepository(stored))
+
+    pit = next(kpi for kpi in result.kpis if kpi.key == "pit")
+    # January, March and August are blank in the approved values.
+    assert (pit.value, pit.months_reported, pit.complete, pit.parts) == (9, 6, False, [])
+    # Adding the duplicate pit section would give 9 + its own total.
+    assert pit_section > 0
+    assert pit.value != 9 + pit_section
+
+
+def damage_kpi(result: IncidentAnalyticsResponse) -> Any:
+    return next(kpi for kpi in result.kpis if kpi.key == "combined_damage")
+
+
+def test_approved_damage_kpi_is_6_property_plus_8_equipment() -> None:
+    damage = damage_kpi(load(ReadOnlyRepository(approved_2026())))
+
+    # Both classifications have blank months in the approved values, so the
+    # total adds the reported months and is not presented as complete: only
+    # January has both parts reported.
+    assert damage.model_dump() == {
+        "key": "combined_damage",
+        "value": 14,
+        "months_reported": 1,
+        "through_month": 9,
+        "complete": False,
+        "parts": [
+            {
+                "code": "property_damage",
+                "name": "Property Damage",
+                "value": 6,
+                "complete": False,
+            },
+            {
+                "code": "equipment_damage_failure",
+                "name": "Equipment Damage / Failure",
+                "value": 8,
+                "complete": False,
+            },
+        ],
+    }
+
+
+def test_damage_kpi_ignores_the_stale_property_equipment_damage_section() -> None:
+    repository = ReadOnlyRepository(
+        cells(
+            2026,
+            incident_classification__property_damage={1: 1},
+            incident_classification__equipment_damage_failure={1: 2},
+            property_equipment_damage__property_equipment_damage={1: 50},
+        )
+    )
+
+    damage = damage_kpi(load(repository, through=1))
+
+    assert (damage.value, damage.complete) == (3, True)
+    assert [part.code for part in damage.parts] == ["property_damage", "equipment_damage_failure"]
+
+
+def test_damage_kpi_is_partial_when_a_component_has_unreported_months() -> None:
+    repository = ReadOnlyRepository(
+        cells(
+            2026,
+            incident_classification__property_damage={1: 1, 2: 2},
+            incident_classification__equipment_damage_failure={1: 0},
+        )
+    )
+
+    damage = damage_kpi(load(repository, through=2))
+
+    # The reported months are added but the total is never presented as complete.
+    assert (damage.value, damage.months_reported, damage.complete) == (3, 1, False)
+    assert [(p.value, p.complete) for p in damage.parts] == [(3, True), (0, False)]
+
+
+def test_damage_kpi_with_one_component_never_reported() -> None:
+    repository = ReadOnlyRepository(
+        cells(2026, incident_classification__property_damage={1: 4, 2: 0})
+    )
+
+    damage = damage_kpi(load(repository, through=2))
+
+    assert (damage.value, damage.months_reported, damage.complete) == (4, 0, False)
+    assert [(p.value, p.complete) for p in damage.parts] == [(4, True), (None, False)]
+
+
+def test_damage_kpi_reported_zeros_are_zero() -> None:
+    repository = ReadOnlyRepository(
+        cells(
+            2026,
+            incident_classification__property_damage={1: 0},
+            incident_classification__equipment_damage_failure={1: 0},
+        )
+    )
+
+    damage = damage_kpi(load(repository, through=1))
+
+    assert (damage.value, damage.complete) == (0, True)
+
+
+@pytest.mark.parametrize(
+    ("through", "pit", "damage", "property_damage", "equipment_damage"),
+    [
+        # January PIT is blank in the approved values: not reported, not 0.
+        (1, None, 1, 1, 0),
+        (5, 5, 9, 4, 5),
+        (9, 9, 14, 6, 8),
+    ],
+)
+def test_pit_and_damage_kpis_follow_the_through_month(
+    through: int,
+    pit: int | None,
+    damage: int,
+    property_damage: int,
+    equipment_damage: int,
+) -> None:
+    result = load(ReadOnlyRepository(approved_2026()), through=through)
+
+    assert kpis(result)["pit"] == pit
+    assert kpis(result)["combined_damage"] == damage
+    assert [part.value for part in damage_kpi(result).parts] == [
+        property_damage,
+        equipment_damage,
+    ]
 
 
 def test_combined_damage_is_property_plus_equipment_damage() -> None:
@@ -256,7 +394,14 @@ def test_unreported_months_are_null_and_reported_zeros_are_zero() -> None:
     assert result.psif.months_reported == 1
     assert result.incidents.values == [None, None, None]
     assert result.incidents.total is None
-    assert kpis(result) == {"incidents": None, "near_misses": None, "lopc": None, "psif": 0}
+    assert kpis(result) == {
+        "incidents": None,
+        "near_misses": None,
+        "lopc": None,
+        "psif": 0,
+        "pit": None,
+        "combined_damage": None,
+    }
 
 
 def test_partial_year_completeness() -> None:
@@ -269,6 +414,7 @@ def test_partial_year_completeness() -> None:
         "months_reported": 9,
         "through_month": 9,
         "complete": True,
+        "parts": [],
     }
     assert (by_key["near_misses"].months_reported, by_key["near_misses"].complete) == (7, False)
     assert result.near_misses.unreported_months == [2, 3]
@@ -296,6 +442,11 @@ def test_an_empty_year_is_null_and_never_borrows_2026() -> None:
     assert result.available_years == [2027, 2026]
     assert all(kpi.value is None and kpi.months_reported == 0 for kpi in result.kpis)
     assert all(kpi.complete is False for kpi in result.kpis)
+    assert [kpi.key for kpi in result.kpis][-2:] == ["pit", "combined_damage"]
+    assert [(p.value, p.complete) for p in damage_kpi(result).parts] == [
+        (None, False),
+        (None, False),
+    ]
     every = [
         result.incidents,
         result.near_misses,
@@ -427,7 +578,23 @@ def test_get_returns_typed_analytics(viewer: TestClient) -> None:
         "monthsReported": 9,
         "throughMonth": 9,
         "complete": True,
+        "parts": [],
     }
+    assert [kpi["key"] for kpi in data["kpis"]] == [
+        "incidents",
+        "near_misses",
+        "lopc",
+        "psif",
+        "pit",
+        "combined_damage",
+    ]
+    assert data["kpis"][4]["value"] == 9
+    damage = data["kpis"][5]
+    assert (damage["value"], damage["monthsReported"], damage["complete"]) == (14, 1, False)
+    assert [(p["code"], p["value"]) for p in damage["parts"]] == [
+        ("property_damage", 6),
+        ("equipment_damage_failure", 8),
+    ]
     assert data["nearMisses"]["values"][1] is None
     assert data["pit"]["total"] == 9
 

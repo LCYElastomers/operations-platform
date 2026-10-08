@@ -8,6 +8,14 @@ export const KPI_LABELS: Record<AnalyticsKpi["key"], string> = {
   near_misses: "Near Misses YTD",
   lopc: "LOPC YTD",
   psif: "PSIF YTD",
+  pit: "PIT Incidents YTD",
+  combined_damage: "Property & Equipment Damage YTD",
+};
+
+/** Short names for the parts of the combined damage KPI, e.g. "6 property". */
+const DAMAGE_PARTS: Record<string, string> = {
+  property_damage: "property",
+  equipment_damage_failure: "equipment",
 };
 
 export const PIT_TITLE = "Powered Industrial Vehicle (PIT) Incidents";
@@ -71,6 +79,28 @@ export function kpiCaption(kpi: AnalyticsKpi, year: number): string {
     return kpi.throughMonth === 1 ? `${period} · reported` : `${period} · all ${kpi.throughMonth} months reported`;
   }
   return `${period} · ${kpi.monthsReported} of ${kpi.throughMonth} months reported`;
+}
+
+/**
+ * e.g. "6 property · 8 equipment · Jan–Sep 2026, all 9 months reported". A
+ * combined month counts as reported only when every part is, so a total built
+ * from partly reported parts is labelled partial.
+ */
+export function combinedKpiCaption(kpi: AnalyticsKpi, year: number): string {
+  if (kpi.throughMonth === null || kpi.value === null) return kpiCaption(kpi, year);
+  const composition = kpi.parts
+    .map((part) => {
+      const name = DAMAGE_PARTS[part.code] ?? part.name;
+      return part.value === null ? `${name} not reported` : `${part.value.toLocaleString()} ${name}`;
+    })
+    .join(" · ");
+  const period = periodLabel(year, kpi.throughMonth);
+  const completeness = kpi.complete
+    ? kpi.throughMonth === 1
+      ? "reported"
+      : `all ${kpi.throughMonth} months reported`
+    : `partial, both reported in ${kpi.monthsReported} of ${kpi.throughMonth} months`;
+  return `${composition} · ${period}, ${completeness}`;
 }
 
 export function findKpi(data: IncidentAnalyticsResponse | undefined, key: AnalyticsKpi["key"]) {

@@ -5,8 +5,10 @@ import { buildBarOption } from "@/components/common/bar-chart";
 import {
   bars,
   classificationChart,
+  combinedKpiCaption,
   formatCount,
   incompleteSeries,
+  KPI_LABELS,
   kpiCaption,
   latestStartedMonth,
   monthLabels,
@@ -34,7 +36,19 @@ function series(values: (number | null)[], overrides: Partial<AnalyticsSeries> =
 }
 
 function kpi(overrides: Partial<AnalyticsKpi>): AnalyticsKpi {
-  return { key: "incidents", value: 41, monthsReported: 9, throughMonth: 9, complete: true, ...overrides };
+  return { key: "incidents", value: 41, monthsReported: 9, throughMonth: 9, complete: true, parts: [], ...overrides };
+}
+
+function damage(property: number | null, equipment: number | null, overrides: Partial<AnalyticsKpi> = {}) {
+  return kpi({
+    key: "combined_damage",
+    value: property === null && equipment === null ? null : (property ?? 0) + (equipment ?? 0),
+    parts: [
+      { code: "property_damage", name: "Property Damage", value: property, complete: true },
+      { code: "equipment_damage_failure", name: "Equipment Damage / Failure", value: equipment, complete: true },
+    ],
+    ...overrides,
+  });
 }
 
 describe("site calendar months", () => {
@@ -66,6 +80,36 @@ describe("KPI captions", () => {
     expect(kpiCaption(kpi({ value: null, monthsReported: 0, throughMonth: null, complete: false }), 2028)).toBe(
       "2028 has not started",
     );
+  });
+
+  it("composes the damage caption from its parts and never calls a partial total complete", () => {
+    expect(combinedKpiCaption(damage(6, 8), 2026)).toBe("6 property · 8 equipment · Jan–Sep 2026, all 9 months reported");
+    expect(combinedKpiCaption(damage(6, 8, { monthsReported: 1, complete: false }), 2026)).toBe(
+      "6 property · 8 equipment · Jan–Sep 2026, partial, both reported in 1 of 9 months",
+    );
+    expect(combinedKpiCaption(damage(4, null, { monthsReported: 0, complete: false }), 2026)).toBe(
+      "4 property · equipment not reported · Jan–Sep 2026, partial, both reported in 0 of 9 months",
+    );
+    expect(combinedKpiCaption(damage(0, 0, { throughMonth: 1, monthsReported: 1 }), 2026)).toBe(
+      "0 property · 0 equipment · Jan 2026, reported",
+    );
+    expect(
+      combinedKpiCaption(damage(null, null, { monthsReported: 0, throughMonth: 1, complete: false }), 2027),
+    ).toBe("No months reported, Jan 2027");
+    expect(
+      combinedKpiCaption(damage(null, null, { monthsReported: 0, throughMonth: null, complete: false }), 2028),
+    ).toBe("2028 has not started");
+  });
+
+  it("labels the six YTD cards", () => {
+    expect(Object.values(KPI_LABELS)).toEqual([
+      "Incidents YTD",
+      "Near Misses YTD",
+      "LOPC YTD",
+      "PSIF YTD",
+      "PIT Incidents YTD",
+      "Property & Equipment Damage YTD",
+    ]);
   });
 });
 

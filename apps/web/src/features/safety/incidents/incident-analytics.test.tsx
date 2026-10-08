@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BarSeries } from "@/components/common/bar-chart";
 
 import { NOTES } from "./analytics-data";
-import type { AnalyticsSeries, IncidentAnalyticsResponse } from "./api";
+import type { AnalyticsKpi, AnalyticsSeries, IncidentAnalyticsResponse } from "./api";
 import { IncidentAnalytics } from "./incident-analytics";
 import { siteIsoDate } from "../site-calendar";
 
@@ -95,12 +95,24 @@ function analytics(
     const e = equipmentDamage.values[i];
     return p === null && e === null ? null : (p ?? 0) + (e ?? 0);
   });
-  const kpi = (key: "incidents" | "near_misses" | "lopc" | "psif", s: AnalyticsSeries) => ({
+  // A combined month is reported only when both parts are.
+  const bothUnreported = [...new Set([...propertyDamage.unreportedMonths, ...equipmentDamage.unreportedMonths])].sort(
+    (a, b) => a - b,
+  );
+  const combinedDamage = series(combined, {
+    code: "property_damage+equipment_damage_failure",
+    name: "Combined Damage",
+    unreportedMonths: bothUnreported,
+    monthsReported: months - bothUnreported.length,
+    complete: months > 0 && bothUnreported.length === 0,
+  });
+  const kpi = (key: AnalyticsKpi["key"], s: AnalyticsSeries, parts: AnalyticsSeries[] = []): AnalyticsKpi => ({
     key,
     value: s.total,
     monthsReported: s.monthsReported,
     throughMonth: through,
     complete: s.complete,
+    parts: parts.map((p) => ({ code: p.code, name: p.name, value: p.total, complete: p.complete })),
   });
   return {
     year,
@@ -112,6 +124,8 @@ function analytics(
       kpi("near_misses", nearMisses),
       kpi("lopc", lopc),
       kpi("psif", psif),
+      kpi("pit", pit),
+      kpi("combined_damage", combinedDamage, [propertyDamage, equipmentDamage]),
     ],
     incidents,
     nearMisses,
@@ -127,7 +141,7 @@ function analytics(
     pit,
     propertyDamage,
     equipmentDamage,
-    combinedDamage: series(combined, { code: "property_damage+equipment_damage_failure", name: "Combined Damage" }),
+    combinedDamage,
   };
 }
 
@@ -202,6 +216,10 @@ async function choose(control: HTMLSelectElement, value: number) {
 
 const text = () => container.textContent ?? "";
 const chart = (title: string) => container.querySelector(`[data-chart="${title}"]`)!;
+const kpiSection = () => container.querySelector('section[aria-label="Year to date"]')!;
+const cardLabels = () => [...kpiSection().children].map((element) => element.querySelector("p")?.textContent);
+const card = (label: string) =>
+  [...kpiSection().children].find((element) => element.querySelector("p")?.textContent === label)!.textContent;
 
 beforeEach(() => {
   requested = [];
@@ -312,6 +330,58 @@ describe("Incident & Near Miss Analytics", () => {
     expect(damage.querySelector("ol")!.textContent).toBe("Jan: 1/0Feb: 2/unreported");
   });
 
+  it("shows six YTD cards, with PIT 9 and damage 14 as 6 property · 8 equipment", async () => {
+    // Test fixture: the approved 2026 monthly values, January–September.
+    stubApi(() =>
+      ok(
+        analytics(2026, 9, {
+          incidents: [5, 6, 5, 6, 3, 4, 5, 3, 4],
+          pit: [null, 1, null, 3, 1, 2, 1, null, 1],
+          property: [1, 1, null, null, 2, null, 2, null, null],
+          equipment: [0, null, 1, 4, null, 2, null, null, 1],
+        }),
+      ),
+    );
+    await render();
+
+    expect(cardLabels()).toEqual([
+      "Incidents YTD",
+      "Near Misses YTD",
+      "LOPC YTD",
+      "PSIF YTD",
+      "PIT Incidents YTD",
+      "Property & Equipment Damage YTD",
+    ]);
+    expect(card("PIT Incidents YTD")).toBe("PIT Incidents YTD9Jan–Sep 2026 · 6 of 9 months reported");
+    expect(card("Property & Equipment Damage YTD")).toBe(
+      "Property & Equipment Damage YTD146 property · 8 equipment · Jan–Sep 2026, partial, both reported in 1 of 9 months",
+    );
+    // The monthly charts stay.
+    expect(chart("Powered Industrial Vehicle (PIT) Incidents")).not.toBeNull();
+    expect(chart("Property vs Equipment Damage by Month")).not.toBeNull();
+  });
+
+  it("shows a complete damage total, a reported zero and an unreported component", async () => {
+    stubApi(() => ok(analytics(2026, 2, { property: [1, 2], equipment: [0, 0], pit: [0, 0] })));
+    await render("2026-02-10T15:00:00Z");
+
+    expect(card("Property & Equipment Damage YTD")).toBe(
+      "Property & Equipment Damage YTD33 property · 0 equipment · Jan–Feb 2026, all 2 months reported",
+    );
+    expect(card("PIT Incidents YTD")).toBe("PIT Incidents YTD0Jan–Feb 2026 · all 2 months reported");
+
+    await act(async () => root?.unmount());
+    root = null;
+    queryClient.clear();
+    stubApi(() => ok(analytics(2026, 2, { property: [4, 0] })));
+    await render("2026-02-10T15:00:00Z");
+
+    expect(card("Property & Equipment Damage YTD")).toBe(
+      "Property & Equipment Damage YTD44 property · equipment not reported · Jan–Feb 2026, partial, both reported in 0 of 2 months",
+    );
+    expect(card("PIT Incidents YTD")).toBe("PIT Incidents YTD—No dataNo months reported, Jan–Feb 2026");
+  });
+
   it("titles the PIT chart and gives every chart a data table alternative", async () => {
     stubApi(() => ok(analytics(2026, 1, { pit: [1] })));
     await render("2026-01-10T15:00:00Z");
@@ -329,6 +399,10 @@ describe("Incident & Near Miss Analytics", () => {
     expect(select("Reporting year").value).toBe("2027");
     expect(text()).toContain("No months have been reported for Jan 2027.");
     expect(text()).toContain("No months reported, Jan 2027");
+    expect(card("PIT Incidents YTD")).toBe("PIT Incidents YTD—No dataNo months reported, Jan 2027");
+    expect(card("Property & Equipment Damage YTD")).toBe(
+      "Property & Equipment Damage YTD—No dataNo months reported, Jan 2027",
+    );
     expect(chart("Incident Classification").textContent).toContain("Nothing has been reported for Jan 2027.");
     expect(text()).not.toContain("2026 ·");
     expect(requested.map((url) => url.searchParams.get("year"))).toEqual(["2027"]);

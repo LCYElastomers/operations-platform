@@ -28,6 +28,7 @@ from app.safety.repository import SafetyMetricsRepository, SectionDefinition, St
 from app.safety.schemas import (
     AnalyticsKpiKey,
     AnalyticsKpiOut,
+    AnalyticsKpiPartOut,
     AnalyticsSeriesOut,
     IncidentAnalyticsResponse,
 )
@@ -107,7 +108,10 @@ def _combined(name: str, *parts: AnalyticsSeriesOut) -> AnalyticsSeriesOut:
 
 
 def _kpi(
-    key: AnalyticsKpiKey, series: AnalyticsSeriesOut, through_month: int | None
+    key: AnalyticsKpiKey,
+    series: AnalyticsSeriesOut,
+    through_month: int | None,
+    parts: Sequence[AnalyticsSeriesOut] = (),
 ) -> AnalyticsKpiOut:
     return AnalyticsKpiOut(
         key=key,
@@ -115,6 +119,12 @@ def _kpi(
         months_reported=series.months_reported,
         through_month=through_month,
         complete=series.complete,
+        parts=[
+            AnalyticsKpiPartOut(
+                code=part.code, name=part.name, value=part.total, complete=part.complete
+            )
+            for part in parts
+        ],
     )
 
 
@@ -148,11 +158,13 @@ def build_analytics(
     ]
     property_damage = series(PROPERTY_DAMAGE)
     equipment_damage = series(EQUIPMENT_DAMAGE)
-    incidents, near_misses, lopc, psif = (
+    combined_damage = _combined("Combined Damage", property_damage, equipment_damage)
+    incidents, near_misses, lopc, psif, pit = (
         series(INCIDENTS),
         series(NEAR_MISSES),
         series(LOPC),
         series(PSIF),
+        series(PIT),
     )
     return IncidentAnalyticsResponse(
         year=year,
@@ -164,16 +176,23 @@ def build_analytics(
             _kpi("near_misses", near_misses, through_month),
             _kpi("lopc", lopc, through_month),
             _kpi("psif", psif, through_month),
+            _kpi("pit", pit, through_month),
+            _kpi(
+                "combined_damage",
+                combined_damage,
+                through_month,
+                parts=(property_damage, equipment_damage),
+            ),
         ],
         incidents=incidents,
         near_misses=near_misses,
         classifications=[series(key) for key in classification_keys] + [psif],
         lopc=lopc,
         psif=psif,
-        pit=series(PIT),
+        pit=pit,
         property_damage=property_damage,
         equipment_damage=equipment_damage,
-        combined_damage=_combined("Combined Damage", property_damage, equipment_damage),
+        combined_damage=combined_damage,
     )
 
 

@@ -98,15 +98,29 @@ class AnalyticsSeriesOut(CamelModel):
     complete: bool = Field(description="Every month January..through month is reported.")
 
 
-AnalyticsKpiKey = Literal["incidents", "near_misses", "lopc", "psif"]
+AnalyticsKpiKey = Literal["incidents", "near_misses", "lopc", "psif", "pit", "combined_damage"]
+
+
+class AnalyticsKpiPartOut(CamelModel):
+    """One component of a combined KPI."""
+
+    code: str
+    name: str
+    value: int | None
+    complete: bool
 
 
 class AnalyticsKpiOut(CamelModel):
     key: AnalyticsKpiKey
     value: int | None
-    months_reported: int
+    months_reported: int = Field(
+        description="Months January..through month reported; for a combined KPI, months "
+        "every part reported."
+    )
     through_month: int | None
     complete: bool
+    # The components of a combined KPI (combined_damage); empty otherwise.
+    parts: list[AnalyticsKpiPartOut] = Field(default_factory=list)
 
 
 class IncidentAnalyticsResponse(CamelModel):
