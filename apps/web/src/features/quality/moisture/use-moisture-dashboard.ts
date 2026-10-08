@@ -8,8 +8,8 @@ import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import {
   EMPTY_FILTERS,
   fetchMoistureFilters,
+  fetchMoistureLots,
   fetchMoistureTrends,
-  fetchRecentMoisture,
   isDateRangeInvalid,
   moistureKeys,
   toQueryString,
@@ -32,9 +32,9 @@ export function useMoistureDashboard() {
     staleTime: 5 * 60_000,
   });
 
-  const recent = useQuery({
-    queryKey: moistureKeys.recent(query),
-    queryFn: ({ signal }) => fetchRecentMoisture(query, signal),
+  const lots = useQuery({
+    queryKey: moistureKeys.lots(query),
+    queryFn: ({ signal }) => fetchMoistureLots(query, signal),
     placeholderData: keepPreviousData,
     enabled: !invalidDateRange,
   });
@@ -53,7 +53,7 @@ export function useMoistureDashboard() {
 
   const retry = () => {
     if (filterOptions.isError) void filterOptions.refetch();
-    void recent.refetch();
+    void lots.refetch();
     void trends.refetch();
   };
 
@@ -63,10 +63,10 @@ export function useMoistureDashboard() {
     resetFilters,
     invalidDateRange,
     filterOptions,
-    recent,
+    lots,
     trends,
     retry,
-    dataSource: recent.data?.dataSource ?? trends.data?.dataSource ?? filterOptions.data?.dataSource,
-    isUpdating: (recent.isFetching || trends.isFetching) && !recent.isPending && !trends.isPending,
+    dataSource: lots.data?.dataSource ?? trends.data?.dataSource ?? filterOptions.data?.dataSource,
+    isUpdating: (lots.isFetching || trends.isFetching) && !lots.isPending && !trends.isPending,
   };
 }

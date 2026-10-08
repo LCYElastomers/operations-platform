@@ -902,6 +902,99 @@ def test_site_calendar_is_baytown_not_utc(
     assert response.json()["detail"]["error"] == "month_not_ended"
 
 
+# Calendar-year rollover (Baytown is UTC-6 in winter)
+
+LAST_SECOND_OF_2026 = dt.datetime(2027, 1, 1, 5, 59, 59, tzinfo=dt.UTC)
+BAYTOWN_NEW_YEAR = dt.datetime(2027, 1, 1, 6, 0, tzinfo=dt.UTC)
+LAST_SECOND_OF_JANUARY_2027 = dt.datetime(2027, 2, 1, 5, 59, 59, tzinfo=dt.UTC)
+BAYTOWN_FEBRUARY_2027 = dt.datetime(2027, 2, 1, 6, 0, tzinfo=dt.UTC)
+
+
+def at(monkeypatch: pytest.MonkeyPatch, instant: dt.datetime) -> None:
+    monkeypatch.setattr(performance_router, "_now", lambda: instant)
+
+
+def test_december_2026_closes_at_baytown_midnight(
+    editor: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    at(monkeypatch, LAST_SECOND_OF_2026)
+    assert save(editor, 2026, 12, monthClosed=True).json()["detail"]["error"] == "month_not_ended"
+
+    at(monkeypatch, BAYTOWN_NEW_YEAR)
+    assert save(editor, 2026, 12, monthClosed=True).status_code == 200
+
+
+def test_january_2027_opens_at_baytown_midnight_and_closes_on_1_february(
+    editor: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    at(monkeypatch, LAST_SECOND_OF_2026)
+    assert save(editor, 2027, 1).json()["detail"]["error"] == "month_not_started"
+
+    at(monkeypatch, BAYTOWN_NEW_YEAR)
+    assert save(editor, 2027, 1).status_code == 200
+    months = editor.get(URL + "/months", params={"year": 2027}).json()["months"]
+    assert (months[0]["canEnter"], months[0]["canClose"]) == (True, False)
+    assert (months[1]["canEnter"], months[1]["canClose"]) == (False, False)
+
+    at(monkeypatch, LAST_SECOND_OF_JANUARY_2027)
+    response = save(editor, 2027, 1, monthClosed=True)
+    assert response.json()["detail"]["error"] == "month_not_ended"
+
+    at(monkeypatch, BAYTOWN_FEBRUARY_2027)
+    updated_at = editor.get(URL + "/months", params={"year": 2027}).json()["months"][0]
+    response = save(
+        editor, 2027, 1, monthClosed=True, expectedUpdatedAt=updated_at["hours"]["updatedAt"]
+    )
+    assert response.status_code == 200, response.text
+
+
+def test_rolling_window_for_january_2027_spans_february_2026() -> None:
+    assert calc.rolling_window((2027, 1)) == [(2026, m) for m in range(2, 13)] + [(2027, 1)]
+    assert calc.ytd_window((2027, 1)) == [(2027, 1)]
+
+
+def test_january_2027_12mra_uses_the_eligible_2026_months(
+    repository: InMemoryRepository, viewer: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for month in range(1, 13):
+        set_hours(repository, 2026, month, 1000)
+    set_hours(repository, 2027, 1, 1000)
+    # January 2026 falls outside the window ending January 2027.
+    for period in [(2026, 1), (2026, 6), (2027, 1)]:
+        repository.incidents.setdefault(period, {})["recordable_injury"] = 1
+    at(monkeypatch, BAYTOWN_FEBRUARY_2027)
+
+    data = dashboard(viewer, 2027)
+
+    assert data["throughMonth"] == 1
+    trir = kpi(data, "trir")
+    assert trir["ytd"]["rate"] == pytest.approx(1 * 200000 / 1000, rel=TOLERANCE)
+    assert trir["rolling"]["available"] is True
+    assert trir["rolling"]["ineligibleMonths"] == []
+    assert trir["rolling"]["events"] == 2
+    assert trir["rolling"]["rate"] == pytest.approx(2 * 200000 / 12000, rel=TOLERANCE)
+
+
+def test_empty_2027_has_no_ytd_kpi_and_copies_nothing_from_2026(
+    accepted: InMemoryRepository, editor: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    at(monkeypatch, BAYTOWN_NEW_YEAR)
+
+    data = dashboard(editor, 2027)
+    assert data["throughMonth"] is None
+    assert data["kpis"] == []
+    assert data["ytdHours"] is None
+    assert 2027 not in data["yearsWithData"]
+
+    view = editor.get(URL + "/months", params={"year": 2027}).json()
+    assert view["countSource"] == "incidents"
+    assert all(m["status"] == "not_reported" for m in view["months"])
+    assert all(m["hours"] is None for m in view["months"])
+    assert all(set(m["counts"].values()) == {None} for m in view["months"])
+    assert (view["months"][0]["canEnter"], view["months"][0]["canClose"]) == (True, False)
+    assert accepted.hour_rows.keys().isdisjoint({(2027, m) for m in range(1, 13)})
+
+
 @pytest.mark.parametrize(("year", "month"), [(2026, 0), (2026, 13), (1999, 1), (2101, 1)])
 def test_invalid_periods_are_rejected(editor: TestClient, year: int, month: int) -> None:
     assert save(editor, year, month).status_code == 422

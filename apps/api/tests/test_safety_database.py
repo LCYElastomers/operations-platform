@@ -9,12 +9,12 @@ from collections.abc import Iterator
 
 import pytest
 from postgres_support import requires_postgres
-from sqlalchemy import Engine, insert, inspect, select, text
+from sqlalchemy import Engine, func, insert, inspect, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.audit.models import AuditEvent
-from app.safety import service
+from app.safety import analytics, service
 from app.safety.models import MetricCategory, MetricSection, MonthlyMetricValue
 from app.safety.repository import DatabaseSafetyMetricsRepository
 from app.safety.schemas import CellChange
@@ -217,6 +217,60 @@ def test_save_round_trip_with_audit(session: Session, repository: NonCommittingR
         ("update", False, False),
         ("delete", False, True),
     ]
+
+
+def test_analytics_read_the_seeded_definitions_and_write_nothing(
+    session: Session, repository: NonCommittingRepository
+) -> None:
+    # A year no other data uses, so the test is independent of stored values.
+    year = 2099
+    assert not session.scalars(
+        select(MonthlyMetricValue).where(MonthlyMetricValue.reporting_year == year)
+    ).first()
+
+    def cell(section: str, code: str, month: int, value: int) -> CellChange:
+        return CellChange(
+            category_id=category_id(repository, section, code),
+            month=month,
+            value=value,
+            previous_value=None,
+        )
+
+    service.save_changes(
+        repository,
+        metric_set="incidents",
+        year=year,
+        changes=[
+            cell("incident_near_miss_totals", "incident", 1, 2),
+            cell("lopc", "lopc", 1, 1),
+            cell("incident_classification", "spill_release", 1, 1),
+            cell("incident_classification", "pit_accident", 1, 1),
+            cell("pit", "pit", 1, 1),
+            cell("incident_classification", "property_damage", 1, 1),
+            cell("incident_classification", "equipment_damage_failure", 1, 2),
+            cell("property_equipment_damage", "property_equipment_damage", 1, 1),
+        ],
+        actor_id="tester",
+        now=NOW,
+    )
+    audit_rows = session.scalar(select(func.count()).select_from(AuditEvent))
+    value_rows = session.scalar(select(func.count()).select_from(MonthlyMetricValue))
+
+    result = analytics.load_analytics(
+        repository, year=year, through_month=2, now=dt.datetime(2099, 3, 1, 18, tzinfo=dt.UTC)
+    )
+
+    assert {kpi.key: kpi.value for kpi in result.kpis} == {
+        "incidents": 2,
+        "near_misses": None,
+        "lopc": 1,
+        "psif": None,
+    }
+    assert (result.pit.code, result.pit.total) == ("pit_accident", 1)
+    assert result.combined_damage.values == [3, None]
+    assert [row.name for row in result.classifications][-1] == "PSIF"
+    assert session.scalar(select(func.count()).select_from(AuditEvent)) == audit_rows
+    assert session.scalar(select(func.count()).select_from(MonthlyMetricValue)) == value_rows
 
 
 def test_stale_previous_value_is_a_conflict(repository: NonCommittingRepository) -> None:

@@ -7,6 +7,10 @@ import { reportingYearOptions } from "./grid";
 type ReportingYearSelectProps = {
   year: number;
   onChange: (year: number) => void;
+  /** The Baytown year: always offered, even before it has any records. */
+  currentYear: number;
+  /** The module's earliest reporting year. */
+  firstYear: number;
   yearsWithData?: number[];
   disabled?: boolean;
 };
@@ -14,10 +18,12 @@ type ReportingYearSelectProps = {
 export function ReportingYearSelect({
   year,
   onChange,
+  currentYear,
+  firstYear,
   yearsWithData = [],
   disabled,
 }: ReportingYearSelectProps) {
-  const options = reportingYearOptions(new Date().getFullYear(), [...yearsWithData, year]);
+  const options = reportingYearOptions(currentYear, [...yearsWithData, year], firstYear);
 
   return (
     <FilterSelect

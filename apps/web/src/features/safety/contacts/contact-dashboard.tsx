@@ -2,7 +2,7 @@
 
 import { AlertTriangle, CalendarDays, Percent, UserRoundCheck, Users } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 
 import { BarChart } from "@/components/common/bar-chart";
 import { DataTable, type DataTableColumn } from "@/components/common/data-table";
@@ -15,19 +15,21 @@ import { TrendChart } from "@/components/common/trend-chart";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
 
-import { defaultReportingYear, MONTH_LABELS } from "../incidents/grid";
+import { MONTH_LABELS } from "../incidents/grid";
 import { ReportingYearSelect } from "../incidents/reporting-year-select";
 import { monthName } from "../observations/observation-data";
+import { yearOf } from "../site-calendar";
+import { useAutomaticValue, useSiteToday } from "../use-site-calendar";
 import { describeContactError, type ContactDashboardResponse } from "./api";
 import {
   contactsByMonth,
   countAxis,
+  FIRST_CONTACT_YEAR,
   formatParticipation,
   formatRate,
   headlineMonth,
   participationByMonth,
   runningContactTotal,
-  siteIsoDate,
 } from "./contact-data";
 import { useContactDashboard } from "./use-contacts";
 
@@ -57,11 +59,18 @@ export const supervisorMonthColumns: DataTableColumn<SupervisorRow>[] = [
   { accessorKey: "total", header: "YTD", cell: ({ row }) => <span className="font-semibold">{row.original.total}</span> },
 ];
 
-type ContactDashboardProps = { title: string; description?: string };
+type ContactDashboardProps = {
+  title: string;
+  description?: string;
+  /** The Baytown date when the page was rendered on the server. */
+  siteToday: string;
+};
 
-export function ContactDashboard({ title, description }: ContactDashboardProps) {
-  const today = siteIsoDate(new Date());
-  const [year, setYear] = useState(() => defaultReportingYear(Number(today.slice(0, 4))));
+export function ContactDashboard({ title, description, siteToday }: ContactDashboardProps) {
+  const today = useSiteToday(siteToday);
+  const currentYear = yearOf(today);
+  const yearChoice = useAutomaticValue(currentYear);
+  const year = yearChoice.value;
   const dashboard = useContactDashboard(year);
   const data = dashboard.data;
   const loading = dashboard.isPending && !dashboard.isError;
@@ -133,7 +142,13 @@ export function ContactDashboard({ title, description }: ContactDashboardProps) 
         }
       >
         <div className="w-full sm:w-44">
-          <ReportingYearSelect year={year} onChange={setYear} yearsWithData={data?.yearsWithData} />
+          <ReportingYearSelect
+            year={year}
+            onChange={yearChoice.choose}
+            currentYear={currentYear}
+            firstYear={FIRST_CONTACT_YEAR}
+            yearsWithData={data?.yearsWithData}
+          />
         </div>
       </FilterBar>
 

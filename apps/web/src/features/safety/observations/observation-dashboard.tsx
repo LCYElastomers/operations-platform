@@ -14,15 +14,17 @@ import { TrendChart } from "@/components/common/trend-chart";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
 
-import { defaultReportingYear, MONTH_LABELS } from "../incidents/grid";
+import { MONTH_LABELS } from "../incidents/grid";
 import { ReportingYearSelect } from "../incidents/reporting-year-select";
+import { yearOf } from "../site-calendar";
+import { useAutomaticValue, useSiteToday } from "../use-site-calendar";
 import { describeObservationError } from "./api";
 import {
   actConditionBreakdown,
   categoryOverTime,
   categoryYearToDate,
+  FIRST_OBSERVATION_YEAR,
   formatShare,
-  localIsoDate,
   monthlySafeVsUnsafe,
   runningTotals,
 } from "./observation-data";
@@ -31,11 +33,18 @@ import { useObservationDashboard } from "./use-observations";
 const CHART_HEIGHT = 340;
 const CATEGORY_ROW_HEIGHT = 26;
 
-type ObservationDashboardProps = { title: string; description?: string };
+type ObservationDashboardProps = {
+  title: string;
+  description?: string;
+  /** The Baytown date when the page was rendered on the server. */
+  siteToday: string;
+};
 
-export function ObservationDashboard({ title, description }: ObservationDashboardProps) {
-  const today = localIsoDate(new Date());
-  const [year, setYear] = useState(() => defaultReportingYear(Number(today.slice(0, 4))));
+export function ObservationDashboard({ title, description, siteToday }: ObservationDashboardProps) {
+  const today = useSiteToday(siteToday);
+  const currentYear = yearOf(today);
+  const yearChoice = useAutomaticValue(currentYear);
+  const year = yearChoice.value;
   const [categoryCode, setCategoryCode] = useState<string>("");
   const dashboard = useObservationDashboard(year);
   const data = dashboard.data;
@@ -111,7 +120,13 @@ export function ObservationDashboard({ title, description }: ObservationDashboar
         }
       >
         <div className="w-full sm:w-44">
-          <ReportingYearSelect year={year} onChange={setYear} yearsWithData={data?.yearsWithData} />
+          <ReportingYearSelect
+            year={year}
+            onChange={yearChoice.choose}
+            currentYear={currentYear}
+            firstYear={FIRST_OBSERVATION_YEAR}
+            yearsWithData={data?.yearsWithData}
+          />
         </div>
       </FilterBar>
 

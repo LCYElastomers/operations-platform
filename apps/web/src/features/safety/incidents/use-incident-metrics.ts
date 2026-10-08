@@ -5,7 +5,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError } from "@/lib/api-client";
 
 import {
+  fetchIncidentAnalytics,
   fetchIncidentMetrics,
+  incidentAnalyticsKeys,
   incidentMetricKeys,
   saveIncidentMetrics,
   type CellChange,
@@ -28,12 +30,22 @@ export function useIncidentMetrics(year: number) {
   });
 }
 
+/** Analytics for January..through; `through` null asks for the latest started month. */
+export function useIncidentAnalytics(year: number, through: number | null) {
+  return useQuery({
+    queryKey: incidentAnalyticsKeys.period(year, through),
+    queryFn: ({ signal }) => fetchIncidentAnalytics(year, through, signal),
+    retry: shouldRetry,
+  });
+}
+
 export function useSaveIncidentMetrics(year: number) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (changes: CellChange[]) => saveIncidentMetrics(year, changes),
     onSuccess: (response) => {
       queryClient.setQueryData(incidentMetricKeys.year(year), response.metrics);
+      void queryClient.invalidateQueries({ queryKey: incidentAnalyticsKeys.all });
     },
   });
 }

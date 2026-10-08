@@ -79,10 +79,47 @@ class RecentMoistureResponse(CamelModel):
     records: list[MoistureRecord]
 
 
-class MoistureSummary(CamelModel):
-    """Unweighted means of non-null values. A mean is null when no values exist."""
+class MoistureLot(CamelModel):
+    """One Product + Lot master row, aggregated across every matching location record.
 
-    record_count: int
+    Location is not part of the key. Means are unweighted over the non-null
+    values of the underlying location records (the finest grain the source
+    provides) and are null when no values exist. A record without a lot cannot
+    be attributed to a lot, so it forms its own master row instead of being
+    merged with other lot-less records.
+    """
+
+    product: str | None
+    lot: str | None
+    first_date: dt.date
+    last_date: dt.date
+    campaign_nos: list[str] = Field(description="Distinct non-null campaign numbers, sorted.")
+    locations: list[str] = Field(description="Distinct non-null locations, sorted.")
+    record_count: int = Field(description="Location-level records in this lot.")
+    avg_moisture: float | None
+    avg_color: float | None
+    avg_combined_bd: float | None
+    moisture_value_count: int
+    color_value_count: int
+    combined_bd_value_count: int
+
+
+class MoistureLotDetail(MoistureLot):
+    records: list[MoistureRecord] = Field(description="Location-level records, oldest first.")
+
+
+class MoistureLotsResponse(CamelModel):
+    data_source: DataSourceInfo
+    total_matching: int = Field(description="Matching Product + Lot master rows.")
+    limit: int
+    lots: list[MoistureLotDetail] = Field(description="Most recently measured lots first.")
+
+
+class MoistureSummary(CamelModel):
+    """Unweighted means of non-null location-level values. A mean is null when no values exist."""
+
+    lot_count: int = Field(description="Product + Lot master rows.")
+    record_count: int = Field(description="Location-level records.")
     avg_moisture: float | None
     avg_color: float | None
     avg_combined_bd: float | None
@@ -94,7 +131,9 @@ class MoistureSummary(CamelModel):
 class MoistureTrendsResponse(CamelModel):
     data_source: DataSourceInfo
     summary: MoistureSummary
-    points: list[MoistureRecord] = Field(description="Matching records, oldest first.")
+    lots: list[MoistureLot] = Field(
+        description="Matching lots by latest measurement date, oldest first."
+    )
 
 
 class DateRange(CamelModel):

@@ -2,7 +2,7 @@
 
 import { AlertTriangle, ChartColumn, ClipboardList, Eye } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { EmptyState } from "@/components/common/empty-state";
 import { FilterBar, FilterSelect } from "@/components/common/filter-bar";
@@ -11,15 +11,15 @@ import { StatusBadge } from "@/components/common/status-badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
 
-import { defaultReportingYear } from "../incidents/grid";
 import { ReportingYearSelect } from "../incidents/reporting-year-select";
+import { useAutomaticValue, useSiteToday } from "../use-site-calendar";
 import { describeObservationError, type Observation } from "./api";
 import { MonthSummary } from "./month-summary";
 import { ObservationCard } from "./observation-card";
 import {
   draftFromObservation,
   emptyDraft,
-  localIsoDate,
+  FIRST_OBSERVATION_YEAR,
   monthName,
   nextDraft,
   toInput,
@@ -49,22 +49,24 @@ function periodOf(isoDate: string): Period {
   return { year, month };
 }
 
-type ObservationsPageProps = { title: string; description?: string };
+type ObservationsPageProps = {
+  title: string;
+  description?: string;
+  /** The Baytown date when the page was rendered on the server. */
+  siteToday: string;
+};
 
-export function ObservationsPage({ title, description }: ObservationsPageProps) {
-  const [today, setToday] = useState(() => localIsoDate(new Date()));
-  const current = periodOf(today);
-  const [period, setPeriod] = useState<Period>(() => ({
-    year: defaultReportingYear(current.year),
-    month: current.month,
-  }));
+export function ObservationsPage({ title, description, siteToday }: ObservationsPageProps) {
+  // A tablet left open overnight moves to the new day unless the user chose
+  // another month or date; nothing typed into the form is cleared.
+  const today = useSiteToday(siteToday);
+  const current = useMemo(() => periodOf(today), [today]);
+  const [editing, setEditing] = useState<{ observation: Observation; draft: ObservationDraft } | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  // An open edit or delete stays on the month it belongs to.
+  const periodChoice = useAutomaticValue(current, { hold: editing !== null || confirmDeleteId !== null });
+  const period = periodChoice.value;
   const [limit, setLimit] = useState(PAGE_SIZE);
-
-  // A tablet left open overnight should not keep offering yesterday as "today".
-  useEffect(() => {
-    const timer = window.setInterval(() => setToday(localIsoDate(new Date())), 60_000);
-    return () => window.clearInterval(timer);
-  }, []);
 
   const categories = useObservationCategories();
   const list = useObservations({ year: period.year, month: period.month, limit });
@@ -73,14 +75,17 @@ export function ObservationsPage({ title, description }: ObservationsPageProps) 
   const update = useUpdateObservation();
   const remove = useDeleteObservation();
 
-  const [draft, setDraft] = useState<ObservationDraft>(() => emptyDraft(today));
+  const observedOnChoice = useAutomaticValue(today);
+  const [draftFields, setDraft] = useState<ObservationDraft>(() => emptyDraft(today));
+  const draft = useMemo(
+    () => ({ ...draftFields, observedOn: observedOnChoice.value }),
+    [draftFields, observedOnChoice.value],
+  );
   const [attempted, setAttempted] = useState(false);
   const [lastAddedId, setLastAddedId] = useState<number | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const [editing, setEditing] = useState<{ observation: Observation; draft: ObservationDraft } | null>(null);
   const [editAttempted, setEditAttempted] = useState(false);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
 
   const canEdit = categories.data?.canEdit ?? list.data?.canEdit ?? false;
   const errors = useMemo(() => validateDraft(draft, today), [draft, today]);
@@ -98,7 +103,7 @@ export function ObservationsPage({ title, description }: ObservationsPageProps) 
   }));
 
   const choosePeriod = (next: Period) => {
-    setPeriod(next);
+    periodChoice.choose(next);
     setLimit(PAGE_SIZE);
     setEditing(null);
     setConfirmDeleteId(null);
@@ -219,6 +224,7 @@ export function ObservationsPage({ title, description }: ObservationsPageProps) 
                 <ObservationForm
                   draft={draft}
                   onChange={(next) => {
+                    if (next.observedOn !== draft.observedOn) observedOnChoice.choose(next.observedOn);
                     setDraft(next);
                     if (create.isError) create.reset();
                   }}
@@ -253,6 +259,8 @@ export function ObservationsPage({ title, description }: ObservationsPageProps) 
               }
             >
               <ReportingYearSelect
+                currentYear={current.year}
+                firstYear={FIRST_OBSERVATION_YEAR}
                 year={period.year}
                 onChange={(year) =>
                   choosePeriod({

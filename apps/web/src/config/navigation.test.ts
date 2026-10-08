@@ -12,6 +12,7 @@ const requiredRoutes = [
   "/safety",
   "/safety/incidents/data-entry",
   "/safety/incidents/dashboard",
+  "/safety/incidents/analytics",
   "/safety/observations",
   "/safety/observations/dashboard",
   "/safety/contacts",
@@ -43,9 +44,16 @@ describe("navigation config", () => {
   it.each([
     ["/safety/incidents/data-entry", "Data Entry"],
     ["/safety/incidents/dashboard", "Dashboard"],
+    ["/safety/incidents/analytics", "Analytics"],
   ])("nests %s under Safety > Incident & Near Miss", (route, label) => {
     const trail = findNavTrail(navigation, route);
     expect(trail.map((item) => item.label)).toEqual(["Safety", "Incident & Near Miss", label]);
+  });
+
+  it("lists Data Entry, Dashboard and Analytics under Incident & Near Miss", () => {
+    const safety = moduleItems.find((item) => item.id === "safety");
+    const incidents = safety?.children?.find((item) => item.id === "safety-incidents");
+    expect(incidents?.children?.map((item) => item.label)).toEqual(["Data Entry", "Dashboard", "Analytics"]);
   });
 
   it.each([

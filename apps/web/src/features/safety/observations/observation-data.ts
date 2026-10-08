@@ -16,6 +16,8 @@ import type {
 export const MAX_AREA_LOCATION_LENGTH = 200;
 export const MAX_NOTE_LENGTH = 2000;
 export const EARLIEST_OBSERVED_ON = "2000-01-01";
+/** Observations have no Incident & Near Miss start year: any year the API accepts is offered. */
+export const FIRST_OBSERVATION_YEAR = 2000;
 
 export const OUTCOME_LABELS: Record<Outcome, string> = { safe: "Safe", unsafe: "Unsafe" };
 export const KIND_LABELS: Record<Kind, string> = { act: "Act", condition: "Condition" };
@@ -33,7 +35,10 @@ export type ObservationDraft = {
 
 export type DraftErrors = Partial<Record<keyof ObservationDraft, string>>;
 
-/** The device's local calendar date as YYYY-MM-DD. */
+/**
+ * YYYY-MM-DD for a Date built from calendar fields (e.g. `new Date(year, month, 0)`).
+ * Not for "today": that is the Baytown date (site-calendar.ts).
+ */
 export function localIsoDate(date: Date): string {
   const pad = (value: number) => String(value).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;

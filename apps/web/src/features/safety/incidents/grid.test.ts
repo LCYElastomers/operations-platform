@@ -121,6 +121,19 @@ describe("reportingYearOptions", () => {
   it("defaults to the current year, but never before the first reporting year", () => {
     expect(defaultReportingYear(2025)).toBe(2026);
     expect(defaultReportingYear(2029)).toBe(2029);
+    expect(defaultReportingYear(2025, 2000)).toBe(2025);
+  });
+
+  it("offers a new Baytown year before it has any records", () => {
+    expect(reportingYearOptions(2027, [2026])).toEqual([2027, 2026]);
+    expect(reportingYearOptions(2027, [], 2000)).toEqual([2027, 2026, 2025, 2024, 2023]);
+  });
+
+  it("keeps Incident & Near Miss at 2026 but lets other modules offer earlier years with data", () => {
+    expect(reportingYearOptions(2027, [2019, 2025, 2026])).toEqual([2027, 2026]);
+    expect(reportingYearOptions(2027, [2019, 2025, 2026], 2000)).toEqual([
+      2027, 2026, 2025, 2024, 2023, 2019,
+    ]);
   });
 });
 

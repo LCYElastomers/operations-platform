@@ -14,7 +14,6 @@ from decimal import Decimal
 from typing import Any
 
 from app.audit.recorder import AuditAction, AuditChange
-from app.safety.contacts.service import site_today
 from app.safety.performance.calculations import (
     INCIDENTS,
     AnnualLegacy,
@@ -51,6 +50,7 @@ from app.safety.performance.schemas import (
     RateTrendOut,
     SaveMonthHoursRequest,
 )
+from app.safety.site_calendar import site_today
 
 logger = logging.getLogger(__name__)
 

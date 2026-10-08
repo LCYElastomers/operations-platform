@@ -262,16 +262,29 @@ The dashboard at `/quality/raw-materials/moisture` reads only from the FastAPI
 contract below. Code lives in `apps/api/app/quality/moisture/` and
 `apps/web/src/features/quality/moisture/`.
 
-| Endpoint                              | Returns                                                         |
-| ------------------------------------- | --------------------------------------------------------------- |
-| `GET /api/v1/quality/moisture/recent`  | Newest matching records first (`limit`, default 50, max 500)    |
-| `GET /api/v1/quality/moisture/trends`  | All matching records oldest first, plus summary means           |
-| `GET /api/v1/quality/moisture/filters` | Distinct products and locations, and source date boundaries     |
+| Endpoint                               | Returns                                                                                      |
+| -------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `GET /api/v1/quality/moisture/lots`    | Newest Product + Lot master rows first, each with its location records (`limit`, default 50, max 500) |
+| `GET /api/v1/quality/moisture/trends`  | All matching Product + Lot master rows oldest first, plus summary means                      |
+| `GET /api/v1/quality/moisture/recent`  | Newest matching location-level records first (`limit`, default 50, max 500)                  |
+| `GET /api/v1/quality/moisture/filters` | Distinct products and locations, and source date boundaries                                  |
 
-`/recent` and `/trends` accept `product` and `location` (exact match),
-`search` (case-insensitive substring of lot or campaign number), and
+`/lots`, `/trends` and `/recent` accept `product` and `location` (exact
+match), `search` (case-insensitive substring of lot or campaign number), and
 `startDate` / `endDate` (inclusive, `YYYY-MM-DD`). Unknown or invalid
 parameters return HTTP 422.
+
+The dashboard's master grain is **Product + Lot**. Location is not part of
+the grouping key: one source lot measured at `PKG/0`, `PKG/1` and `SILO/1`
+is one master row, and its location records are shown only when the row is
+expanded. Master means, lot counts and charts are built from the matching
+location-level records (the finest grain the `qryFINISHING-AVG` source
+provides), after filtering, so a date or location filter narrows the records
+each lot is built from. The same lot text under different products is
+different master rows; records without a lot are never merged with each
+other. Charts plot one point per lot at its latest measurement date. The
+"Lots in view" count is master rows; the location record count is shown
+beside it.
 
 Source field mapping (Access query to API):
 
@@ -289,7 +302,9 @@ Source field mapping (Access query to API):
 Data rules:
 
 - `null` measurements mean missing source values and are never treated as `0`.
-  Summary means skip nulls, include zeros, and are `null` when no values exist.
+  Summary and lot means skip nulls, include zeros, and are `null` when no
+  values exist. Each mean is unweighted over location-level values, never a
+  mean of lot means.
 - Measurements are returned at source precision; the UI rounds for display
   and shows the full value on hover.
 - Campaign number, lot, and product are identifiers (strings), never numbers.
@@ -704,7 +719,7 @@ yet.
 ## Safety > Incident & Near Miss
 
 Routes: `/safety` (overview), `/safety/incidents/data-entry`,
-`/safety/incidents/dashboard`. Code lives in `apps/api/app/safety/` and
+`/safety/incidents/dashboard`, `/safety/incidents/analytics`. Code lives in `apps/api/app/safety/` and
 `apps/web/src/features/safety/incidents/`; the spreadsheet grid
 (`MonthlyGrid`) and `BarChart` are shared components in
 `apps/web/src/components/common/`.
@@ -713,8 +728,9 @@ Routes: `/safety` (overview), `/safety/incidents/data-entry`,
 | ------------------------------------------ | ----------------------- | ------- |
 | `GET /api/v1/safety/incidents/metrics?year=` | `safety.incidents.view` | Sections, categories, 12 monthly values and calculated YTD per category, `canEdit`, `yearsWithData` |
 | `PATCH /api/v1/safety/incidents/metrics`   | `safety.incidents.edit` | Set or clear cells: `{"year": 2026, "changes": [{"categoryId", "month", "value", "previousValue"}]}` |
+| `GET /api/v1/safety/incidents/analytics?year=&through=` | `safety.incidents.view` | Read-only analytics January..`through`; see "Analytics" below |
 
-Data Entry and Dashboard read the same endpoint and the same stored rows.
+Data Entry, Dashboard and Analytics read the same stored rows.
 
 ### Data model
 
@@ -818,6 +834,93 @@ add the agreed Incident figure to `expectedYtd` before running `apply`.
 Incident is the explicit metric, so Incident Classification totals are not
 used to reconcile it.
 
+### Analytics (Phase 1)
+
+`/safety/incidents/analytics` (Incident & Near Miss > Analytics) and
+`GET /api/v1/safety/incidents/analytics?year=&through=` are read-only. They
+calculate everything on each request from the stored `incidents` monthly
+values (`app/safety/analytics.py`); nothing is stored, copied or imported,
+and the workbook is never read. The GET writes no rows and no audit events.
+Both require `safety.incidents.view`; there is no separate permission. The
+navigation entry is shown like the other Safety entries; without the
+permission the page shows "not available to you" (the API answers `403`).
+
+- `year`: the reporting-year limits (2000–2100). The page offers 2026 to the
+  current Baytown year. `through`: 1–12, default the latest month of the year
+  that has started in Baytown (`America/Chicago`; 12 for a past year). A
+  `through` month that has not started is refused (`422 month_not_started`);
+  a future year without `through` returns no months.
+- Response: `year`, `throughMonth`, `latestMonth`, `availableYears`, four
+  `kpis` (`incidents`, `near_misses`, `lopc`, `psif`: `value`,
+  `monthsReported`, `throughMonth`, `complete`), and series for Incidents,
+  Near Misses, LOPC, PSIF, PIT, Property Damage, Equipment Damage, combined
+  damage, and each classification. A series has one value per month
+  January..through, `total`, `monthsReported`, `unreportedMonths`, `complete`.
+
+Definitions:
+
+- **Null versus zero.** A month with no stored value is unreported (null),
+  never zero; the page shows it as "Not reported" (no bar). A total is the sum
+  of the reported months, or null when none are; it is `complete` only when
+  every month January..through is reported. An unreported current month makes
+  the total incomplete. Prior years are never used to fill a year.
+- **Incidents / Near Misses YTD**: the explicit `incident` and `near_miss`
+  series.
+- **Classifications are not exclusive**: an incident may have more than one
+  classification, so classification counts may exceed the number of
+  incidents. They are shown as counts in a bar chart, never summed, compared
+  with Incident or shown as shares. The chart lists the configured
+  Incident Classification categories, with their configured names, then PSIF.
+- **LOPC** is the `lopc` series. `spill_release` records the same events and
+  is shown only as a classification; the two are never added.
+- **PIT** is the `pit_accident` classification ("Powered Industrial Vehicle
+  (PIT) Incidents"). The `pit` section holds the same counts and is not read
+  by Analytics, so PIT is never counted twice.
+- **Damage**: `property_damage` and `equipment_damage_failure`, shown side by
+  side. Combined damage = Property Damage + Equipment Damage classifications,
+  not a count of distinct events. A combined month is null only when both
+  parts are unreported, and reported only when both are. The stale
+  `property_equipment_damage` section is not read by Analytics.
+- **PSIF** is shown as recorded. The application does not define PSIF, and
+  shows no PSIF frequency, share, ratio, severity or rating; it is not
+  merged with the Near Miss Potential "SIF".
+- No targets, scores or red/yellow/green colours. Every chart has a data
+  table alternative.
+
+Phase 1 does **not** contain area analytics (incidents or near misses by
+area, area by classification), Near Miss Cause, Near Miss Potential, LOPC
+contributing factors, Process Safety Incidents, or the Behavior Pareto. These
+need structured data the platform does not hold and are deferred to Phase 2.
+A 2025 LOPC comparison from `performance_legacy` is also deferred.
+
+## Safety site calendar
+
+"Today" and the current reporting year are the Baytown site's calendar date
+in `America/Chicago`, never the UTC date, the browser's time zone or the
+server's. A new reporting year starts at midnight in Baytown on 1 January
+with no deployment, seed or migration. One implementation on each side:
+`app/safety/site_calendar.py` (`site_today`) and
+`apps/web/src/features/safety/site-calendar.ts` (`siteIsoDate`, `siteYear`).
+The platform has one site; move the time zone into site configuration if it
+becomes multi-site. Audit timestamps stay UTC.
+
+- The API uses it for future-date checks, months started, and which
+  Safety Performance months can be entered or closed.
+- The year-scoped Safety pages are rendered per request (`connection()`),
+  and pass the server's Baytown date to the page for hydration, so no
+  build-time year is baked into HTML.
+- While a page stays open, `useSiteToday` re-checks the Baytown date every
+  minute and when the tab becomes visible. Defaults (reporting year, the
+  Observations month and observed date, the Contacts date, the Incident &
+  Near Miss Analytics through month) move to the new
+  day; a value the user chose is kept until they change it or press "Use
+  today". A default never moves while it holds unsaved work (Incident &
+  Near Miss or Safety Performance hours being edited, an Observation being
+  edited or deleted, a chosen "through" month).
+- Year selectors always offer the current Baytown year, the four before it,
+  and every year with data, from each module's first year: 2026 for Incident
+  & Near Miss, 2000 for Observations, Contacts and Safety Performance.
+
 ## Safety > Safety Observations
 
 Routes: `/safety/observations` (record and review a month) and
@@ -840,7 +943,8 @@ corrective-action workflow yet.
 | `PUT /api/v1/safety/observations/{id}`                | `safety.observations.edit` | Replace its fields; send `expectedUpdatedAt` from the loaded record |
 | `DELETE /api/v1/safety/observations/{id}`             | `safety.observations.edit` | Delete it |
 
-- `observedOn` is a `YYYY-MM-DD` date from 2000-01-01 up to today (UTC).
+- `observedOn` is a `YYYY-MM-DD` date from 2000-01-01 up to today (the
+  Baytown date; see "Safety site calendar").
   Optional text is trimmed; blank becomes `null`. Area / location allows 200
   characters, description and corrective action 2,000 each. The database
   enforces the same rules with check constraints.
@@ -903,15 +1007,7 @@ not an employee directory or user accounts.
 
 - `contactDate` is a `YYYY-MM-DD` date from 2000-01-01 up to today. A
   contact must fall within its supervisor's effective period.
-- "Today" is the Baytown site's calendar date in `America/Chicago`, not the
-  UTC date or the device's time zone. The API (create, update, dashboard
-  months started) and the web app (default date, future-date check) use the
-  same rule. The time zone is a single constant (`SITE_TIME_ZONE` in
-  `app/safety/contacts/service.py` and `contact-data.ts`) because the platform
-  has one site; move it into site configuration if it becomes multi-site.
-  Safety Performance reuses `site_today` from the same module. Incident &
-  Near Miss and Safety Observations are unchanged and still use their own
-  date rules. New contacts
+- "Today" follows the Safety site calendar (see above). New contacts
   cannot be credited to an inactive supervisor; an existing contact keeps its
   supervisor when edited.
 - Supervisor names are trimmed and whitespace-collapsed, at most 100

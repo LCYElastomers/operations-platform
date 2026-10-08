@@ -12,12 +12,13 @@ import { TrendChart, type YAxisRange } from "@/components/common/trend-chart";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
 
-import { hasActiveFilters, type MoistureRecord } from "./api";
+import { hasActiveFilters, type MoistureLot, type MoistureLotDetail } from "./api";
 import { buildTrendSeries, formatSourceDate, MEASUREMENT_PRECISION } from "./format";
-import { RecentMaterialsTable } from "./recent-materials-table";
+import { LotTable } from "./lot-table";
 import { useMoistureDashboard } from "./use-moisture-dashboard";
 
-const NO_RECORDS: MoistureRecord[] = [];
+const NO_LOTS: MoistureLot[] = [];
+const NO_LOT_DETAILS: MoistureLotDetail[] = [];
 // Full-width stacked trend cards; the plot area alone is taller than the card minimum.
 const TREND_PLOT_HEIGHT = 340;
 const TREND_CARD_CLASS = "w-full min-h-[375px]";
@@ -29,10 +30,14 @@ function describeError(error: unknown): string {
   return "The API could not be reached.";
 }
 
+function plural(count: number, noun: string): string {
+  return `${count.toLocaleString()} ${noun}${count === 1 ? "" : "s"}`;
+}
+
 function valueCountCaption(count: number | undefined): string | undefined {
   if (count === undefined) return undefined;
   if (count === 0) return "No values in view";
-  return `Mean of ${count.toLocaleString()} value${count === 1 ? "" : "s"}`;
+  return `Mean of ${plural(count, "location value")}`;
 }
 
 type MoistureDashboardProps = {
@@ -47,7 +52,7 @@ export function MoistureDashboard({ title, description }: MoistureDashboardProps
     resetFilters,
     invalidDateRange,
     filterOptions,
-    recent,
+    lots,
     trends,
     retry,
     dataSource,
@@ -55,18 +60,18 @@ export function MoistureDashboard({ title, description }: MoistureDashboardProps
   } = useMoistureDashboard();
 
   const options = filterOptions.data;
-  const records = recent.data?.records ?? NO_RECORDS;
-  const points = trends.data?.points ?? NO_RECORDS;
+  const recentLots = lots.data?.lots ?? NO_LOT_DETAILS;
+  const trendLots = trends.data?.lots ?? NO_LOTS;
   const summary = trends.data?.summary;
-  const latest = records[0];
+  const latest = recentLots[0];
 
-  const dataLoading = recent.isPending || trends.isPending;
-  const dataError = recent.error ?? trends.error;
+  const dataLoading = lots.isPending || trends.isPending;
+  const dataError = lots.error ?? trends.error;
   const filtersActive = hasActiveFilters(filters);
 
-  const moistureSeries = useMemo(() => buildTrendSeries(points, "avgMoisture"), [points]);
-  const colorSeries = useMemo(() => buildTrendSeries(points, "avgColor"), [points]);
-  const bdSeries = useMemo(() => buildTrendSeries(points, "avgCombinedBd"), [points]);
+  const moistureSeries = useMemo(() => buildTrendSeries(trendLots, "avgMoisture"), [trendLots]);
+  const colorSeries = useMemo(() => buildTrendSeries(trendLots, "avgColor"), [trendLots]);
+  const bdSeries = useMemo(() => buildTrendSeries(trendLots, "avgCombinedBd"), [trendLots]);
 
   const unavailable = dataError ? "Unavailable" : undefined;
 
@@ -88,8 +93,8 @@ export function MoistureDashboard({ title, description }: MoistureDashboardProps
     <EmptyState
       variant="plain"
       icon={SearchX}
-      title="No records match these filters"
-      description="Adjust or reset the filters to see more records."
+      title="No lots match these filters"
+      description="Adjust or reset the filters to see more lots."
       action={
         <Button variant="outline" size="sm" onClick={resetFilters}>
           <RotateCcw />
@@ -114,8 +119,8 @@ export function MoistureDashboard({ title, description }: MoistureDashboardProps
       icon={SearchX}
       title="No values to chart"
       description={
-        points.length > 0
-          ? "Matching records have no values for this measurement."
+        trendLots.length > 0
+          ? "Matching lots have no values for this measurement."
           : "No records match the current filters."
       }
     />
@@ -230,28 +235,35 @@ export function MoistureDashboard({ title, description }: MoistureDashboardProps
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <MetricCard
-          label="Records in view"
-          value={summary?.recordCount ?? null}
-          caption={unavailable ?? "Matching current filters"}
+          label="Lots in view"
+          value={summary?.lotCount ?? null}
+          caption={
+            unavailable ??
+            (summary ? `Product + lot, from ${plural(summary.recordCount, "location record")}` : undefined)
+          }
           icon={FlaskConical}
           loading={trends.isPending && !trends.isError}
         />
         <MetricCard
           label="Latest product"
           value={latest?.product ?? null}
-          caption={unavailable ?? (latest ? formatSourceDate(latest.date) : undefined)}
+          caption={unavailable ?? (latest ? formatSourceDate(latest.lastDate) : undefined)}
           icon={Tag}
-          loading={recent.isPending && !recent.isError}
+          loading={lots.isPending && !lots.isError}
         />
         <MetricCard
           label="Latest lot"
           value={latest?.lot ?? null}
           caption={
             unavailable ??
-            (latest?.campaignNo ? `Campaign ${latest.campaignNo}` : latest ? "No campaign" : undefined)
+            (latest
+              ? latest.campaignNos.length > 0
+                ? `Campaign ${latest.campaignNos.join(", ")}`
+                : "No campaign"
+              : undefined)
           }
           icon={Hash}
-          loading={recent.isPending && !recent.isError}
+          loading={lots.isPending && !lots.isError}
         />
         <MetricCard
           label="Average moisture"
@@ -271,30 +283,30 @@ export function MoistureDashboard({ title, description }: MoistureDashboardProps
         />
       </div>
 
-      <section aria-labelledby="recent-materials-heading" className="space-y-3">
+      <section aria-labelledby="recent-lots-heading" className="space-y-3">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 id="recent-materials-heading" className="text-sm font-semibold">
-            Recent materials
+          <h2 id="recent-lots-heading" className="text-sm font-semibold">
+            Recent lots
           </h2>
-          {recent.data && (
+          {lots.data && (
             <p className="text-xs text-muted-foreground">
-              {recent.data.totalMatching === 0
-                ? "No matching records"
-                : `Newest ${records.length.toLocaleString()} of ${recent.data.totalMatching.toLocaleString()} matching records`}
+              {lots.data.totalMatching === 0
+                ? "No matching lots"
+                : `Newest ${recentLots.length.toLocaleString()} of ${plural(lots.data.totalMatching, "matching lot")}. Expand a lot for its location records.`}
             </p>
           )}
         </div>
-        <RecentMaterialsTable
-          records={recent.isError ? NO_RECORDS : records}
-          loading={recent.isPending && !recent.isError}
-          emptyState={recent.isError ? errorState : noResultsState}
+        <LotTable
+          lots={lots.isError ? NO_LOT_DETAILS : recentLots}
+          loading={lots.isPending && !lots.isError}
+          emptyState={lots.isError ? errorState : noResultsState}
         />
       </section>
 
       <section aria-label="Trends" className="flex flex-col gap-5">
         <TrendChart
           title="Moisture Trend"
-          description="Average moisture by date, per product"
+          description="Lot average moisture by latest measurement date, per product"
           series={trends.isError ? [] : moistureSeries}
           precision={MEASUREMENT_PRECISION.avgMoisture}
           height={TREND_PLOT_HEIGHT}
@@ -305,7 +317,7 @@ export function MoistureDashboard({ title, description }: MoistureDashboardProps
         />
         <TrendChart
           title="Color Trend"
-          description="Average color by date, per product"
+          description="Lot average color by latest measurement date, per product"
           series={trends.isError ? [] : colorSeries}
           precision={MEASUREMENT_PRECISION.avgColor}
           height={TREND_PLOT_HEIGHT}
@@ -315,7 +327,7 @@ export function MoistureDashboard({ title, description }: MoistureDashboardProps
         />
         <TrendChart
           title="Combined BD Trend"
-          description="Average combined BD by date, per product"
+          description="Lot average combined BD by latest measurement date, per product"
           series={trends.isError ? [] : bdSeries}
           precision={MEASUREMENT_PRECISION.avgCombinedBd}
           height={TREND_PLOT_HEIGHT}

@@ -18,14 +18,44 @@ export type DataSourceInfo = {
   label: string;
 };
 
-export type RecentMoistureResponse = {
-  dataSource: DataSourceInfo;
-  totalMatching: number;
-  limit: number;
+/**
+ * One Product + Lot master row. Location is not part of the key; means are over
+ * the lot's non-null location-level values. Records without a lot are never merged.
+ */
+export type MoistureLot = {
+  product: string | null;
+  lot: string | null;
+  firstDate: string;
+  lastDate: string;
+  campaignNos: string[];
+  locations: string[];
+  /** Location-level records in this lot. */
+  recordCount: number;
+  avgMoisture: number | null;
+  avgColor: number | null;
+  avgCombinedBd: number | null;
+  moistureValueCount: number;
+  colorValueCount: number;
+  combinedBdValueCount: number;
+};
+
+export type MoistureLotDetail = MoistureLot & {
+  /** Location-level records, oldest first. */
   records: MoistureRecord[];
 };
 
+export type MoistureLotsResponse = {
+  dataSource: DataSourceInfo;
+  /** Matching Product + Lot master rows. */
+  totalMatching: number;
+  limit: number;
+  lots: MoistureLotDetail[];
+};
+
 export type MoistureSummary = {
+  /** Product + Lot master rows. */
+  lotCount: number;
+  /** Location-level records. */
   recordCount: number;
   avgMoisture: number | null;
   avgColor: number | null;
@@ -38,7 +68,8 @@ export type MoistureSummary = {
 export type MoistureTrendsResponse = {
   dataSource: DataSourceInfo;
   summary: MoistureSummary;
-  points: MoistureRecord[];
+  /** By latest measurement date, oldest first. */
+  lots: MoistureLot[];
 };
 
 export type MoistureFiltersResponse = {
@@ -93,7 +124,7 @@ function withQuery(path: string, query: string) {
 export const moistureKeys = {
   all: ["quality", "moisture"] as const,
   filters: () => [...moistureKeys.all, "filters"] as const,
-  recent: (query: string) => [...moistureKeys.all, "recent", query] as const,
+  lots: (query: string) => [...moistureKeys.all, "lots", query] as const,
   trends: (query: string) => [...moistureKeys.all, "trends", query] as const,
 };
 
@@ -101,8 +132,8 @@ export function fetchMoistureFilters(signal?: AbortSignal) {
   return apiGet<MoistureFiltersResponse>(`${BASE}/filters`, { signal });
 }
 
-export function fetchRecentMoisture(query: string, signal?: AbortSignal) {
-  return apiGet<RecentMoistureResponse>(withQuery("/recent", query), { signal });
+export function fetchMoistureLots(query: string, signal?: AbortSignal) {
+  return apiGet<MoistureLotsResponse>(withQuery("/lots", query), { signal });
 }
 
 export function fetchMoistureTrends(query: string, signal?: AbortSignal) {

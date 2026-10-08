@@ -53,6 +53,8 @@ type BarChartProps = {
   showValues?: boolean;
   emptyState?: React.ReactNode;
   loading?: boolean;
+  /** Below the plot, e.g. a data table alternative to the chart. */
+  footer?: React.ReactNode;
   className?: string;
 };
 
@@ -66,6 +68,7 @@ export function BarChart({
   showValues = false,
   emptyState,
   loading = false,
+  footer,
   className,
 }: BarChartProps) {
   const hasData = series.some((s) => s.values.some((value) => value !== null));
@@ -86,6 +89,7 @@ export function BarChart({
         </div>
       ) : hasData ? (
         <BarChartBody
+          title={title}
           categories={categories}
           series={series}
           orientation={orientation}
@@ -105,17 +109,20 @@ export function BarChart({
           )}
         </div>
       )}
+      {footer && !loading && <div className="border-t px-4 py-2">{footer}</div>}
     </section>
   );
 }
 
 function BarChartBody({
+  title,
   categories,
   series,
   orientation,
   height,
   showValues,
 }: {
+  title: string;
   categories: string[];
   series: BarSeries[];
   orientation: "vertical" | "horizontal";
@@ -161,7 +168,7 @@ function BarChartBody({
       {series.length > 1 && (
         <ChartLegend series={series} hidden={hidden} onToggle={toggle} label="Series" />
       )}
-      <div ref={containerRef} style={{ height }} className="w-full" />
+      <div ref={containerRef} role="img" aria-label={`${title} chart`} style={{ height }} className="w-full" />
     </div>
   );
 }
@@ -243,7 +250,9 @@ export function buildBarOption(
         const header = escapeHtml(params[0].name ?? "");
         const rows = params.map((param) => {
           const value =
-            typeof param.value === "number" ? param.value.toLocaleString() : "Not reported";
+            typeof param.value === "number" && Number.isFinite(param.value)
+              ? param.value.toLocaleString()
+              : "Not reported";
           const marker = typeof param.marker === "string" ? param.marker : "";
           return `<div style="display:flex;justify-content:space-between;gap:16px;line-height:1.6">
             <span>${marker}${escapeHtml(param.seriesName ?? "")}</span>

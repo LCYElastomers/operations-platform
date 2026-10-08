@@ -3,7 +3,8 @@
 Every count (total, safe/unsafe, act/condition, per category, per month) is
 computed from the same observation rows, so no figure can disagree with
 another. Counts are true counts of records: a started month without records
-counts 0. Months that have not started yet are null, not 0.
+counts 0. Months that have not started yet are null, not 0. "Today" is the
+Baytown site's calendar date (``app.safety.site_calendar``).
 """
 
 import calendar
@@ -33,6 +34,7 @@ from app.safety.observations.schemas import (
     ObservationSummaryResponse,
     ObservationUpdate,
 )
+from app.safety.site_calendar import site_today
 
 logger = logging.getLogger(__name__)
 
@@ -115,8 +117,7 @@ def _snapshot(values: ObservationValues, category_code: str) -> dict[str, Any]:
 
 
 def _check_observed_on(observed_on: dt.date, now: dt.datetime) -> None:
-    # The UTC date is never behind the plant's local date, so a local "today" is accepted.
-    today = now.astimezone(dt.UTC).date()
+    today = site_today(now)
     if observed_on > today:
         raise ObservedOnInFutureError(today)
 

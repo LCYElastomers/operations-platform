@@ -43,7 +43,6 @@ from pydantic import ConfigDict, Field, StrictBool, StrictInt, ValidationError, 
 from app.audit.recorder import AuditChange
 from app.core.schemas import CamelModel
 from app.db.session import get_sessionmaker
-from app.safety.contacts.service import site_today
 from app.safety.performance import service
 from app.safety.performance.models import MAX_SOURCE_LENGTH
 from app.safety.performance.repository import (
@@ -54,6 +53,7 @@ from app.safety.performance.repository import (
 )
 from app.safety.performance.schemas import Hours
 from app.safety.schemas import ReportingMonth, ReportingYear
+from app.safety.site_calendar import site_today
 
 LEGACY_IMPORT_ACTOR = "legacy-import"
 Label = Annotated[str, Field(min_length=1, max_length=MAX_SOURCE_LENGTH)]

@@ -10,10 +10,12 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.core.authorization import UserPrincipal, require_permission
 from app.core.permissions import Permission
 from app.db.session import DatabaseNotConfiguredError, get_sessionmaker
-from app.safety import service
+from app.safety import analytics, service
+from app.safety.analytics import MonthNotStartedError
 from app.safety.models import MAX_REPORTING_YEAR, MIN_REPORTING_YEAR
 from app.safety.repository import DatabaseSafetyMetricsRepository, SafetyMetricsRepository
 from app.safety.schemas import (
+    IncidentAnalyticsResponse,
     MonthlyMetricsResponse,
     SaveMonthlyMetricsRequest,
     SaveMonthlyMetricsResponse,
@@ -72,6 +74,41 @@ def incident_metrics(
             year=year,
             can_edit=principal.has(Permission.SAFETY_INCIDENTS_EDIT),
         )
+    except SQLAlchemyError:
+        raise _database_unavailable() from None
+
+
+def _now() -> dt.datetime:
+    return dt.datetime.now(dt.UTC)
+
+
+@router.get(
+    "/incidents/analytics",
+    response_model=IncidentAnalyticsResponse,
+    responses={
+        401: {"description": "Not signed in"},
+        403: {"description": "Missing safety.incidents.view"},
+        422: {"description": "Invalid year, or a through month that has not started"},
+        503: {"description": "Database unavailable"},
+    },
+)
+def incident_analytics(
+    principal: IncidentViewer,
+    repository: Repository,
+    year: Annotated[int, Query(ge=MIN_REPORTING_YEAR, le=MAX_REPORTING_YEAR)],
+    through: Annotated[int | None, Query(ge=1, le=12)] = None,
+) -> IncidentAnalyticsResponse:
+    """Read-only Incident & Near Miss analytics for January..through (by default the
+    latest month that has started in Baytown)."""
+    try:
+        return analytics.load_analytics(repository, year=year, through_month=through, now=_now())
+    except MonthNotStartedError as error:
+        raise _error(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "month_not_started",
+            "Analytics cannot run through a month that has not started.",
+            latestMonth=error.latest_month,
+        ) from None
     except SQLAlchemyError:
         raise _database_unavailable() from None
 

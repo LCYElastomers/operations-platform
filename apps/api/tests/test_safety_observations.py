@@ -592,6 +592,45 @@ def test_create_rejects_future_dates_but_accepts_today(editor: TestClient) -> No
     assert editor.post(URL, json=payload(observedOn="2026-10-07")).status_code == 201
 
 
+@pytest.mark.parametrize(
+    ("instant", "today", "started"),
+    [
+        (dt.datetime(2027, 1, 1, 0, 0, tzinfo=dt.UTC), "2026-12-31", 0),  # 18:00 CST, UTC midnight
+        (dt.datetime(2027, 1, 1, 5, 59, 59, tzinfo=dt.UTC), "2026-12-31", 0),  # 23:59:59 CST
+        (dt.datetime(2027, 1, 1, 6, 0, tzinfo=dt.UTC), "2027-01-01", 1),  # 00:00 CST
+    ],
+)
+def test_observations_roll_over_at_baytown_midnight(
+    editor: TestClient,
+    repository: InMemoryRepository,
+    monkeypatch: pytest.MonkeyPatch,
+    instant: dt.datetime,
+    today: str,
+    started: int,
+) -> None:
+    monkeypatch.setattr(observations_router, "_now", lambda: instant)
+
+    response = editor.post(URL, json=payload(observedOn="2027-01-01"))
+    if today == "2027-01-01":
+        assert response.status_code == 201
+    else:
+        assert response.status_code == 422
+        assert response.json()["detail"]["today"] == today
+        assert repository.records == {}
+
+    months = editor.get(URL + "/dashboard", params={"year": 2027}).json()["months"]
+    assert sum(m["counts"] is not None for m in months) == started
+
+
+def test_audit_timestamps_stay_utc(
+    editor: TestClient, repository: InMemoryRepository, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    instant = dt.datetime(2027, 1, 1, 6, 0, tzinfo=dt.UTC)
+    monkeypatch.setattr(observations_router, "_now", lambda: instant)
+
+    assert created(editor, observedOn="2027-01-01")["createdAt"].startswith("2027-01-01T06:00:00")
+
+
 # List
 
 

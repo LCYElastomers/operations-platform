@@ -24,12 +24,15 @@ import {
   cellKey,
   defaultReportingYear,
   draftSectionValues,
+  FIRST_REPORTING_YEAR,
   MONTH_LABELS,
   parseCount,
   summarizeDraft,
   total,
   type Draft,
 } from "./grid";
+import { yearOf } from "../site-calendar";
+import { useAutomaticValue, useSiteToday } from "../use-site-calendar";
 import { ReportingYearSelect } from "./reporting-year-select";
 import { useIncidentMetrics, useSaveIncidentMetrics } from "./use-incident-metrics";
 
@@ -182,12 +185,20 @@ function GridKey({ editable }: { editable: boolean }) {
 type IncidentDataEntryProps = {
   title: string;
   description?: string;
+  /** The Baytown date when the page was rendered on the server. */
+  siteToday: string;
 };
 
-export function IncidentDataEntry({ title, description }: IncidentDataEntryProps) {
-  const [year, setYear] = useState(() => defaultReportingYear(new Date().getFullYear()));
+export function IncidentDataEntry({ title, description, siteToday }: IncidentDataEntryProps) {
+  const currentYear = yearOf(useSiteToday(siteToday));
   const [draft, setDraft] = useState<Draft>({});
   const [notice, setNotice] = useState<string | null>(null);
+  // Draft cells have no year (and stay in the draft until saved), so a year
+  // with unsaved or in-flight changes never moves at midnight.
+  const yearChoice = useAutomaticValue(defaultReportingYear(currentYear), {
+    hold: Object.keys(draft).length > 0,
+  });
+  const year = yearChoice.value;
   const metrics = useIncidentMetrics(year);
   const save = useSaveIncidentMetrics(year);
 
@@ -208,7 +219,7 @@ export function IncidentDataEntry({ title, description }: IncidentDataEntryProps
     setDraft({});
     setNotice(null);
     save.reset();
-    setYear(next);
+    yearChoice.choose(next);
   };
 
   const setCell = (rowId: string, column: number, text: string) => {
@@ -298,6 +309,8 @@ export function IncidentDataEntry({ title, description }: IncidentDataEntryProps
             <ReportingYearSelect
               year={year}
               onChange={changeYear}
+              currentYear={currentYear}
+              firstYear={FIRST_REPORTING_YEAR}
               yearsWithData={data?.yearsWithData}
               disabled={save.isPending}
             />

@@ -910,25 +910,6 @@ def test_create_rejects_future_dates_but_accepts_today(
 BAYTOWN_EVENING = dt.datetime(2026, 10, 8, 3, 0, tzinfo=dt.UTC)
 
 
-@pytest.mark.parametrize(
-    ("instant", "expected"),
-    [
-        (dt.datetime(2026, 10, 8, 4, 59, tzinfo=dt.UTC), dt.date(2026, 10, 7)),  # 23:59 CDT
-        (dt.datetime(2026, 10, 8, 5, 0, tzinfo=dt.UTC), dt.date(2026, 10, 8)),  # midnight CDT
-        (dt.datetime(2026, 1, 1, 5, 59, tzinfo=dt.UTC), dt.date(2025, 12, 31)),  # 23:59 CST
-        (dt.datetime(2026, 1, 1, 6, 0, tzinfo=dt.UTC), dt.date(2026, 1, 1)),  # midnight CST
-        (dt.datetime(2026, 3, 9, 4, 59, tzinfo=dt.UTC), dt.date(2026, 3, 8)),  # DST began 8 March
-        (dt.datetime(2026, 3, 9, 5, 0, tzinfo=dt.UTC), dt.date(2026, 3, 9)),
-        (
-            dt.datetime(2026, 10, 7, 23, 0, tzinfo=dt.timezone(dt.timedelta(hours=5))),
-            dt.date(2026, 10, 7),
-        ),
-    ],
-)
-def test_site_today_is_the_baytown_calendar_date(instant: dt.datetime, expected: dt.date) -> None:
-    assert service.site_today(instant) == expected
-
-
 def test_create_uses_the_baytown_date_not_the_utc_date(
     editor: TestClient,
     repository: InMemoryRepository,
@@ -990,6 +971,89 @@ def test_create_requires_a_creditable_supervisor(
     assert response.json()["detail"]["error"] == error
     assert repository.contact_rows == {}
     assert repository.audit == []
+
+
+# Calendar-year rollover
+
+BAYTOWN_NEW_YEAR = dt.datetime(2027, 1, 1, 6, 0, tzinfo=dt.UTC)  # 00:00 CST, 1 January 2027
+
+
+def test_participation_across_the_new_year() -> None:
+    supervisors = [
+        sup_record(
+            1, "Avery", effective_from=dt.date(2026, 12, 1), effective_to=dt.date(2027, 1, 31)
+        ),
+        sup_record(2, "Blake", effective_to=dt.date(2026, 12, 31)),
+    ]
+    rows = [CountRow(12, 1, 1), CountRow(12, 2, 1)]
+
+    december = service.participation(supervisors, rows, year=2026, month=12)
+    january = service.participation(supervisors, [CountRow(1, 1, 1)], year=2027, month=1)
+
+    assert (december.participating, december.eligible) == (2, 2)
+    assert (january.participating, january.eligible) == (1, 1)
+
+
+def test_supervisor_ending_2026_is_not_listed_for_2027() -> None:
+    dashboard = service.build_dashboard(
+        year=2027,
+        today=dt.date(2027, 1, 1),
+        supervisors=[
+            sup_record(1, "Avery"),
+            sup_record(2, "Blake", effective_to=dt.date(2026, 12, 31)),
+        ],
+        rows=[],
+        years_with_data=[2026],
+    )
+
+    assert [s.display_name for s in dashboard.supervisors] == ["Avery"]
+    assert dashboard.months[0].participation is not None
+    assert dashboard.months[0].participation.eligible == 1
+    assert dashboard.months[1].contacts is None
+
+
+def test_a_2027_contact_for_a_supervisor_who_ended_in_2026_is_rejected(
+    editor: TestClient, repository: InMemoryRepository, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    [ended] = seed_supervisors(repository, sup_values("Blake", effective_to=dt.date(2026, 12, 31)))
+    monkeypatch.setattr(contacts_router, "_now", lambda: BAYTOWN_NEW_YEAR)
+
+    response = editor.post(URL, json=contact_payload(contactDate="2027-01-01", supervisorId=ended))
+    assert response.status_code == 422
+    assert response.json()["detail"]["error"] == "outside_effective_period"
+
+    assert (
+        editor.post(
+            URL, json=contact_payload(contactDate="2026-12-31", supervisorId=ended)
+        ).status_code
+        == 201
+    )
+
+
+@pytest.mark.parametrize(
+    ("instant", "accepted", "started"),
+    [
+        (dt.datetime(2027, 1, 1, 0, 0, tzinfo=dt.UTC), False, 0),  # 18:00 CST, 31 December
+        (dt.datetime(2027, 1, 1, 5, 59, 59, tzinfo=dt.UTC), False, 0),  # 23:59:59 CST
+        (BAYTOWN_NEW_YEAR, True, 1),
+    ],
+)
+def test_contacts_roll_over_at_baytown_midnight(
+    editor: TestClient,
+    repository: InMemoryRepository,
+    team: list[int],
+    monkeypatch: pytest.MonkeyPatch,
+    instant: dt.datetime,
+    accepted: bool,
+    started: int,
+) -> None:
+    monkeypatch.setattr(contacts_router, "_now", lambda: instant)
+
+    response = editor.post(URL, json=contact_payload(contactDate="2027-01-01"))
+    assert (response.status_code == 201) is accepted
+
+    months = editor.get(URL + "/dashboard", params={"year": 2027}).json()["months"]
+    assert sum(m["contacts"] is not None for m in months) == started
 
 
 # Contacts: list

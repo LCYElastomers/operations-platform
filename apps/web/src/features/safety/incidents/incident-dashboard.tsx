@@ -11,7 +11,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 
 import { BarChart } from "@/components/common/bar-chart";
 import { EmptyState } from "@/components/common/empty-state";
@@ -31,7 +31,9 @@ import {
   reportedCaption,
   type KpiCategoryCode,
 } from "./dashboard-data";
-import { defaultReportingYear, MONTH_LABELS } from "./grid";
+import { yearOf } from "../site-calendar";
+import { useAutomaticValue, useSiteToday } from "../use-site-calendar";
+import { defaultReportingYear, FIRST_REPORTING_YEAR, MONTH_LABELS } from "./grid";
 import { ReportingYearSelect } from "./reporting-year-select";
 import { useIncidentMetrics } from "./use-incident-metrics";
 
@@ -51,10 +53,14 @@ const HEADLINE_KPIS = 2;
 type IncidentDashboardProps = {
   title: string;
   description?: string;
+  /** The Baytown date when the page was rendered on the server. */
+  siteToday: string;
 };
 
-export function IncidentDashboard({ title, description }: IncidentDashboardProps) {
-  const [year, setYear] = useState(() => defaultReportingYear(new Date().getFullYear()));
+export function IncidentDashboard({ title, description, siteToday }: IncidentDashboardProps) {
+  const currentYear = yearOf(useSiteToday(siteToday));
+  const yearChoice = useAutomaticValue(defaultReportingYear(currentYear));
+  const year = yearChoice.value;
   const metrics = useIncidentMetrics(year);
   const data = metrics.data;
   const loading = metrics.isPending && !metrics.isError;
@@ -108,7 +114,13 @@ export function IncidentDashboard({ title, description }: IncidentDashboardProps
         }
       >
         <div className="w-full sm:w-44">
-          <ReportingYearSelect year={year} onChange={setYear} yearsWithData={data?.yearsWithData} />
+          <ReportingYearSelect
+            year={year}
+            onChange={yearChoice.choose}
+            currentYear={currentYear}
+            firstYear={FIRST_REPORTING_YEAR}
+            yearsWithData={data?.yearsWithData}
+          />
         </div>
       </FilterBar>
 

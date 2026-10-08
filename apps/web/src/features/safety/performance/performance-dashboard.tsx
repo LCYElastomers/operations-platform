@@ -15,8 +15,9 @@ import { TrendChart } from "@/components/common/trend-chart";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
 
-import { siteIsoDate } from "../contacts/contact-data";
 import { MONTH_LABELS, reportingYearOptions } from "../incidents/grid";
+import { yearOf } from "../site-calendar";
+import { useAutomaticValue, useSiteToday } from "../use-site-calendar";
 import { describePerformanceError, type MonthStatus, type PerformanceMonth } from "./api";
 import {
   annualTrirChart,
@@ -70,12 +71,19 @@ export const monthColumns: DataTableColumn<PerformanceMonth>[] = [
   },
 ];
 
-type PerformanceDashboardProps = { title: string; description?: string };
+type PerformanceDashboardProps = {
+  title: string;
+  description?: string;
+  /** The Baytown date when the page was rendered on the server. */
+  siteToday: string;
+};
 
-export function PerformanceDashboard({ title, description }: PerformanceDashboardProps) {
-  const currentYear = Number(siteIsoDate(new Date()).slice(0, 4));
-  const [year, setYear] = useState(currentYear);
+export function PerformanceDashboard({ title, description, siteToday }: PerformanceDashboardProps) {
+  const currentYear = yearOf(useSiteToday(siteToday));
   const [through, setThrough] = useState<number | null>(null);
+  // A chosen "through" month belongs to the year it was chosen in.
+  const yearChoice = useAutomaticValue(currentYear, { hold: through !== null });
+  const year = yearChoice.value;
   const query = usePerformanceDashboard(year, through);
   const data = query.data;
   const loading = query.isPending && !query.isError;
@@ -171,7 +179,7 @@ export function PerformanceDashboard({ title, description }: PerformanceDashboar
             options={years.map((value) => ({ value: String(value), label: String(value) }))}
             value={String(year)}
             onChange={(event) => {
-              setYear(Number(event.target.value));
+              yearChoice.choose(Number(event.target.value));
               setThrough(null);
             }}
             className="pointer-coarse:h-11"

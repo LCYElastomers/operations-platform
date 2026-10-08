@@ -2,7 +2,7 @@
 
 import { AlertTriangle, ChartColumn, Eye, UserPlus, Users } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 
 import { EmptyState } from "@/components/common/empty-state";
 import { PageHeader } from "@/components/common/page-header";
@@ -10,6 +10,7 @@ import { StatusBadge } from "@/components/common/status-badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
 
+import { useAutomaticValue, useSiteToday } from "../use-site-calendar";
 import { describeContactError, type Contact, type Supervisor } from "./api";
 import {
   contactDateError,
@@ -21,7 +22,6 @@ import {
   formatDate,
   newRequestId,
   periodOf,
-  siteIsoDate,
   tallyTiles,
   toSupervisorInput,
   validateSupervisorDraft,
@@ -50,18 +50,19 @@ function isAccessDenied(error: unknown) {
   return error instanceof ApiError && (error.status === 401 || error.status === 403);
 }
 
-type ContactsPageProps = { title: string; description?: string };
+type ContactsPageProps = {
+  title: string;
+  description?: string;
+  /** The Baytown date when the page was rendered on the server. */
+  siteToday: string;
+};
 
-export function ContactsPage({ title, description }: ContactsPageProps) {
+export function ContactsPage({ title, description, siteToday }: ContactsPageProps) {
   const dateId = useId();
-  const [today, setToday] = useState(() => siteIsoDate(new Date()));
-  const [contactDate, setContactDate] = useState(today);
-
-  // A tablet left open overnight should not keep offering yesterday as "today".
-  useEffect(() => {
-    const timer = window.setInterval(() => setToday(siteIsoDate(new Date())), 60_000);
-    return () => window.clearInterval(timer);
-  }, []);
+  // A tablet left open overnight moves to the new day unless a date was chosen.
+  const today = useSiteToday(siteToday);
+  const contactDateChoice = useAutomaticValue(today);
+  const contactDate = contactDateChoice.value;
 
   const dateError = contactDateError(contactDate, today);
   const period = dateError ? periodOf(today) : periodOf(contactDate);
@@ -326,7 +327,7 @@ export function ContactsPage({ title, description }: ContactsPageProps) {
                     min={EARLIEST_DATE}
                     max={today}
                     value={contactDate}
-                    onChange={(event) => setContactDate(event.target.value)}
+                    onChange={(event) => contactDateChoice.choose(event.target.value)}
                     aria-invalid={dateError ? true : undefined}
                     aria-describedby={dateError ? `${dateId}-error` : undefined}
                     className={`${fieldClasses} h-12 text-base`}
@@ -338,8 +339,8 @@ export function ContactsPage({ title, description }: ContactsPageProps) {
                   </p>
                 )}
               </div>
-              {contactDate !== today && (
-                <Button variant="outline" className="h-11" onClick={() => setContactDate(today)}>
+              {!contactDateChoice.isAutomatic && (
+                <Button variant="outline" className="h-11" onClick={contactDateChoice.follow}>
                   Use today
                 </Button>
               )}

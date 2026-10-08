@@ -11,8 +11,9 @@ import { StatusBadge, type StatusTone } from "@/components/common/status-badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
 
-import { siteIsoDate } from "../contacts/contact-data";
 import { reportingYearOptions } from "../incidents/grid";
+import { yearOf } from "../site-calendar";
+import { useAutomaticValue, useSiteToday } from "../use-site-calendar";
 import { monthName } from "../observations/observation-data";
 import {
   describePerformanceError,
@@ -62,12 +63,19 @@ function countRows(counts: MonthCounts, source: CountSource): CountRow[] {
   ];
 }
 
-type PerformanceDataEntryProps = { title: string; description?: string };
+type PerformanceDataEntryProps = {
+  title: string;
+  description?: string;
+  /** The Baytown date when the page was rendered on the server. */
+  siteToday: string;
+};
 
-export function PerformanceDataEntry({ title, description }: PerformanceDataEntryProps) {
-  const currentYear = Number(siteIsoDate(new Date()).slice(0, 4));
-  const [year, setYear] = useState(currentYear);
+export function PerformanceDataEntry({ title, description, siteToday }: PerformanceDataEntryProps) {
+  const currentYear = yearOf(useSiteToday(siteToday));
   const [drafts, setDrafts] = useState<Record<number, HoursDraft>>({});
+  // Drafts are keyed by month only, so a year with unsaved hours never moves at midnight.
+  const yearChoice = useAutomaticValue(currentYear, { hold: Object.keys(drafts).length > 0 });
+  const year = yearChoice.value;
   const query = usePerformanceMonths(year);
   const data = query.data;
   const loading = query.isPending && !query.isError;
@@ -75,7 +83,7 @@ export function PerformanceDataEntry({ title, description }: PerformanceDataEntr
     query.error instanceof ApiError && (query.error.status === 401 || query.error.status === 403);
 
   const changeYear = (next: number) => {
-    setYear(next);
+    yearChoice.choose(next);
     setDrafts({});
   };
   const years = reportingYearOptions(currentYear, [...(data?.yearsWithData ?? []), year], FIRST_HOURS_YEAR);

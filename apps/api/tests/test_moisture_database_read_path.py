@@ -93,7 +93,7 @@ def recent_lots(client: TestClient, **params: Any) -> list[str | None]:
 
 
 def trend_lots(client: TestClient, **params: Any) -> list[str | None]:
-    return [p["lot"] for p in get(client, "/trends", **params)["points"]]
+    return [lot["lot"] for lot in get(client, "/trends", **params)["lots"]]
 
 
 SAMPLE = [
@@ -123,8 +123,10 @@ def test_empty_database(client: TestClient) -> None:
     filters = get(client, "/filters")
 
     assert (recent["records"], recent["totalMatching"], recent["limit"]) == ([], 0, 50)
-    assert trends["points"] == []
+    assert trends["lots"] == []
+    assert get(client, "/lots")["totalMatching"] == 0
     assert trends["summary"] == {
+        "lotCount": 0,
         "recordCount": 0,
         "avgMoisture": None,
         "avgColor": None,
@@ -217,10 +219,11 @@ def test_superseded_versions_never_appear_in_trends(client: TestClient) -> None:
 
     body = get(client, "/trends")
 
-    assert [(p["lot"], p["avgMoisture"]) for p in body["points"]] == [
+    assert [(lot["lot"], lot["avgMoisture"]) for lot in body["lots"]] == [
         ("L-KEPT", 0.4),
         ("L-FIX", 0),
     ]
+    assert body["summary"]["lotCount"] == 2
     assert body["summary"]["recordCount"] == 2
     assert body["summary"]["avgMoisture"] == pytest.approx(0.2)
 
@@ -251,7 +254,8 @@ def test_superseded_versions_cannot_be_reached_by_filtering(
     superseding_history(client)
 
     assert get(client, "/recent", **params)["totalMatching"] == 0
-    assert get(client, "/trends", **params)["points"] == []
+    assert get(client, "/lots", **params)["totalMatching"] == 0
+    assert get(client, "/trends", **params)["lots"] == []
 
 
 # Values are passed through unchanged --------------------------------------------------
@@ -395,7 +399,28 @@ def test_recent_returns_the_latest_50_by_default(client: TestClient) -> None:
     assert body["records"][0]["lot"] == "L059"
     assert body["records"][-1]["lot"] == "L010"
     assert len(get(client, "/recent", limit=500)["records"]) == 60
-    assert len(get(client, "/trends")["points"]) == 60
+    assert len(get(client, "/trends")["lots"]) == 60
+
+
+def test_location_records_of_a_lot_form_one_master_row(client: TestClient) -> None:
+    ingest(
+        client,
+        row(sourceDate="2026-09-01", product="3411", lot="260932010", location="PKG/0",
+            avgMoisture=0.2),
+        row(sourceDate="2026-09-01", product="3411", lot="260932010", location="SILO/1",
+            avgMoisture=0),
+        row(sourceDate="2026-09-02", product="3411", lot="260932010", location="PKG/1",
+            avgMoisture=None),
+    )  # fmt: skip
+
+    body = get(client, "/lots")
+    (lot,) = body["lots"]
+
+    assert body["totalMatching"] == 1
+    assert (lot["recordCount"], lot["moistureValueCount"]) == (3, 2)
+    assert lot["avgMoisture"] == pytest.approx(0.1)
+    assert [r["location"] for r in lot["records"]] == ["PKG/0", "SILO/1", "PKG/1"]
+    assert get(client, "/trends")["summary"]["lotCount"] == 1
 
 
 @pytest.mark.parametrize("limit", [0, 501])

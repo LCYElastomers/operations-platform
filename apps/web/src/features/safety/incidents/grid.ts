@@ -99,11 +99,14 @@ export function summarizeDraft(metrics: MonthlyMetricsResponse, draft: Draft): D
 export const FIRST_REPORTING_YEAR = 2026;
 const RECENT_YEARS = 5;
 
-export function defaultReportingYear(currentYear: number): number {
-  return Math.max(currentYear, FIRST_REPORTING_YEAR);
+export function defaultReportingYear(currentYear: number, firstYear = FIRST_REPORTING_YEAR): number {
+  return Math.max(currentYear, firstYear);
 }
 
-/** Recent years plus any year that already has data, newest first, never before the first reporting year. */
+/**
+ * Recent years plus any year that already has data, newest first, never before
+ * the module's first year. `currentYear` is the Baytown year (site-calendar.ts).
+ */
 export function reportingYearOptions(
   currentYear: number,
   yearsWithData: number[],

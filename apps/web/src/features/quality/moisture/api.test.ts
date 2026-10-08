@@ -63,7 +63,7 @@ describe("filter state helpers", () => {
   });
 
   it("keys queries by their filter query string", () => {
-    expect(moistureKeys.recent("product=A")).not.toEqual(moistureKeys.recent("product=B"));
-    expect(moistureKeys.recent("")).not.toEqual(moistureKeys.trends(""));
+    expect(moistureKeys.lots("product=A")).not.toEqual(moistureKeys.lots("product=B"));
+    expect(moistureKeys.lots("")).not.toEqual(moistureKeys.trends(""));
   });
 });

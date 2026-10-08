@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { ApiError } from "@/lib/api-client";
 
+import { siteIsoDate } from "../site-calendar";
 import { describeContactError, type ContactDashboardResponse, type Supervisor } from "./api";
 import {
   contactDateError,
@@ -17,7 +18,6 @@ import {
   normalizeName,
   participationByMonth,
   runningContactTotal,
-  siteIsoDate,
   tallyTiles,
   toSupervisorInput,
   validateSupervisorDraft,
@@ -59,17 +59,6 @@ describe("contact date", () => {
     ["1999-12-31", "The date is too early."],
   ])("%s", (date, expected) => {
     expect(contactDateError(date, TODAY)).toBe(expected);
-  });
-
-  it.each([
-    ["2026-10-08T04:59:00Z", "2026-10-07"], // 23:59 CDT
-    ["2026-10-08T05:00:00Z", "2026-10-08"], // midnight CDT
-    ["2026-01-01T05:59:00Z", "2025-12-31"], // 23:59 CST
-    ["2026-01-01T06:00:00Z", "2026-01-01"], // midnight CST
-    ["2026-03-09T04:59:00Z", "2026-03-08"], // daylight saving began 8 March
-    ["2026-03-09T05:00:00Z", "2026-03-09"],
-  ])("today at %s is the Baytown date %s", (instant, expected) => {
-    expect(siteIsoDate(new Date(instant))).toBe(expected);
   });
 
   it("rejects tomorrow in Baytown even when UTC has already reached it", () => {

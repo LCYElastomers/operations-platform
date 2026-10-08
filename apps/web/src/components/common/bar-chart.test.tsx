@@ -78,6 +78,20 @@ describe("BarChart", () => {
     expect(html).toContain("No data to chart");
   });
 
+  it("labels the plot for assistive technology and renders a footer", () => {
+    const html = renderToStaticMarkup(
+      <BarChart
+        title="PSIF by Month"
+        categories={["Jan"]}
+        series={[{ name: "PSIF", values: [0] }]}
+        footer={<table data-testid="alternative" />}
+      />,
+    );
+    expect(html).toContain('role="img"');
+    expect(html).toContain('aria-label="PSIF by Month chart"');
+    expect(html).toContain('data-testid="alternative"');
+  });
+
   it("renders a legend only for multiple series", () => {
     const two = renderToStaticMarkup(
       <BarChart

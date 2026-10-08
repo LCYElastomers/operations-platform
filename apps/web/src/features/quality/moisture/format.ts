@@ -1,6 +1,6 @@
 import type { TrendSeries } from "@/components/common/trend-chart";
 
-import type { MoistureRecord } from "./api";
+import type { MoistureLot } from "./api";
 
 /** Display precision only. API values keep full source precision. */
 export const MEASUREMENT_PRECISION = {
@@ -33,22 +33,28 @@ export function formatSourceDate(isoDate: string): string {
   });
 }
 
+export function formatDateRange(firstDate: string, lastDate: string): string {
+  if (firstDate === lastDate) return formatSourceDate(firstDate);
+  return `${formatSourceDate(firstDate)} – ${formatSourceDate(lastDate)}`;
+}
+
 const UNKNOWN_PRODUCT = "(No product)";
 
 /**
- * One series per product so different products are never joined into a
- * single line. Null measurements stay null and render as gaps.
+ * One point per Product + Lot at its latest measurement date, and one series
+ * per product so different products are never joined into a single line.
+ * Null lot means stay null and render as gaps.
  */
-export function buildTrendSeries(points: MoistureRecord[], measurement: Measurement): TrendSeries[] {
+export function buildTrendSeries(lots: MoistureLot[], measurement: Measurement): TrendSeries[] {
   const byProduct = new Map<string, TrendSeries>();
-  for (const point of points) {
-    const name = point.product ?? UNKNOWN_PRODUCT;
+  for (const lot of lots) {
+    const name = lot.product ?? UNKNOWN_PRODUCT;
     let series = byProduct.get(name);
     if (!series) {
       series = { name, points: [] };
       byProduct.set(name, series);
     }
-    series.points.push([point.date, point[measurement]]);
+    series.points.push([lot.lastDate, lot[measurement]]);
   }
   return [...byProduct.values()].sort((a, b) => a.name.localeCompare(b.name));
 }

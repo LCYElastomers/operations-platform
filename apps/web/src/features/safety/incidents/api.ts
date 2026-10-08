@@ -63,6 +63,68 @@ export function saveIncidentMetrics(year: number, changes: CellChange[]) {
   return apiSend<SaveMonthlyMetricsResponse>("PATCH", BASE, { year, changes });
 }
 
+/** One stored category, January..throughMonth. null means unreported, 0 a reported zero. */
+export type AnalyticsSeries = {
+  section: string;
+  code: string;
+  /** The configured display name. */
+  name: string;
+  values: (number | null)[];
+  /** Sum of reported months; null when none are reported. */
+  total: number | null;
+  monthsReported: number;
+  unreportedMonths: number[];
+  /** Every month January..throughMonth is reported. */
+  complete: boolean;
+};
+
+export type AnalyticsKpi = {
+  key: "incidents" | "near_misses" | "lopc" | "psif";
+  value: number | null;
+  monthsReported: number;
+  throughMonth: number | null;
+  complete: boolean;
+};
+
+/**
+ * Read-only analytics calculated by the API from the stored monthly values.
+ * Classifications may overlap and are never summed; `combinedDamage` is
+ * Property Damage plus Equipment Damage classifications; `pit` is the
+ * pit_accident classification and `lopc` the LOPC series.
+ */
+export type IncidentAnalyticsResponse = {
+  year: number;
+  /** null when the year has not started. */
+  throughMonth: number | null;
+  /** The latest month of the year that has started in Baytown. */
+  latestMonth: number | null;
+  /** Newest first. */
+  availableYears: number[];
+  kpis: AnalyticsKpi[];
+  incidents: AnalyticsSeries;
+  nearMisses: AnalyticsSeries;
+  /** Incident Classification categories in display order, then PSIF. */
+  classifications: AnalyticsSeries[];
+  lopc: AnalyticsSeries;
+  psif: AnalyticsSeries;
+  pit: AnalyticsSeries;
+  propertyDamage: AnalyticsSeries;
+  equipmentDamage: AnalyticsSeries;
+  combinedDamage: AnalyticsSeries;
+};
+
+export const incidentAnalyticsKeys = {
+  all: ["safety", "incidents", "analytics"] as const,
+  /** `through` null: the API's default, the latest month that has started. */
+  period: (year: number, through: number | null) => [...incidentAnalyticsKeys.all, year, through] as const,
+};
+
+export function fetchIncidentAnalytics(year: number, through: number | null, signal?: AbortSignal) {
+  const params = new URLSearchParams({ year: String(year) });
+  if (through !== null) params.set("through", String(through));
+  return apiGet<IncidentAnalyticsResponse>(`/api/v1/safety/incidents/analytics?${params}`, { signal });
+}
+
 export function editConflicts(error: unknown): CellConflict[] | null {
   if (!(error instanceof ApiError) || error.detail?.error !== "edit_conflict") return null;
   return Array.isArray(error.detail.conflicts) ? (error.detail.conflicts as CellConflict[]) : [];

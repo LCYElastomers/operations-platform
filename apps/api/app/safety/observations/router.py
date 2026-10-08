@@ -35,6 +35,7 @@ from app.safety.observations.service import (
     ObservedOnInFutureError,
     UnknownCategoryError,
 )
+from app.safety.site_calendar import site_today
 
 router = APIRouter(prefix="/safety/observations", tags=["safety"])
 
@@ -261,7 +262,7 @@ def observation_dashboard(
 ) -> ObservationDashboardResponse:
     """Year totals, monthly counts, and per-category counts derived from observation records."""
     try:
-        return service.dashboard(repository, year=year, today=_now().date())
+        return service.dashboard(repository, year=year, today=site_today(_now()))
     except SQLAlchemyError:
         raise _database_unavailable() from None
 

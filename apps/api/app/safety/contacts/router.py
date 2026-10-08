@@ -39,6 +39,7 @@ from app.safety.contacts.service import (
     SupervisorNotFoundError,
 )
 from app.safety.models import MAX_REPORTING_YEAR, MIN_REPORTING_YEAR
+from app.safety.site_calendar import site_today
 
 router = APIRouter(prefix="/safety/contacts", tags=["safety"])
 
@@ -373,6 +374,6 @@ def contact_dashboard(
 ) -> ContactDashboardResponse:
     """Year totals, monthly contacts and participation, and the supervisor x month counts."""
     try:
-        return service.dashboard(repository, year=year, today=service.site_today(_now()))
+        return service.dashboard(repository, year=year, today=site_today(_now()))
     except SQLAlchemyError:
         raise _database_unavailable() from None

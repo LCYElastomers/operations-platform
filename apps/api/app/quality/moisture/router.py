@@ -7,6 +7,7 @@ from app.quality.moisture.repository import MoistureRepository, get_moisture_rep
 from app.quality.moisture.schemas import (
     MoistureFilterParams,
     MoistureFiltersResponse,
+    MoistureLotsResponse,
     MoistureTrendsResponse,
     RecentMoistureParams,
     RecentMoistureResponse,
@@ -22,7 +23,7 @@ def recent_moisture(
     params: Annotated[RecentMoistureParams, Query()],
     repository: Repository,
 ) -> RecentMoistureResponse:
-    """Newest matching records first."""
+    """Newest matching location-level records first."""
     records, total = repository.recent(params, params.limit)
     return RecentMoistureResponse(
         data_source=repository.data_source,
@@ -32,17 +33,33 @@ def recent_moisture(
     )
 
 
+@router.get("/lots", response_model=MoistureLotsResponse)
+def moisture_lots(
+    params: Annotated[RecentMoistureParams, Query()],
+    repository: Repository,
+) -> MoistureLotsResponse:
+    """Most recently measured Product + Lot master rows first, with their location records."""
+    lots, total = service.newest_lots(repository.matching(params), params.limit)
+    return MoistureLotsResponse(
+        data_source=repository.data_source,
+        total_matching=total,
+        limit=params.limit,
+        lots=lots,
+    )
+
+
 @router.get("/trends", response_model=MoistureTrendsResponse)
 def moisture_trends(
     params: Annotated[MoistureFilterParams, Query()],
     repository: Repository,
 ) -> MoistureTrendsResponse:
-    """Matching records oldest first, with summary statistics."""
+    """Matching Product + Lot master rows oldest first, with summary statistics."""
     matching = repository.matching(params)
+    lots = service.group_lots(matching)
     return MoistureTrendsResponse(
         data_source=repository.data_source,
-        summary=service.summarize(matching),
-        points=matching,
+        summary=service.summarize(matching, lot_count=len(lots)),
+        lots=lots,
     )
 
 
