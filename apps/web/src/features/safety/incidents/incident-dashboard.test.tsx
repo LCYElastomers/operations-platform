@@ -8,7 +8,7 @@ import type { BarSeries } from "@/components/common/bar-chart";
 
 import { NOTES } from "./analytics-data";
 import type { AnalyticsKpi, AnalyticsSeries, IncidentAnalyticsResponse } from "./api";
-import { IncidentAnalytics } from "./incident-analytics";
+import { IncidentDashboard } from "./incident-dashboard";
 import { siteIsoDate } from "../site-calendar";
 
 // ECharts needs a canvas; the stand-in shows what each chart is given.
@@ -184,7 +184,7 @@ async function render(instant = OCTOBER_8_2026) {
   await act(async () =>
     root!.render(
       <QueryClientProvider client={queryClient}>
-        <IncidentAnalytics title="Analytics" siteToday={siteIsoDate(new Date())} />
+        <IncidentDashboard title="Incident & Near Miss Dashboard" siteToday={siteIsoDate(new Date())} />
       </QueryClientProvider>,
     ),
   );
@@ -238,7 +238,17 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-describe("Incident & Near Miss Analytics", () => {
+describe("Incident & Near Miss Dashboard", () => {
+  it("is titled Incident & Near Miss Dashboard, links to data entry and reads the Incident Analytics API", async () => {
+    await render();
+
+    expect(container.querySelector("h1")?.textContent).toBe("Incident & Near Miss Dashboard");
+    expect(text()).not.toContain("Analytics Dashboard");
+    const link = [...container.querySelectorAll("a")].find((a) => a.textContent === "Open data entry");
+    expect(link?.getAttribute("href")).toBe("/safety/incidents/data-entry");
+    expect(requested.map((url) => url.pathname)).toEqual(["/api/v1/safety/incidents/analytics"]);
+  });
+
   it("shows a loading state while the request is pending", async () => {
     await render();
 
@@ -336,6 +346,9 @@ describe("Incident & Near Miss Analytics", () => {
       ok(
         analytics(2026, 9, {
           incidents: [5, 6, 5, 6, 3, 4, 5, 3, 4],
+          nearMisses: [3, null, null, 11, 2, 4, 4, 5, 2],
+          lopc: [1, 2, 2, 1, null, 2, 3, 2, 1],
+          psif: [2, null, null, 2, null, null, null, 1, null],
           pit: [null, 1, null, 3, 1, 2, 1, null, 1],
           property: [1, 1, null, null, 2, null, 2, null, null],
           equipment: [0, null, 1, 4, null, 2, null, null, 1],
@@ -352,13 +365,23 @@ describe("Incident & Near Miss Analytics", () => {
       "PIT Incidents YTD",
       "Property & Equipment Damage YTD",
     ]);
+    expect(card("Incidents YTD")).toBe("Incidents YTD41Jan–Sep 2026 · all 9 months reported");
+    expect(card("Near Misses YTD")).toBe("Near Misses YTD31Jan–Sep 2026 · 7 of 9 months reported");
+    expect(card("LOPC YTD")).toBe("LOPC YTD14Jan–Sep 2026 · 8 of 9 months reported");
+    expect(card("PSIF YTD")).toBe("PSIF YTD5Jan–Sep 2026 · 3 of 9 months reported");
     expect(card("PIT Incidents YTD")).toBe("PIT Incidents YTD9Jan–Sep 2026 · 6 of 9 months reported");
     expect(card("Property & Equipment Damage YTD")).toBe(
       "Property & Equipment Damage YTD146 property · 8 equipment · Jan–Sep 2026, partial, both reported in 1 of 9 months",
     );
-    // The monthly charts stay.
-    expect(chart("Powered Industrial Vehicle (PIT) Incidents")).not.toBeNull();
-    expect(chart("Property vs Equipment Damage by Month")).not.toBeNull();
+    expect([...container.querySelectorAll("[data-chart]")].map((c) => c.getAttribute("data-chart"))).toEqual([
+      "Incidents vs Near Misses by Month",
+      "Incident Classification",
+      "LOPC by Month",
+      "Property vs Equipment Damage by Month",
+      "Powered Industrial Vehicle (PIT) Incidents",
+      "PSIF by Month",
+    ]);
+    expect(container.querySelector('[aria-label="Methodology and data completeness"]')).not.toBeNull();
   });
 
   it("shows a complete damage total, a reported zero and an unreported component", async () => {

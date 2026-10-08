@@ -8,9 +8,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ContactDashboard } from "./contacts/contact-dashboard";
 import { FIRST_CONTACT_YEAR } from "./contacts/contact-data";
 import { ContactsPage } from "./contacts/contacts-page";
-import { KPI_METRICS } from "./incidents/dashboard-data";
+import type { AnalyticsSeries, IncidentAnalyticsResponse } from "./incidents/api";
 import { FIRST_REPORTING_YEAR } from "./incidents/grid";
-import { IncidentAnalytics } from "./incidents/incident-analytics";
 import { IncidentDashboard } from "./incidents/incident-dashboard";
 import { IncidentDataEntry } from "./incidents/incident-data-entry";
 import { ReportingYearSelect } from "./incidents/reporting-year-select";
@@ -55,7 +54,6 @@ type Page = (siteToday: string) => ReactElement;
 const YEAR_PAGES: [string, Page][] = [
   ["Incident & Near Miss Data Entry", (today) => <IncidentDataEntry title="Data Entry" siteToday={today} />],
   ["Incident & Near Miss Dashboard", (today) => <IncidentDashboard title="Dashboard" siteToday={today} />],
-  ["Incident & Near Miss Analytics", (today) => <IncidentAnalytics title="Analytics" siteToday={today} />],
   ["Safety Observations", (today) => <ObservationsPage title="Observations" siteToday={today} />],
   ["Safety Observations Dashboard", (today) => <ObservationDashboard title="Dashboard" siteToday={today} />],
   ["Supervisor Safety Contacts Dashboard", (today) => <ContactDashboard title="Dashboard" siteToday={today} />],
@@ -95,20 +93,35 @@ function requestedYears(): number[] {
 
 const CATEGORIES = { categories: [{ id: 1, code: "housekeeping", name: "Housekeeping" }], canEdit: true };
 
-function emptyIncidentYear(year: number) {
-  const sections = [...new Set(KPI_METRICS.map((kpi) => kpi.sectionCode))].map((code, index) => ({
-    id: index + 1,
+/** Test fixture: Incident Analytics for January of a year with nothing reported. */
+function emptyIncidentYear(year: number): IncidentAnalyticsResponse {
+  const empty = (section: string, code: string): AnalyticsSeries => ({
+    section,
     code,
     name: code,
-    categories: KPI_METRICS.filter((kpi) => kpi.sectionCode === code).map((kpi, row) => ({
-      id: index * 10 + row + 1,
-      code: kpi.categoryCode,
-      name: kpi.label,
-      values: Array.from({ length: 12 }, () => null),
-      ytd: null,
-    })),
-  }));
-  return { metricSet: "lcy_ehs_monthly", year, canEdit: true, sections, yearsWithData: [2026] };
+    values: [null],
+    total: null,
+    monthsReported: 0,
+    unreportedMonths: [1],
+    complete: false,
+  });
+  const keys = ["incidents", "near_misses", "lopc", "psif", "pit", "combined_damage"] as const;
+  return {
+    year,
+    throughMonth: 1,
+    latestMonth: 1,
+    availableYears: [year, 2026],
+    kpis: keys.map((key) => ({ key, value: null, monthsReported: 0, throughMonth: 1, complete: false, parts: [] })),
+    incidents: empty("incident_near_miss_totals", "incident"),
+    nearMisses: empty("incident_near_miss_totals", "near_miss"),
+    classifications: [],
+    lopc: empty("lopc", "lopc"),
+    psif: empty("psif", "psif"),
+    pit: empty("incident_classification", "pit_accident"),
+    propertyDamage: empty("incident_classification", "property_damage"),
+    equipmentDamage: empty("incident_classification", "equipment_damage_failure"),
+    combinedDamage: empty("incident_classification", "property_damage+equipment_damage_failure"),
+  };
 }
 
 // Rendering --------------------------------------------------------------------------
@@ -260,7 +273,6 @@ describe.each(YEAR_PAGES)("%s", (_name, page) => {
 describe("module year floors", () => {
   it.each([
     ["Incident & Near Miss Dashboard", (t: string) => <IncidentDashboard title="D" siteToday={t} />, [2026]],
-    ["Incident & Near Miss Analytics", (t: string) => <IncidentAnalytics title="A" siteToday={t} />, [2026]],
     [
       "Safety Observations Dashboard",
       (t: string) => <ObservationDashboard title="D" siteToday={t} />,
@@ -383,8 +395,8 @@ describe("Safety Observations period and draft date", () => {
   });
 });
 
-describe("Incident & Near Miss Analytics through month", () => {
-  const page: Page = (today) => <IncidentAnalytics title="Analytics" siteToday={today} />;
+describe("Incident & Near Miss Dashboard through month", () => {
+  const page: Page = (today) => <IncidentDashboard title="Dashboard" siteToday={today} />;
 
   it("moves an untouched period to January of the new year at Baytown midnight", async () => {
     at(LAST_MINUTE_OF_2026);
@@ -418,7 +430,7 @@ describe("Incident & Near Miss Analytics through month", () => {
 describe("an empty 2027", () => {
   it("shows the Incident & Near Miss dashboard as not yet reported, not as 2026 or zero", async () => {
     stubApi((url) =>
-      url.pathname === "/api/v1/safety/incidents/metrics"
+      url.pathname === "/api/v1/safety/incidents/analytics"
         ? emptyIncidentYear(Number(url.searchParams.get("year")))
         : undefined,
     );
@@ -427,8 +439,10 @@ describe("an empty 2027", () => {
     await settle();
 
     expect(Number(yearSelect().value)).toBe(2027);
-    expect(container.textContent).toContain("No months reported for 2027");
-    expect(container.textContent).not.toContain("No months reported for 2026");
+    expect(Number(select("Through month").value)).toBe(1);
+    expect(container.textContent).toContain("No months have been reported for Jan 2027.");
+    expect(container.textContent).toContain("No months reported, Jan 2027");
+    expect(container.textContent).not.toContain("2026 ·");
     expect(requestedYears()).toEqual([2027]);
   });
 });

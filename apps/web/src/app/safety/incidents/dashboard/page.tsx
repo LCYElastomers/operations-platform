@@ -5,12 +5,14 @@ import { getNavItem } from "@/config/navigation";
 import { IncidentDashboard } from "@/features/safety/incidents/incident-dashboard";
 import { siteToday } from "@/features/safety/site-calendar";
 
-export const metadata: Metadata = { title: "Incident & Near Miss Dashboard" };
+const TITLE = "Incident & Near Miss Dashboard";
+
+export const metadata: Metadata = { title: TITLE };
 
 export default async function IncidentDashboardPage() {
-  // Rendered per request: the default reporting year is the Baytown year now, not at build time.
+  // Rendered per request: the default year and month are the Baytown date now, not at build time.
   await connection();
   const item = getNavItem("/safety/incidents/dashboard");
 
-  return <IncidentDashboard title={item.label} description={item.description} siteToday={siteToday()} />;
+  return <IncidentDashboard title={TITLE} description={item.description} siteToday={siteToday()} />;
 }

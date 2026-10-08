@@ -1,6 +1,5 @@
 import {
   Activity,
-  ChartBar,
   ChartColumn,
   ClipboardList,
   Clock,
@@ -90,16 +89,8 @@ export const navigation: NavSection[] = [
                 href: "/safety/incidents/dashboard",
                 icon: ChartColumn,
                 status: "in-development",
-                description: "Year-to-date Incident & Near Miss totals and monthly trends.",
-              },
-              {
-                id: "safety-incidents-analytics",
-                label: "Analytics",
-                href: "/safety/incidents/analytics",
-                icon: ChartBar,
-                status: "in-development",
                 description:
-                  "Monthly Incident, Near Miss, classification, LOPC, damage, PIT and PSIF counts, through a chosen month.",
+                  "Year-to-date Incident, Near Miss, LOPC, PSIF, PIT and damage counts, with monthly trends through a chosen month.",
               },
             ],
           },

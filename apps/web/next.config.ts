@@ -17,6 +17,16 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
+  async redirects() {
+    return [
+      // The Incident & Near Miss Analytics page became the Dashboard; keeps old bookmarks working.
+      {
+        source: "/safety/incidents/analytics",
+        destination: "/safety/incidents/dashboard",
+        permanent: true,
+      },
+    ];
+  },
   async rewrites() {
     return [
       {

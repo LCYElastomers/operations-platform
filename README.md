@@ -719,7 +719,9 @@ yet.
 ## Safety > Incident & Near Miss
 
 Routes: `/safety` (overview), `/safety/incidents/data-entry`,
-`/safety/incidents/dashboard`, `/safety/incidents/analytics`. Code lives in `apps/api/app/safety/` and
+`/safety/incidents/dashboard` (Incident & Near Miss Dashboard). The retired
+`/safety/incidents/analytics` page URL redirects (`308`) to the Dashboard
+(`next.config.ts`). Code lives in `apps/api/app/safety/` and
 `apps/web/src/features/safety/incidents/`; the spreadsheet grid
 (`MonthlyGrid`) and `BarChart` are shared components in
 `apps/web/src/components/common/`.
@@ -728,9 +730,9 @@ Routes: `/safety` (overview), `/safety/incidents/data-entry`,
 | ------------------------------------------ | ----------------------- | ------- |
 | `GET /api/v1/safety/incidents/metrics?year=` | `safety.incidents.view` | Sections, categories, 12 monthly values and calculated YTD per category, `canEdit`, `yearsWithData` |
 | `PATCH /api/v1/safety/incidents/metrics`   | `safety.incidents.edit` | Set or clear cells: `{"year": 2026, "changes": [{"categoryId", "month", "value", "previousValue"}]}` |
-| `GET /api/v1/safety/incidents/analytics?year=&through=` | `safety.incidents.view` | Read-only analytics January..`through`; see "Analytics" below |
+| `GET /api/v1/safety/incidents/analytics?year=&through=` | `safety.incidents.view` | Incident Analytics read model behind the Dashboard, January..`through`; see "Dashboard" below |
 
-Data Entry, Dashboard and Analytics read the same stored rows.
+Data Entry and the Dashboard read the same stored rows.
 
 ### Data model
 
@@ -761,7 +763,7 @@ migration.
 total is entered as its own value, never derived from Incident
 Classification. Classifications are a separate breakdown and are not mutually
 exclusive (one incident may carry several), so their sum can differ from
-Incident. Dashboard Incident and Near Miss KPIs and trends read only the
+Incident. The Dashboard's Incident and Near Miss KPIs and trends read only the
 explicit metrics.
 
 ### Saving
@@ -834,16 +836,28 @@ add the agreed Incident figure to `expectedYtd` before running `apply`.
 Incident is the explicit metric, so Incident Classification totals are not
 used to reconcile it.
 
-### Analytics (Phase 1)
+### Dashboard
 
-`/safety/incidents/analytics` (Incident & Near Miss > Analytics) and
-`GET /api/v1/safety/incidents/analytics?year=&through=` are read-only. They
-calculate everything on each request from the stored `incidents` monthly
-values (`app/safety/analytics.py`); nothing is stored, copied or imported,
+The Incident & Near Miss Dashboard (`/safety/incidents/dashboard`,
+Incident & Near Miss > Dashboard; `IncidentDashboard` in
+`incident-dashboard.tsx`) is the only Incident & Near Miss reporting page.
+Its read model is the Incident Analytics API,
+`GET /api/v1/safety/incidents/analytics?year=&through=`; there is no
+separate dashboard API and one calculation path (`app/safety/analytics.py`).
+Both are read-only and calculate everything on each request from the
+stored `incidents` monthly values; nothing is stored, copied or imported,
 and the workbook is never read. The GET writes no rows and no audit events.
 Both require `safety.incidents.view`; there is no separate permission. The
 navigation entry is shown like the other Safety entries; without the
 permission the page shows "not available to you" (the API answers `403`).
+
+The page has Year and Through month filters, six YTD cards (Incidents, Near
+Misses, LOPC, PSIF, PIT Incidents, Property & Equipment Damage), monthly
+charts for Incidents vs Near Misses, Incident Classification, LOPC, Property
+vs Equipment Damage, PIT and PSIF, each with a data table, and a methodology
+and data-completeness section. The earlier Dashboard (full-year totals from
+the `metrics` endpoint, including the `pit` and `property_equipment_damage`
+sections) has been retired.
 
 - `year`: the reporting-year limits (2000–2100). The page offers 2026 to the
   current Baytown year. `through`: 1–12, default the latest month of the year
@@ -877,12 +891,12 @@ Definitions:
   is shown only as a classification; the two are never added.
 - **PIT** is the `pit_accident` classification ("Powered Industrial Vehicle
   (PIT) Incidents"). The `pit` section holds the same counts and is not read
-  by Analytics, so PIT is never counted twice.
+  by the Dashboard, so PIT is never counted twice.
 - **Damage**: `property_damage` and `equipment_damage_failure`, shown side by
   side. Combined damage = Property Damage + Equipment Damage classifications,
   not a count of distinct events. A combined month is null only when both
   parts are unreported, and reported only when both are. The stale
-  `property_equipment_damage` section is not read by Analytics.
+  `property_equipment_damage` section is not read by the Dashboard.
 - **PIT Incidents YTD** and **Property & Equipment Damage YTD** cards use the
   same series as the charts. The damage card shows its composition (e.g.
   "6 property · 8 equipment"); when either part has unreported months its
@@ -893,10 +907,10 @@ Definitions:
 - No targets, scores or red/yellow/green colours. Every chart has a data
   table alternative.
 
-Phase 1 does **not** contain area analytics (incidents or near misses by
-area, area by classification), Near Miss Cause, Near Miss Potential, LOPC
-contributing factors, Process Safety Incidents, or the Behavior Pareto. These
-need structured data the platform does not hold and are deferred to Phase 2.
+Future work (Phase 2): area analytics (incidents or near misses by area,
+area by classification, PSIF by area), Near Miss Cause, Near Miss Potential,
+LOPC contributing factors, Process Safety Incidents, and the Behavior Pareto.
+These need structured data the platform does not hold yet.
 A 2025 LOPC comparison from `performance_legacy` is also deferred.
 
 ## Safety site calendar
@@ -918,7 +932,7 @@ becomes multi-site. Audit timestamps stay UTC.
 - While a page stays open, `useSiteToday` re-checks the Baytown date every
   minute and when the tab becomes visible. Defaults (reporting year, the
   Observations month and observed date, the Contacts date, the Incident &
-  Near Miss Analytics through month) move to the new
+  Near Miss Dashboard through month) move to the new
   day; a value the user chose is kept until they change it or press "Use
   today". A default never moves while it holds unsaved work (Incident &
   Near Miss or Safety Performance hours being edited, an Observation being
