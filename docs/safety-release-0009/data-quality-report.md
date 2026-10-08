@@ -27,27 +27,32 @@ its rows are counted here (see "TRIR").
 | Narrative passages found | 108 (Dash 81, Incident Data 27) |
 | Candidate records parsed (event passages on Dash area/month cells) | 72 |
 | Recommended `include` (valid: event date in its month, description, mapped area) | 15 (high confidence 4, medium 11) |
-| Excluded | 93 |
-| ... no event date in the passage | 57 |
+| Approved `include` (the 15, plus 4 dated in the text; owner decision 2026-10-08) | 19 |
+| Excluded | 89 |
+| ... no event date in the passage | 53 |
 | ... not on the narrative sheet `Dash` (Incident Data repeats / factor lists) | 25 |
 | ... label notes outside the area/month cells, not events | 9 |
 | ... repeats another passage (`Dash-D40-2`, `Dash-C33-1`) | 2 |
-| Candidates missing an incident number | 11 of the 72 event passages, all of them among the 15 included |
-| Candidates missing an event date | 57 of the 72 event passages |
+| Candidates missing an incident number | 11 of the 72 event passages, all of them among the 19 included |
+| Candidates missing an event date | 53 of the 72 event passages |
 | Duplicate incident numbers | none |
 | Reclassification / void references | 1: `Dash-G36-1` says it was reclassified from `LCY-2026-036` (excluded: no date), so no link was made |
 | PSIF mentions (review only; records have no PSIF field) | 4 |
 
 Ambiguous items needing a reviewer's decision:
 
-- 9 passages may be truncated (no closing punctuation); one is included
-  (`Dash-C30-1`).
+- 9 passages may be truncated (no closing punctuation); two are included
+  (`Dash-C30-1`, `Dash-F39-4`).
 - Classification not resolved, left empty: "Injury" (not a configured
   classification) and twice "Property Damage (Non-Work-Related)" /
   "Non-Work-Related Property Damage" (matches both `non_work_related` and
-  `property_damage`). 6 of the 15 included candidates have no classification.
-- 4 passages contain dates in the text (August 15, June 24, 4/15/2026,
-  August 19) that are not used as the event date; confirm the event date.
+  `property_damage`). 9 of the 19 included candidates have no classification.
+- Resolved 2026-10-08 by owner decision: 4 passages with the event date
+  inside the text, not at the start, are included with that date, taken
+  verbatim: `Dash-H18-1` (June 24, 2026), `Dash-F39-4` (4/15/2026),
+  `Dash-J12-2` (August 15, 2026), `Dash-J39-1` (August 19, 2026). Each date
+  lies in its comment's month. The approved file is
+  `apps/api/import_templates/safety_incident_records_2026_lcy_ehs.review.json`.
 - `LCY-2026-2025` has an unusual sequence number; confirm it.
 - A leading date `2/23/23` lies outside its comment's month (February 2026)
   and was not used.
@@ -55,20 +60,20 @@ Ambiguous items needing a reviewer's decision:
   `LCY-2026-030` and `LCY-2026-040`.
 
 Count by month and event type against the authoritative monthly totals
-(test database, after the rehearsal import of the 15 recommended records):
+(the 19 approved records, as rehearsed on the test database):
 
 | Month 2026 | Incident total | Passages | Documented | State | Near Miss total | Passages | Documented | State |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Jan | 5 | 5 | 5 | reconciled | 3 | 3 | 3 | reconciled |
 | Feb | 6 | 6 | 5 | records_missing | not reported | 0 | 0 | no_total_and_no_records |
 | Mar | 5 | 5 | 2 | records_missing | not reported | 0 | 0 | no_total_and_no_records |
-| Apr | 6 | 6 | 0 | records_missing | 11 | 11 | 0 | records_missing |
+| Apr | 6 | 6 | 1 | records_missing | 11 | 11 | 0 | records_missing |
 | May | 3 | 3 | 0 | records_missing | 2 | 2 | 0 | records_missing |
-| Jun | 4 | 4 | 0 | records_missing | 4 | 4 | 0 | records_missing |
+| Jun | 4 | 4 | 0 | records_missing | 4 | 4 | 1 | records_missing |
 | Jul | 5 | 5 | 0 | records_missing | 4 | 4 | 0 | records_missing |
-| Aug | 3 | 3 | 0 | records_missing | 5 | 5 | 0 | records_missing |
+| Aug | 3 | 3 | 1 | records_missing | 5 | 5 | 1 | records_missing |
 | Sep | 4 | 4 | 0 | records_missing | 2 | 2 | 0 | records_missing |
-| Total | 41 | 41 | 12 | | 31 | 31 | 3 | |
+| Total | 41 | 41 | 14 | | 31 | 31 | 5 | |
 
 - The workbook holds exactly one passage per counted event in every month,
   so the passages agree with the totals. The gap between total and
@@ -188,7 +193,7 @@ Inconsistencies between Rates, TRIR EXP. and live Safety Performance:
 
 ## Owner decisions still needed
 
-- Dates (and numbers, where known) for the 57 undated Incident/Near Miss
+- Dates (and numbers, where known) for the 53 undated Incident/Near Miss
   narrative passages (this does not apply to the annual TRIR history), and the
   three ambiguous classifications, before importing more records.
 - Whether LCY-2026-036 should be imported and linked as reclassified.

@@ -229,6 +229,28 @@ def test_check_detects_an_edited_original_passage() -> None:
     assert any("edited" in p for p in legacy_import.check_review(review))
 
 
+def test_the_approved_2026_review_file_passes_check() -> None:
+    review = legacy_import.Review.model_validate_json(
+        (
+            API_ROOT / "import_templates" / "safety_incident_records_2026_lcy_ehs.review.json"
+        ).read_text(encoding="utf-8")
+    )
+    included = {
+        c.candidate_id: c.parsed.incident_date for c in review.candidates if c.decision == "include"
+    }
+
+    assert legacy_import.check_review(review) == []
+    assert len(review.candidates) == 108
+    assert len(included) == 19
+    # Owner decision 2026-10-08: dates written inside the text, taken verbatim.
+    assert {k: included[k] for k in ("Dash-H18-1", "Dash-F39-4", "Dash-J12-2", "Dash-J39-1")} == {
+        "Dash-H18-1": dt.date(2026, 6, 24),
+        "Dash-F39-4": dt.date(2026, 4, 15),
+        "Dash-J12-2": dt.date(2026, 8, 15),
+        "Dash-J39-1": dt.date(2026, 8, 19),
+    }
+
+
 def test_source_reference_is_stable_and_internal() -> None:
     review = _review()
     reference = legacy_import.source_reference(review, review.candidates[0])
