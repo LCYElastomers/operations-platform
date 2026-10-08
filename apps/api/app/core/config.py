@@ -69,6 +69,7 @@ class Settings(BaseSettings):
     development_user_permissions: list[Permission] = [
         Permission.SAFETY_VIEW,
         Permission.SAFETY_EDIT,
+        Permission.QUALITY_VIEW,
     ]
 
     @field_validator("database_url", mode="before")

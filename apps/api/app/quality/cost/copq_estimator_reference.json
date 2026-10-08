@@ -1,0 +1,51 @@
+{
+  "source": "Cost for Poor Quality Control-R0-08122025.xlsx (revision R0, 12 Aug 2025)",
+  "fixedCostKusdPerDay": "100",
+  "grossMarginUsdPerMt": "75",
+  "primePriceUsdPerLb": "1.1451",
+  "scrapPriceUsdPerLb": "0.37",
+  "offspecPriceUsdPerLb": "0.8056",
+  "packagePriceUsdPerPiece": {
+    "Bags": "0.88",
+    "Box": "32",
+    "Single sacks": "12",
+    "Double stack supersacks": "12"
+  },
+  "reworkSteamLbPerLb": "0.5263157894736842",
+  "reworkPowerKwPerLb": "0.14736842105263157",
+  "electricityUsdPerKw": "0.09",
+  "steamUsdPerKlb": "3.6",
+  "products": [
+    { "code": "3411", "standardRateMtPerDay": "200" },
+    { "code": "3411C", "standardRateMtPerDay": "176" },
+    { "code": "3412", "standardRateMtPerDay": "200" },
+    { "code": "3414", "standardRateMtPerDay": "200" },
+    { "code": "3401", "standardRateMtPerDay": "176" },
+    { "code": "3501", "standardRateMtPerDay": "200" },
+    { "code": "3520", "standardRateMtPerDay": "200" },
+    { "code": "3522", "standardRateMtPerDay": "200" },
+    { "code": "3527", "standardRateMtPerDay": "176" },
+    { "code": "3537", "standardRateMtPerDay": "200" },
+    { "code": "1411", "standardRateMtPerDay": "210" },
+    { "code": "3566", "standardRateMtPerDay": "200" },
+    { "code": "3546", "standardRateMtPerDay": "189" },
+    { "code": "3601", "standardRateMtPerDay": "175" },
+    { "code": "3681", "standardRateMtPerDay": "175" },
+    { "code": "3710", "standardRateMtPerDay": "178" },
+    { "code": "3760", "standardRateMtPerDay": "160" },
+    { "code": "3741", "standardRateMtPerDay": "200" }
+  ],
+  "guidance": [
+    "Don't count it twice. For example, if C-grade products are going to be reworked, select Rework instead of C-grade.",
+    "If lower production rate is caused by reworking, select only Rework, not Lower production rate.",
+    "If polymer rate reduction is due to downtime, don't enter it as lower production rate.",
+    "Downtime is the total for the finishing lines: both lines down for 24 hours is 48 hours."
+  ],
+  "notes": [
+    "Figures are estimates calculated with the workbook's method and are not saved.",
+    "The workbook's Rework total excludes its calculated steam and power cost; it is shown separately and not added, as in the workbook.",
+    "The workbook looks products up with an approximate-match VLOOKUP on an unsorted table; here the product must match exactly. Product 3142 in the workbook's product list has no standard rate and is not offered.",
+    "The workbook converts pounds to metric tonnes with 0.454 in some formulas and 2.2 in others; each formula is reproduced as written.",
+    "Prices and margins are the workbook's R0 values and may not reflect current costs."
+  ]
+}

@@ -51,6 +51,12 @@ P = Permission
         (P.SAFETY_PERFORMANCE_EDIT, P.SAFETY_PERFORMANCE_VIEW, True),
         (P.SAFETY_PERFORMANCE_EDIT, P.SAFETY_INCIDENTS_VIEW, False),
         (P.SAFETY_INCIDENTS_EDIT, P.SAFETY_PERFORMANCE_VIEW, False),
+        (P.QUALITY_VIEW, P.QUALITY_COST_VIEW, True),
+        (P.QUALITY_VIEW, P.QUALITY_COST_MANAGE, False),
+        (P.QUALITY_MANAGE, P.QUALITY_COST_MANAGE, True),
+        (P.QUALITY_COST_VIEW, P.QUALITY_VIEW, False),
+        (P.SAFETY_MANAGE, P.QUALITY_COST_VIEW, False),
+        (P.QUALITY_MANAGE, P.SAFETY_VIEW, False),
     ],
 )
 def test_grants_follow_scope_and_action(
@@ -69,9 +75,14 @@ def test_effective_permissions_expand_module_grants() -> None:
         P.SAFETY_PERFORMANCE_VIEW,
         P.SAFETY_TRIR_VIEW,
     }
+    safety = {p for p in Permission if p.startswith("safety.")}
     manage_only = {P.SAFETY_MANAGE, P.SAFETY_INCIDENT_RECORDS_MANAGE, P.SAFETY_TRIR_MANAGE}
-    assert effective_permissions([P.SAFETY_EDIT]) == set(Permission) - manage_only
-    assert effective_permissions([P.SAFETY_MANAGE]) == set(Permission)
+    assert effective_permissions([P.SAFETY_EDIT]) == safety - manage_only
+    assert effective_permissions([P.SAFETY_MANAGE]) == safety
+    assert effective_permissions([P.QUALITY_VIEW]) == {P.QUALITY_VIEW, P.QUALITY_COST_VIEW}
+    assert effective_permissions([P.QUALITY_MANAGE]) == {
+        p for p in Permission if p.startswith("quality.")
+    }
     assert effective_permissions([]) == set()
 
 
@@ -103,13 +114,17 @@ def test_development_user_holds_configured_permissions(monkeypatch: pytest.Monke
     assert not principal.has(P.SAFETY_INCIDENTS_EDIT)
 
 
-def test_development_user_defaults_to_safety_edit(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_development_user_defaults_to_safety_edit_and_quality_view(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("USER_AUTH_MODE", "development-unauthenticated")
     monkeypatch.delenv("DEVELOPMENT_USER_PERMISSIONS", raising=False)
 
     principal = get_user_principal(Settings(_env_file=None))
 
     assert principal.has(P.SAFETY_INCIDENTS_EDIT)
+    assert principal.has(P.QUALITY_COST_VIEW)
+    assert not principal.has(P.QUALITY_COST_MANAGE)
 
 
 def test_unknown_development_permissions_are_rejected(monkeypatch: pytest.MonkeyPatch) -> None:

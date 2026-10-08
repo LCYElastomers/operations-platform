@@ -1,0 +1,54 @@
+{
+  "source": "COQ Matrix.xlsx",
+  "notes": [
+    "Reviewed mapping of the COQ Matrix workbook (SHA-256 5C1452D50A14606CF7798B2B7EAC2925D189A5C88304C3D961DBA87857C83840).",
+    "Only 202601 and 202602 have figures; 202603 to 202612 are blank in every sheet and are left out.",
+    "The Production sheet has no 202612 row.",
+    "Warehousing / handling and complaint rework are workbook formulas on returned pounds (x 0.02 and x 0.34); their results are imported. Rework 14280.000000000002 is a floating-point artifact of 42000 x 0.34 and is imported as 14280.",
+    "Prevention and appraisal costs are not recorded in the workbook.",
+    "The COQ sheet's 'Production Value ($)' column is total production in pounds; the workbook's production and total COQ percentages are not imported."
+  ],
+  "months": [
+    {
+      "year": 2026,
+      "month": 1,
+      "totalProductionLbs": { "value": "3887918", "sourceCell": "Production!C3" },
+      "scrapProducedLbs": { "value": "41697", "sourceCell": "Production!D3" },
+      "offspecProducedLbs": { "value": null, "sourceCell": "Production!E3" },
+      "scrapLossPerLb": { "value": "0.61", "sourceCell": "Production!F3" },
+      "offspecLossPerLb": { "value": "0.338", "sourceCell": "Production!G3" },
+      "complaintCount": { "value": 2, "sourceCell": "Customer_Complaint!C3" },
+      "returnedProductLbs": { "value": "42000", "sourceCell": "Customer_Complaint!D3" },
+      "outboundFreight": { "value": "2500", "sourceCell": "Customer_Complaint!E3" },
+      "returnFreight": { "value": "2350", "sourceCell": "Customer_Complaint!F3" },
+      "warehousingHandling": { "value": "840", "sourceCell": "Customer_Complaint!G3" },
+      "labInvestigation": { "value": "750", "sourceCell": "Customer_Complaint!H3" },
+      "customerCreditPenalty": { "value": "6000", "sourceCell": "Customer_Complaint!I3" },
+      "complaintReworkCost": { "value": "14280", "sourceCell": "Customer_Complaint!J3" },
+      "salesRevenue": { "value": "10259998", "sourceCell": "COQ!G5" },
+      "legacyProductionQualityCost": { "value": "25435.17", "sourceCell": "Production!J3" },
+      "legacyCustomerComplaintCost": { "value": "26720", "sourceCell": "Customer_Complaint!K3" },
+      "note": "Off-spec produced is blank in the source; the workbook counts it as $0 off-spec loss."
+    },
+    {
+      "year": 2026,
+      "month": 2,
+      "totalProductionLbs": { "value": "2844879", "sourceCell": "Production!C4" },
+      "scrapProducedLbs": { "value": "27625", "sourceCell": "Production!D4" },
+      "offspecProducedLbs": { "value": "12250", "sourceCell": "Production!E4" },
+      "scrapLossPerLb": { "value": "0.61", "sourceCell": "Production!F4" },
+      "offspecLossPerLb": { "value": "0.338", "sourceCell": "Production!G4" },
+      "complaintCount": { "value": 1, "sourceCell": "Customer_Complaint!C4" },
+      "returnedProductLbs": { "value": "0", "sourceCell": "Customer_Complaint!D4" },
+      "outboundFreight": { "value": "0", "sourceCell": "Customer_Complaint!E4" },
+      "returnFreight": { "value": "0", "sourceCell": "Customer_Complaint!F4" },
+      "warehousingHandling": { "value": "0", "sourceCell": "Customer_Complaint!G4" },
+      "labInvestigation": { "value": "800", "sourceCell": "Customer_Complaint!H4" },
+      "customerCreditPenalty": { "value": "2000", "sourceCell": "Customer_Complaint!I4" },
+      "complaintReworkCost": { "value": "0", "sourceCell": "Customer_Complaint!J4" },
+      "salesRevenue": { "value": "11506662", "sourceCell": "COQ!G6" },
+      "legacyProductionQualityCost": { "value": "20991.75", "sourceCell": "Production!J4" },
+      "legacyCustomerComplaintCost": { "value": "2800", "sourceCell": "Customer_Complaint!K4" }
+    }
+  ]
+}

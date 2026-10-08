@@ -185,7 +185,7 @@ def test_behavior_migration_stores_annual_counts_without_months(upgrade_sql: str
 
 
 def test_records_migration_creates_records_and_trir_history_only(upgrade_sql: str) -> None:
-    sql = _segment(upgrade_sql, "0008 -> 0009")
+    sql = _segment(upgrade_sql, "0008 -> 0009", "0009 -> 0010")
     assert "CREATE TABLE safety.incident_records" in sql
     assert "CREATE TABLE safety.trir_annual_facts" in sql
     records = sql.split("CREATE TABLE safety.incident_records", 1)[1].split(";", 1)[0]
@@ -208,3 +208,21 @@ def test_records_migration_creates_records_and_trir_history_only(upgrade_sql: st
     ).replace("UPDATE core.alembic_version", "")
     assert "ALTER TABLE" not in sql
     assert "DROP" not in sql
+
+
+def test_cost_migration_creates_monthly_inputs_only(upgrade_sql: str) -> None:
+    sql = _segment(upgrade_sql, "0009 -> 0010")
+    assert "CREATE TABLE quality.cost_monthly_facts" in sql
+    facts = sql.split("CREATE TABLE quality.cost_monthly_facts", 1)[1].split(";", 1)[0]
+    assert "UNIQUE (reporting_year, reporting_month)" in facts
+    assert "sales_revenue NUMERIC," in facts
+    assert "scrap_loss_per_lb >= 0" in facts
+    # Inputs only: costs, totals and percentages are calculated, never stored.
+    for derived in ("copq", "internal_failure", "external_failure", "pct", "total_cost"):
+        assert derived not in facts.lower()
+    assert "prevention" not in facts.lower() and "appraisal" not in facts.lower()
+    # Schema only: nothing seeded, nothing existing altered or dropped.
+    assert "INSERT" not in sql
+    assert "ALTER TABLE" not in sql
+    assert "DROP" not in sql
+    assert "safety." not in sql

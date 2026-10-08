@@ -44,9 +44,11 @@ export default function QualityOverviewPage() {
                         {analysis.description}
                       </p>
                     </div>
-                    <StatusBadge tone="warning" className="hidden sm:inline-flex">
-                      Development fixture
-                    </StatusBadge>
+                    {analysis.fixture && (
+                      <StatusBadge tone="warning" className="hidden sm:inline-flex">
+                        Development fixture
+                      </StatusBadge>
+                    )}
                     <ChevronRight className="size-4 shrink-0 text-muted-foreground group-hover:text-foreground" />
                   </Link>
                 </li>

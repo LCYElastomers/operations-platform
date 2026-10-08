@@ -12,6 +12,8 @@ export type NavItem = {
   icon?: ComponentType<{ className?: string }>;
   description?: string;
   status?: ModuleStatus;
+  /** The page shows development fixture data, labelled as such where it is listed. */
+  fixture?: boolean;
   children?: NavItem[];
 };
 

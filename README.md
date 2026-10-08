@@ -208,7 +208,8 @@ Migration sequence: `0001`–`0002` Quality finishing measurements and
 ingestion, `0003` audit events and Incident & Near Miss,
 `0004` Observations, `0005` Supervisor Safety Contacts (retired, tables
 kept), `0006` Safety Performance, `0007` incident dimensions, `0008`
-Behavior, `0009` incident records and TRIR history. Migrations seed
+Behavior, `0009` incident records and TRIR history, `0010` Cost of
+Quality monthly inputs (`app.quality.cost.legacy_import`). Migrations seed
 reference data only; legacy values are loaded afterwards with the import
 CLIs, in this order: incident totals (`app.safety.legacy_import`), Safety
 Performance hours, Behavior, TRIR history, then reviewed incident
@@ -704,6 +705,76 @@ as `record.ingestion`. Row values, request bodies, headers, and database
 error text (which can contain SQL parameters) are never logged. Database
 failures log only the exception type.
 
+## Quality > Cost of Quality
+
+Two pages under Quality, both read-only and calculated by the API from the
+monthly inputs in `quality.cost_monthly_facts` (migration 0010):
+
+- **Cost of Poor Quality** (`/quality/cost/copq`): total COPQ, COPQ % of
+  sales, internal failure (with $ per lb produced), external failure,
+  complaints; a Pareto of cost lines with cumulative share; a monthly trend;
+  a monthly table; a searchable cost-line detail; data checks and the
+  workbook definitions. A second tab is the **incident estimator**.
+- **COQ Matrix** (`/quality/cost/matrix`): Total COQ, Good COQ (P + A), Poor
+  COQ (IF + EF), Poor COQ %; the 2×2 matrix; the COQ mix; a trend by class;
+  cost lines filtered by COQ class.
+
+Filters are year and a month range. Area, product, owner and status are not
+recorded by the source, so there are no such filters.
+
+### Calculations (`app/quality/cost/service.py`)
+
+Only inputs are stored; every cost, total and percentage is calculated with
+Decimal. Scrap loss = scrap lb × scrap loss per lb; off-spec loss likewise.
+Internal failure = scrap + off-spec loss; external failure = the complaint
+cost lines; COPQ = internal + external. Percentages divide by sales revenue;
+production cost is shown per pound produced. A blank input is not reported:
+sums add the reported parts (null when none is reported) and the missing
+lines are listed as data checks. Prevention and appraisal are not recorded,
+so prevention, appraisal, Good COQ, Total COQ and Poor COQ % are null, never
+$0.
+
+### API
+
+| Endpoint | Description |
+| -------- | ----------- |
+| `GET /api/v1/quality/cost/summary?year=&from=&through=` | Months of the year, period totals, Pareto elements, matrix, data checks, definitions. Defaults: latest year with figures, January through the latest reported month |
+| `GET /api/v1/quality/cost/estimator` | Products, package types, assumptions and guidance for the estimator |
+| `POST /api/v1/quality/cost/estimate` | Estimate one incident. Nothing is stored |
+
+All require `quality.cost.view`. Responses carry no workbook cell references.
+
+### Incident estimator (`app/quality/cost/estimator.py`)
+
+Reproduces the formulas of `Cost for Poor Quality Control-R0-08122025.xlsx`
+(downtime, lower production rate, scrap, C-grade, rework, repack, in kUSD)
+with the workbook's parameters, kept with their source in
+`app/quality/cost/copq_estimator_reference.json`. The tests check every line
+and the workbook's example total (284.5448 kUSD). Known workbook behaviour
+kept as written: the rework total excludes its steam and power cost (shown
+separately); pounds are converted with 0.454 in some formulas and 2.2 in
+others. Products must match exactly (the workbook's approximate VLOOKUP is
+not reproduced); product 3142 has no standard rate and is not offered.
+
+### Importing the COQ workbook
+
+`apps/api/import_templates/quality_cost_of_quality_2026.mapping.json` is the
+reviewed mapping of `COQ Matrix.xlsx`: one entry per month with figures
+(Jan and Feb 2026), each value with its source cell, plus the workbook's own
+monthly totals, which `check` recalculates and compares (to the cent) but
+never stores.
+
+```powershell
+cd apps/api
+uv run python -m app.quality.cost.legacy_import check import_templates/quality_cost_of_quality_2026.mapping.json
+uv run python -m app.quality.cost.legacy_import plan  import_templates/quality_cost_of_quality_2026.mapping.json
+uv run python -m app.quality.cost.legacy_import apply import_templates/quality_cost_of_quality_2026.mapping.json
+```
+
+`apply` writes in one audited transaction (`quality.cost_monthly_fact`, actor
+`legacy-import`); stored months that differ from the file block it, and
+re-running is a no-op. See `docs/quality-cost-0010/data-quality-report.md`.
+
 ## Authorization
 
 There is no login yet. Interactive endpoints are protected by
@@ -732,6 +803,13 @@ implied by `edit`:
 | `safety.performance.edit`  | `safety.performance.view`, `safety.performance.edit`              |
 | `safety.trir.view`         | TRIR Experience                                                   |
 | `safety.trir.manage`       | TRIR history imports (operator CLI; no endpoint writes TRIR facts) |
+| `quality.view`             | every Quality `view` permission, including `quality.cost.view`    |
+| `quality.manage`           | everything above plus `quality.cost.manage`                        |
+| `quality.cost.view`        | Cost of Poor Quality, COQ Matrix and the incident cost estimator  |
+| `quality.cost.manage`      | Cost of Quality imports (operator CLI; no endpoint writes them)   |
+
+The default `DEVELOPMENT_USER_PERMISSIONS` are `safety.view`, `safety.edit`
+and `quality.view`. Moisture Analysis endpoints are not permission-checked yet.
 
 The `safety.contacts.*` permissions were removed with Supervisor Safety
 Contacts (see "Retired: Supervisor Safety Contacts").
