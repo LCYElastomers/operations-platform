@@ -211,7 +211,7 @@ def test_records_migration_creates_records_and_trir_history_only(upgrade_sql: st
 
 
 def test_cost_migration_creates_monthly_inputs_only(upgrade_sql: str) -> None:
-    sql = _segment(upgrade_sql, "0009 -> 0010")
+    sql = _segment(upgrade_sql, "0009 -> 0010", "0010 -> 0011")
     assert "CREATE TABLE quality.cost_monthly_facts" in sql
     facts = sql.split("CREATE TABLE quality.cost_monthly_facts", 1)[1].split(";", 1)[0]
     assert "UNIQUE (reporting_year, reporting_month)" in facts
@@ -226,3 +226,28 @@ def test_cost_migration_creates_monthly_inputs_only(upgrade_sql: str) -> None:
     assert "ALTER TABLE" not in sql
     assert "DROP" not in sql
     assert "safety." not in sql
+
+
+def test_cost_records_migration_creates_records_and_references_only(upgrade_sql: str) -> None:
+    sql = _segment(upgrade_sql, "0010 -> 0011")
+    assert "CREATE TABLE quality.cost_records" in sql
+    assert "CREATE TABLE quality.cost_record_references" in sql
+    table = sql.split("CREATE TABLE quality.cost_records", 1)[1].split(";", 1)[0]
+    # Totals, net cost, days open and the record number are derived, never stored.
+    for derived in ("total_cost", "net_cost", "days_open", "record_number", "copq", "good_coq"):
+        assert derived not in table
+    assert "material_cost NUMERIC," in table
+    assert "REFERENCES safety.areas (id) ON DELETE RESTRICT" in table
+    assert "(status = 'closed') = (date_closed IS NOT NULL)" in table
+    assert "split_part(category_code, '.', 1) = coq_class" in table
+    assert (
+        "CREATE UNIQUE INDEX uq_cost_records_source_key "
+        "ON quality.cost_records (source_key) WHERE source_key IS NOT NULL"
+    ) in sql
+    references = sql.split("CREATE TABLE quality.cost_record_references", 1)[1].split(";", 1)[0]
+    assert "REFERENCES quality.cost_records (id) ON DELETE RESTRICT" in references
+    # Schema only: nothing seeded, nothing existing altered or dropped.
+    assert "INSERT" not in sql.replace("UPDATE core.alembic_version", "")
+    assert "ALTER TABLE" not in sql
+    assert "DROP" not in sql
+    assert "cost_monthly_facts" not in sql

@@ -1,44 +1,52 @@
-"""Cost of Poor Quality and Cost of Quality calculations.
+"""Cost of Poor Quality and Cost of Quality Matrix figures.
 
-Every cost, total and percentage is calculated here from the stored monthly
-inputs (``quality.cost_monthly_facts``) and never stored. Decimal throughout;
-rounding is for display only.
+The COPQ dashboard and the COQ Matrix are both calculated here from the same
+Quality Cost records, using ``app.quality.cost.calculations`` for every
+figure, so the two always agree with each other and with the Register.
+COPQ is the Internal and External Failure records; the matrix uses all four
+classes. Confirmed cost and potential exposure are kept apart throughout.
 
-Classes follow the Cost of Quality model: prevention + appraisal = good COQ,
-internal + external failure = poor COQ (COPQ). The source records only failure
-costs, so prevention, appraisal, good COQ, total COQ and poor COQ % are
-unavailable (null), never 0.
-
-A blank input is not reported (null). Sums add the reported parts and are null
-only when no part is reported; the parts left out are listed as data checks.
+The monthly COQ workbook inputs (``quality.cost_monthly_facts``) supply only
+the denominators (production pounds, sales revenue); their cost lines reach
+these figures as imported records. ``MonthInputs`` and ``month_cost`` remain
+for the import, which converts and cross-checks those lines.
 """
 
-from collections.abc import Iterable, Sequence
+import calendar
+import datetime as dt
+from collections.abc import Sequence
 from dataclasses import dataclass, fields
 from decimal import Decimal
-from typing import Literal
 
+from app.quality.cost import calculations
+from app.quality.cost.classification import (
+    COQ_CLASSES,
+    GOOD_CLASSES,
+    POOR_CLASSES,
+    CoqClass,
+    category_label,
+    is_poor,
+    quality_group,
+)
+from app.quality.cost.models import CostRecord
 from app.quality.cost.schemas import (
+    AgingBucketOut,
+    CategoryOut,
+    CopqOut,
     CoqClassOut,
     CoqMatrixOut,
-    CostElementOut,
+    CostFiguresOut,
     CostMonthOut,
-    CostPeriodOut,
     CostSummaryResponse,
     DataCheckOut,
     DefinitionOut,
 )
 
-CoqClass = Literal["prevention", "appraisal", "internal_failure", "external_failure"]
-
-COQ_CLASSES: dict[CoqClass, str] = {
-    "prevention": "Prevention",
-    "appraisal": "Appraisal",
-    "internal_failure": "Internal Failure",
-    "external_failure": "External Failure",
-}
-
 SOURCE = "COQ Matrix.xlsx"
+IMPORTED_NOTE = (
+    "Records marked Imported are the monthly scrap, off-spec and customer complaint totals "
+    "from COQ Matrix.xlsx; they have no area, product or owner."
+)
 
 
 @dataclass(frozen=True)
@@ -170,35 +178,12 @@ DEFINITIONS: tuple[DefinitionOut, ...] = tuple(
     )
 )
 
-# Standing data checks about the source, shown with the calculated ones.
-SOURCE_CHECKS: tuple[str, ...] = (
-    "Prevention and appraisal costs are not recorded in the source, so good COQ, total COQ "
-    "and poor COQ % cannot be calculated. They are shown as not recorded, not as $0.",
-    "The workbook's 'Production Value ($)' column holds total production in pounds, so its "
-    "'Production COQ %' divides dollars by pounds. Production quality cost is shown here as "
-    "dollars per pound produced; percentages use sales revenue only.",
-    "The workbook's 'Total Cost of Poor Quality %' divides by production pounds plus sales "
-    "dollars. Here COPQ % is COPQ ÷ sales revenue, as the workbook's Definitions sheet states.",
-    "Warehousing / handling and complaint rework are calculated in the workbook from returned "
-    "pounds ($0.02 and $0.34 per returned pound), not measured costs.",
-    "Area, product, owner, status, target and action are not recorded in the source, so "
-    "costs cannot be broken down or filtered by them.",
-)
-
-
-def _sum(values: Iterable[Decimal | None]) -> Decimal | None:
-    reported = [v for v in values if v is not None]
-    return sum(reported, Decimal(0)) if reported else None
+_sum = calculations.total
+_ratio = calculations.ratio
 
 
 def _product(a: Decimal | None, b: Decimal | None) -> Decimal | None:
     return None if a is None or b is None else a * b
-
-
-def _ratio(numerator: Decimal | None, denominator: Decimal | None) -> Decimal | None:
-    if numerator is None or denominator is None or denominator <= 0:
-        return None
-    return numerator / denominator
 
 
 def element_values(month: MonthInputs) -> dict[str, Decimal | None]:
@@ -235,211 +220,274 @@ def month_cost(month: MonthInputs) -> MonthCost:
     )
 
 
-def _month_out(cost: MonthCost) -> CostMonthOut:
-    m = cost.inputs
-    return CostMonthOut(
-        year=m.year,
-        month=m.month,
-        reported=m.reported,
-        total_production_lbs=m.total_production_lbs,
-        scrap_produced_lbs=m.scrap_produced_lbs,
-        offspec_produced_lbs=m.offspec_produced_lbs,
-        scrap_loss_per_lb=m.scrap_loss_per_lb,
-        offspec_loss_per_lb=m.offspec_loss_per_lb,
-        complaint_count=m.complaint_count,
-        returned_product_lbs=m.returned_product_lbs,
-        sales_revenue=m.sales_revenue,
-        elements=cost.elements,
-        internal_failure=cost.internal_failure,
-        external_failure=cost.external_failure,
-        copq=cost.copq,
-        internal_cost_per_lb=_ratio(cost.internal_failure, m.total_production_lbs),
-        external_pct_of_sales=_ratio(cost.external_failure, m.sales_revenue),
-        copq_pct_of_sales=_ratio(cost.copq, m.sales_revenue),
-        note=m.note,
+def _figures(records: Sequence[CostRecord]) -> CostFiguresOut:
+    t = calculations.totals(records)
+    return CostFiguresOut(
+        count=t.count,
+        confirmed_count=t.confirmed_count,
+        potential_count=t.potential_count,
+        no_cost_count=t.no_cost_count,
+        confirmed=t.confirmed,
+        potential=t.potential,
+        total_exposure=t.total_exposure,
+        recovered=t.recovered,
+        avoided=t.avoided,
+        net=t.net,
     )
 
 
-def _period(
-    costs: Sequence[MonthCost], from_month: int | None, through_month: int | None
-) -> CostPeriodOut:
-    reported = [c for c in costs if c.inputs.reported]
-    internal = _sum(c.internal_failure for c in reported)
-    external = _sum(c.external_failure for c in reported)
-    copq = _sum((internal, external))
-    # Ratios use only months reporting both the cost and the denominator.
-    with_sales = [c for c in reported if c.copq is not None and c.inputs.sales_revenue is not None]
+def _class_amounts(records: Sequence[CostRecord], *, confirmed: bool) -> dict[str, Decimal | None]:
+    selected = [
+        r
+        for r in records
+        if (calculations.is_confirmed(r) if confirmed else calculations.is_potential(r))
+    ]
+    return {
+        code: _sum(calculations.record_total(r) for r in selected if r.coq_class == code)
+        for code in COQ_CLASSES
+    }
+
+
+def _matrix(records: Sequence[CostRecord]) -> CoqMatrixOut:
+    confirmed = calculations.matrix(_class_amounts(records, confirmed=True))
+    potential = calculations.matrix(_class_amounts(records, confirmed=False))
+    return CoqMatrixOut(
+        good=confirmed.good,
+        poor=confirmed.poor,
+        total=confirmed.total,
+        poor_pct=confirmed.poor_pct,
+        good_potential=potential.good,
+        poor_potential=potential.poor,
+        total_potential=_sum((potential.good, potential.poor)),
+    )
+
+
+def _fact_sum(facts: dict[int, MonthInputs], months: Sequence[int], name: str) -> Decimal | None:
+    return _sum(getattr(facts[m], name) for m in months if m in facts)
+
+
+def _copq(
+    records: Sequence[CostRecord],
+    facts: dict[int, MonthInputs],
+    months: Sequence[int],
+    today: dt.date,
+) -> CopqOut:
+    poor = calculations.poor_records(records)
+    figures = _figures(poor)  # type: ignore[arg-type]
+
+    def confirmed_in(month_list: Sequence[int], classes: tuple[str, ...]) -> Decimal | None:
+        return _sum(
+            calculations.record_total(r)
+            for r in poor
+            if r.record_date.month in month_list
+            and r.coq_class in classes
+            and calculations.is_confirmed(r)
+        )
+
+    # Ratios use only months reporting the denominator.
+    with_sales = [m for m in months if m in facts and facts[m].sales_revenue is not None]
     with_production = [
-        c
-        for c in reported
-        if c.internal_failure is not None and c.inputs.total_production_lbs is not None
+        m for m in months if m in facts and facts[m].total_production_lbs is not None
     ]
-    with_sales_external = [
-        c for c in reported if c.external_failure is not None and c.inputs.sales_revenue is not None
-    ]
-    return CostPeriodOut(
-        from_month=from_month,
-        through_month=through_month,
-        months_in_period=len(costs),
-        months_reported=len(reported),
-        reported_months=[c.inputs.month for c in reported],
-        internal_failure=internal,
-        external_failure=external,
-        copq=copq,
-        total_production_lbs=_sum(c.inputs.total_production_lbs for c in reported),
-        sales_revenue=_sum(c.inputs.sales_revenue for c in reported),
-        complaint_count=(
-            sum(c.inputs.complaint_count for c in reported if c.inputs.complaint_count is not None)
-            if any(c.inputs.complaint_count is not None for c in reported)
-            else None
-        ),
-        returned_product_lbs=_sum(c.inputs.returned_product_lbs for c in reported),
-        copq_pct_of_sales=_ratio(
-            _sum(c.copq for c in with_sales), _sum(c.inputs.sales_revenue for c in with_sales)
-        ),
-        external_pct_of_sales=_ratio(
-            _sum(c.external_failure for c in with_sales_external),
-            _sum(c.inputs.sales_revenue for c in with_sales_external),
-        ),
+    return CopqOut(
+        figures=figures,
+        open_count=sum(1 for r in poor if calculations.is_open(r)),
+        overdue_count=sum(1 for r in poor if calculations.is_overdue(r, today)),
+        production_lbs=_fact_sum(facts, months, "total_production_lbs"),
+        sales_revenue=_fact_sum(facts, months, "sales_revenue"),
         internal_cost_per_lb=_ratio(
-            _sum(c.internal_failure for c in with_production),
-            _sum(c.inputs.total_production_lbs for c in with_production),
+            confirmed_in(with_production, ("internal_failure",)),
+            _fact_sum(facts, with_production, "total_production_lbs"),
+        ),
+        copq_pct_of_sales=_ratio(
+            confirmed_in(with_sales, ("internal_failure", "external_failure")),
+            _fact_sum(facts, with_sales, "sales_revenue"),
         ),
     )
 
 
-def _elements(costs: Sequence[MonthCost], copq: Decimal | None) -> list[CostElementOut]:
-    """Period total per element, highest first (Pareto order); unreported last."""
-    rows = [(e, _sum(c.elements[e.code] for c in costs if c.inputs.reported)) for e in ELEMENTS]
-    rows.sort(key=lambda row: (row[1] is None, -(row[1] or 0)))
-    out: list[CostElementOut] = []
-    cumulative = Decimal(0)
-    for element, value in rows:
-        if value is not None:
-            cumulative += value
+def _months(records: Sequence[CostRecord], facts: dict[int, MonthInputs]) -> list[CostMonthOut]:
+    out = []
+    for month in range(1, 13):
+        inside = [r for r in records if r.record_date.month == month]
+        confirmed = _class_amounts(inside, confirmed=True)
+        potential = _class_amounts(inside, confirmed=False)
+        figures = calculations.matrix(confirmed)
+        poor = calculations.totals(calculations.poor_records(inside))  # type: ignore[arg-type]
+        fact = facts.get(month)
+        sales = fact.sales_revenue if fact else None
         out.append(
-            CostElementOut(
-                code=element.code,
-                label=element.label,
-                coq_class=element.coq_class,
-                category=element.category,
-                source_term=element.source_term,
-                value=value,
-                share_of_copq=_ratio(value, copq),
-                cumulative_share=_ratio(cumulative, copq) if value is not None else None,
+            CostMonthOut(
+                month=month,
+                confirmed=confirmed,
+                potential=potential,
+                good=figures.good,
+                poor=figures.poor,
+                poor_potential=calculations.matrix(potential).poor,
+                net_poor=poor.net,
+                record_count=len(inside),
+                production_lbs=fact.total_production_lbs if fact else None,
+                sales_revenue=sales,
+                copq_pct_of_sales=_ratio(figures.poor, sales),
             )
         )
     return out
 
 
-def _matrix(period: CostPeriodOut) -> CoqMatrixOut:
-    poor = period.copq
-    values: dict[CoqClass, Decimal | None] = {
-        "prevention": None,
-        "appraisal": None,
-        "internal_failure": period.internal_failure,
-        "external_failure": period.external_failure,
-    }
-    return CoqMatrixOut(
+def _categories(records: Sequence[CostRecord]) -> list[CategoryOut]:
+    by_class = _class_amounts(records, confirmed=True)
+    groups: dict[str, list[CostRecord]] = {}
+    for record in records:
+        groups.setdefault(record.category_code, []).append(record)
+    rows = [(code, inside, _figures(inside)) for code, inside in groups.items()]
+    # Highest confirmed cost first; categories with no confirmed cost last.
+    rows.sort(key=lambda row: (row[2].confirmed is None, -(row[2].confirmed or 0), row[0]))
+    poor_total = _sum(by_class[c] for c in POOR_CLASSES)
+    cumulative = Decimal(0)
+    out = []
+    for code, inside, figures in rows:
+        coq_class = inside[0].coq_class
+        share_of_poor = None
+        if is_poor(coq_class) and figures.confirmed is not None:
+            cumulative += figures.confirmed
+            share_of_poor = _ratio(cumulative, poor_total)
+        out.append(
+            CategoryOut(
+                coq_class=coq_class,  # type: ignore[arg-type]
+                code=code,
+                label=category_label(code),
+                figures=figures,
+                share_of_class=_ratio(figures.confirmed, by_class[coq_class]),
+                cumulative_share_of_poor=share_of_poor,
+            )
+        )
+    return out
+
+
+def _checks(
+    records: Sequence[CostRecord],
+    facts: dict[int, MonthInputs],
+    months: Sequence[int],
+) -> list[DataCheckOut]:
+    checks: list[DataCheckOut] = []
+    figures = calculations.totals(records)
+    if figures.no_cost_count:
+        checks.append(
+            DataCheckOut(
+                status="warning",
+                message=f"{_records(figures.no_cost_count)} no cost entered yet; "
+                "counted, but adding nothing to the totals.",
+            )
+        )
+    if figures.potential_count:
+        checks.append(
+            DataCheckOut(
+                status="info",
+                message=f"{_records(figures.potential_count)} Potential or Validating: "
+                "shown as potential exposure, not in confirmed cost.",
+            )
+        )
+    present = {r.coq_class for r in records if calculations.is_confirmed(r)}
+    if records and not present & GOOD_CLASSES:
+        checks.append(
+            DataCheckOut(
+                status="info",
+                message="No confirmed Prevention or Appraisal cost is recorded for this selection, "
+                "so good COQ, total COQ and poor COQ % are shown as not recorded, not as $0.",
+            )
+        )
+    poor_months = sorted(
+        {
+            r.record_date.month
+            for r in records
+            if is_poor(r.coq_class) and calculations.is_confirmed(r)
+        }
+    )
+    without_sales = [
+        m for m in poor_months if m in months and (m not in facts or facts[m].sales_revenue is None)
+    ]
+    if without_sales:
+        checks.append(
+            DataCheckOut(
+                status="warning",
+                message="Sales revenue is not reported for "
+                f"{', '.join(calendar.month_abbr[m] for m in without_sales)}; "
+                "COPQ % of sales leaves those months out.",
+            )
+        )
+    if any(r.source == "legacy_import" for r in records):
+        checks.append(DataCheckOut(status="info", message=IMPORTED_NOTE))
+    for month in months:
+        if month in facts and facts[month].note:
+            checks.append(
+                DataCheckOut(
+                    status="info", message=f"{calendar.month_abbr[month]}: {facts[month].note}"
+                )
+            )
+    return checks
+
+
+def _records(count: int) -> str:
+    return "1 record has" if count == 1 else f"{count} records have"
+
+
+def summary(
+    records: Sequence[CostRecord],
+    stored: Sequence[MonthInputs],
+    *,
+    year: int | None,
+    available_years: Sequence[int],
+    from_month: int | None,
+    through_month: int | None,
+    today: dt.date,
+) -> CostSummaryResponse:
+    """COPQ and COQ Matrix figures of ``records`` (already filtered to ``year``
+    and the selected dimensions) for ``from_month`` through ``through_month``.
+
+    ``through_month`` defaults to the latest month of the year with a record.
+    """
+    in_year = [r for r in records if year is not None and r.record_date.year == year]
+    record_months = sorted({r.record_date.month for r in in_year})
+    first = from_month or 1
+    last = through_month or (record_months[-1] if record_months else 12)
+    if first > last:
+        first, last = last, first
+    months = list(range(first, last + 1))
+    facts = {m.month: m for m in stored if m.year == year}
+    in_period = [r for r in in_year if r.record_date.month in months]
+    matrix = _matrix(in_period)
+    return CostSummaryResponse(
+        year=year,
+        from_month=first,
+        through_month=last,
+        available_years=list(available_years),
+        latest_month=record_months[-1] if record_months else None,
         classes=[
             CoqClassOut(
                 code=code,
                 label=label,
-                value=values[code],
-                recorded=code in ("internal_failure", "external_failure"),
-                share_of_recorded=_ratio(values[code], poor),
+                quality_group=quality_group(code),
+                figures=_figures([r for r in in_period if r.coq_class == code]),
+                share_of_total=_ratio(
+                    _class_amounts(in_period, confirmed=True)[code], matrix.total
+                ),
             )
             for code, label in COQ_CLASSES.items()
         ],
-        good=None,
-        poor=poor,
-        total=None,
-        poor_pct=None,
-        recorded_total=poor,
-        unavailable_reason=(
-            "Prevention and appraisal costs are not recorded in the source, so total COQ, "
-            "good COQ and poor COQ % cannot be calculated."
-        ),
-    )
-
-
-def _checks(costs: Sequence[MonthCost]) -> list[DataCheckOut]:
-    checks: list[DataCheckOut] = []
-    for cost in costs:
-        if not cost.inputs.reported:
-            continue
-        missing = [e.label for e in ELEMENTS if cost.elements[e.code] is None]
-        if missing:
-            checks.append(
-                DataCheckOut(
-                    year=cost.inputs.year,
-                    month=cost.inputs.month,
-                    status="warning",
-                    message=(
-                        f"{', '.join(missing)} not reported; the month's totals include only "
-                        "the reported lines."
-                    ),
-                )
+        matrix=matrix,
+        copq=_copq(in_period, facts, months, today),
+        months=_months(in_year, facts),
+        categories=_categories(in_period),
+        aging=[
+            AgingBucketOut(
+                label=b.label,
+                min_days=b.min_days,
+                max_days=b.max_days,
+                count=b.count,
+                exposure=b.exposure,
             )
-        if cost.inputs.sales_revenue is None:
-            checks.append(
-                DataCheckOut(
-                    year=cost.inputs.year,
-                    month=cost.inputs.month,
-                    status="warning",
-                    message="Sales revenue not reported; percentages of sales exclude this month.",
-                )
-            )
-        if cost.inputs.note:
-            checks.append(
-                DataCheckOut(
-                    year=cost.inputs.year,
-                    month=cost.inputs.month,
-                    status="info",
-                    message=cost.inputs.note,
-                )
-            )
-    checks.extend(
-        DataCheckOut(year=None, month=None, status="info", message=m) for m in SOURCE_CHECKS
-    )
-    return checks
-
-
-def summary(
-    stored: Sequence[MonthInputs],
-    *,
-    year: int | None,
-    from_month: int | None,
-    through_month: int | None,
-) -> CostSummaryResponse:
-    """The year's months, the selected period's totals, Pareto and matrix.
-
-    ``year`` defaults to the latest year with data. ``from_month`` defaults to
-    January and ``through_month`` to the latest reported month of the year.
-    """
-    years = sorted({m.year for m in stored if m.reported}, reverse=True)
-    selected = year if year is not None else (years[0] if years else None)
-    by_month = {m.month: m for m in stored if m.year == selected}
-    reported_months = sorted(month for month, m in by_month.items() if m.reported)
-    first = from_month or 1
-    last = through_month or (reported_months[-1] if reported_months else 12)
-    if first > last:
-        first, last = last, first
-    all_costs = [
-        month_cost(by_month.get(month) or MonthInputs(year=selected or 0, month=month))
-        for month in range(1, 13)
-    ]
-    in_period = all_costs[first - 1 : last]
-    period = _period(in_period, first, last)
-    return CostSummaryResponse(
-        year=selected,
-        available_years=years,
-        latest_reported_month=reported_months[-1] if reported_months else None,
-        months=[_month_out(c) for c in all_costs] if selected is not None else [],
-        period=period,
-        elements=_elements(in_period, period.copq),
-        matrix=_matrix(period),
-        data_checks=_checks(in_period),
+            for b in calculations.aging(calculations.poor_records(in_period), today)  # type: ignore[arg-type]
+        ],
+        data_checks=_checks(in_period, facts, months),
         definitions=list(DEFINITIONS),
-        source=SOURCE,
     )

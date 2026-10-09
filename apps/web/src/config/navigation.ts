@@ -59,13 +59,22 @@ export const navigation: NavSection[] = [
             label: "Cost of Quality",
             children: [
               {
+                id: "quality-cost-register",
+                label: "Quality Cost Register",
+                href: "/quality/cost/register",
+                icon: ClipboardList,
+                status: "in-development",
+                description:
+                  "Every quality cost item, classified as prevention, appraisal, internal or external failure. Add, review and update items here.",
+              },
+              {
                 id: "quality-copq",
                 label: "Cost of Poor Quality",
                 href: "/quality/cost/copq",
                 icon: CircleDollarSign,
                 status: "in-development",
                 description:
-                  "Internal and external failure costs by month, their largest cost lines, and an incident cost estimator.",
+                  "Internal and external failure costs from the Quality Cost Register: confirmed cost, potential exposure, recovery, trends and aging, plus an incident cost estimator.",
               },
               {
                 id: "quality-coq-matrix",
@@ -73,7 +82,8 @@ export const navigation: NavSection[] = [
                 href: "/quality/cost/matrix",
                 icon: Grid2x2,
                 status: "in-development",
-                description: "Prevention, appraisal, internal and external failure costs and the cost of quality mix.",
+                description:
+                  "Prevention, appraisal, internal and external failure costs from the Quality Cost Register, and the cost of quality mix.",
               },
             ],
           },

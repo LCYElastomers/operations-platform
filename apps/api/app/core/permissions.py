@@ -19,9 +19,12 @@ from enum import StrEnum
 
 class Permission(StrEnum):
     QUALITY_VIEW = "quality.view"
+    QUALITY_EDIT = "quality.edit"
     QUALITY_MANAGE = "quality.manage"
-    # Cost of Poor Quality and the Cost of Quality Matrix (read-only; incl. the estimator).
+    # Quality Cost records, COPQ and the COQ Matrix (incl. the estimator and record history).
     QUALITY_COST_VIEW = "quality.cost.view"
+    # Add and edit Quality Cost records.
+    QUALITY_COST_EDIT = "quality.cost.edit"
     # Cost of Quality imports (operator command; no endpoint writes them).
     QUALITY_COST_MANAGE = "quality.cost.manage"
     SAFETY_VIEW = "safety.view"

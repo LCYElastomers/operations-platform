@@ -1,6 +1,6 @@
 import { MONTH_LABELS } from "@/features/safety/incidents/grid";
 
-import type { CoqClass, CostPeriod } from "./api";
+import type { CoqClass, CostSummary, FinancialStatus } from "./api";
 
 export { MONTH_LABELS };
 
@@ -18,6 +18,16 @@ export const COQ_CLASS_COLORS: Record<CoqClass, string> = {
   internal_failure: "#ea580c",
   external_failure: "#dc2626",
 };
+
+/** Confirmed cost is official; Potential and Validating are exposure and shown apart from it. */
+export const FINANCIAL_TONES: Record<FinancialStatus, "warning" | "info" | "success" | "neutral"> = {
+  potential: "warning",
+  validating: "info",
+  confirmed: "success",
+  closed: "neutral",
+};
+
+export const POTENTIAL_COLOR = "#a16207";
 
 export function toNumber(value: string | null | undefined): number | null {
   if (value === null || value === undefined) return null;
@@ -52,14 +62,35 @@ export function quantity(value: string | number | null, fractionDigits = 0): str
   return number.toLocaleString("en-US", { maximumFractionDigits: fractionDigits });
 }
 
-export function periodLabel(year: number | null, period: CostPeriod): string {
-  if (year === null || period.fromMonth === null || period.throughMonth === null) return "No period";
-  const first = MONTH_LABELS[period.fromMonth - 1];
-  const last = MONTH_LABELS[period.throughMonth - 1];
-  return first === last ? `${last} ${year}` : `${first}–${last} ${year}`;
+export function periodLabel(data: Pick<CostSummary, "year" | "fromMonth" | "throughMonth">): string {
+  if (data.year === null) return "No period";
+  const first = MONTH_LABELS[data.fromMonth - 1];
+  const last = MONTH_LABELS[data.throughMonth - 1];
+  return first === last ? `${last} ${data.year}` : `${first}–${last} ${data.year}`;
 }
 
-export function reportedLabel(period: CostPeriod): string {
-  const { monthsReported, monthsInPeriod } = period;
-  return `${monthsReported} of ${monthsInPeriod} ${monthsInPeriod === 1 ? "month" : "months"} reported`;
+/** ISO dates of the summary's period, for the matching record list. */
+export function periodDates(data: Pick<CostSummary, "year" | "fromMonth" | "throughMonth">) {
+  if (data.year === null) return { from: "", to: "" };
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const lastDay = new Date(Date.UTC(data.year, data.throughMonth, 0)).getUTCDate();
+  return {
+    from: `${data.year}-${pad(data.fromMonth)}-01`,
+    to: `${data.year}-${pad(data.throughMonth)}-${pad(lastDay)}`,
+  };
+}
+
+export function recordsLabel(count: number): string {
+  return `${count.toLocaleString("en-US")} ${count === 1 ? "record" : "records"}`;
+}
+
+/** An ISO date (2026-03-04) as "Mar 4, 2026". */
+export function formatDate(value: string | null): string {
+  if (!value) return "—";
+  const [year, month, day] = value.slice(0, 10).split("-").map(Number);
+  return `${MONTH_LABELS[month - 1]} ${day}, ${year}`;
+}
+
+export function formatTimestamp(value: string): string {
+  return new Date(value).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
 }

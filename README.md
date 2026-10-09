@@ -209,7 +209,8 @@ ingestion, `0003` audit events and Incident & Near Miss,
 `0004` Observations, `0005` Supervisor Safety Contacts (retired, tables
 kept), `0006` Safety Performance, `0007` incident dimensions, `0008`
 Behavior, `0009` incident records and TRIR history, `0010` Cost of
-Quality monthly inputs (`app.quality.cost.legacy_import`). Migrations seed
+Quality monthly inputs (`app.quality.cost.legacy_import`), `0011` Quality
+Cost records and their related-record references. Migrations seed
 reference data only; legacy values are loaded afterwards with the import
 CLIs, in this order: incident totals (`app.safety.legacy_import`), Safety
 Performance hours, Behavior, TRIR history, then reviewed incident
@@ -217,7 +218,7 @@ narratives. Each has `check`, `plan` and `apply`; `apply` is audited and
 idempotent.
 
 **Back up before upgrading production.** Downgrades are not a rollback for
-data: `0002`–`0009` each refuse to downgrade while their tables hold data,
+data: `0002`–`0011` each refuse to downgrade while their tables hold data,
 so restoring the backup is the rollback once anything was imported.
 The release runbook and data-quality report for 0009 are in
 [`docs/safety-release-0009/`](docs/safety-release-0009/).
@@ -707,42 +708,78 @@ failures log only the exception type.
 
 ## Quality > Cost of Quality
 
-Two pages under Quality, both read-only and calculated by the API from the
-monthly inputs in `quality.cost_monthly_facts` (migration 0010):
+One set of **Quality Cost records** (`quality.cost_records`, migration 0011)
+feeds three pages under Quality. There are no separate COPQ and COQ records:
+COPQ is the Internal Failure and External Failure records; the COQ Matrix is
+all four classes.
 
-- **Cost of Poor Quality** (`/quality/cost/copq`): total COPQ, COPQ % of
-  sales, internal failure (with $ per lb produced), external failure,
-  complaints; a Pareto of cost lines with cumulative share; a monthly trend;
-  a monthly table; a searchable cost-line detail; data checks and the
-  workbook definitions. A second tab is the **incident estimator**.
+- **Quality Cost Register** (`/quality/cost/register`): every record, newest
+  first, filterable by date range, area, class, category, product, owner,
+  financial status, status and a search (title, description, lot, customer,
+  record ID such as `QC-00042`). A row opens the record: every section, related
+  records, audit metadata, history and Edit.
+- **Cost of Poor Quality** (`/quality/cost/copq`): confirmed COPQ, potential
+  exposure, net, recovered, avoided, COPQ % of sales, internal failure $ per
+  lb produced, open and overdue items; a category Pareto; a monthly trend; a
+  monthly table; open-item aging; open failure items. A second tab is the
+  **incident estimator**.
 - **COQ Matrix** (`/quality/cost/matrix`): Total COQ, Good COQ (P + A), Poor
-  COQ (IF + EF), Poor COQ %; the 2×2 matrix; the COQ mix; a trend by class;
-  cost lines filtered by COQ class.
+  COQ (IF + EF), Poor COQ %; the 2×2 matrix (select a class to list its
+  items); the mix; a trend by class; a category table.
 
-Filters are year and a month range. Area, product, owner and status are not
-recorded by the source, so there are no such filters.
+**+ Add Quality Cost Item** is on all three pages (for users with
+`quality.cost.edit`) and opens the same form (`record-form.tsx`): what
+happened, where, COQ classification and category, nine cost components with
+a live total, financial status, ownership and status, recovery and
+avoidance, and a related reference. Classes, categories, statuses and cost
+components are defined once in `app/quality/cost/classification.py` and
+served by `/records/options`.
 
-### Calculations (`app/quality/cost/service.py`)
+The dashboards share one filter bar (year, month range, area, class,
+category, product, owner, financial status); it applies to every KPI, chart
+and list on the page.
 
-Only inputs are stored; every cost, total and percentage is calculated with
-Decimal. Scrap loss = scrap lb × scrap loss per lb; off-spec loss likewise.
-Internal failure = scrap + off-spec loss; external failure = the complaint
-cost lines; COPQ = internal + external. Percentages divide by sales revenue;
-production cost is shown per pound produced. A blank input is not reported:
-sums add the reported parts (null when none is reported) and the missing
-lines are listed as data checks. Prevention and appraisal are not recorded,
-so prevention, appraisal, Good COQ, Total COQ and Poor COQ % are null, never
-$0.
+### Rules and calculations (`records.py`, `calculations.py`, `service.py`)
+
+- A record needs a date (not in the future), title, area, class, a category
+  of that class and a description. Amounts are non-negative decimals; a blank
+  component is not entered (null), never $0.
+- Total cost = the sum of the entered components (null when none is entered).
+  Net = total − recovered. Avoided cost is reported on its own and never
+  subtracted.
+- Financial status Confirmed and Closed count as **confirmed cost**;
+  Potential and Validating are **potential exposure**. The two are always
+  reported separately and never added together silently.
+- Status Closed requires a date closed (on or after the date, not in the
+  future); other statuses have none. Days open = (date closed or today) −
+  date; overdue = open and past the due date.
+- Good COQ, Total COQ and Poor COQ % are null when no confirmed Prevention or
+  Appraisal cost is recorded, never $0. COPQ % of sales and $ per lb use the
+  monthly production and sales inputs in `quality.cost_monthly_facts`
+  (migration 0010), counting only months that report them.
+- Creates and edits are audited (`quality.cost_record`, actor from the
+  current identity mechanism) with optimistic concurrency: a stale edit
+  answers 409 with the current record and nothing is saved.
+- References (`quality.cost_record_references`) are generic
+  `(type, key, label)` links so later modules (for example Corrective Action
+  Reports) can be related without changing the record table.
 
 ### API
 
 | Endpoint | Description |
 | -------- | ----------- |
-| `GET /api/v1/quality/cost/summary?year=&from=&through=` | Months of the year, period totals, Pareto elements, matrix, data checks, definitions. Defaults: latest year with figures, January through the latest reported month |
+| `GET /api/v1/quality/cost/records` | Register list. Filters: `from`, `to`, `areaId`, `coqClass` (repeatable), `category`, `product`, `owner`, `financialStatus` (repeatable), `status` (repeatable), `open`, `search`, `limit` (≤ 500), `offset` |
+| `GET /api/v1/quality/cost/records/options` | Areas, classes with categories, statuses, cost components, reference types, known products and owners, and whether the user may edit |
+| `GET /api/v1/quality/cost/records/{id}` | One record |
+| `GET /api/v1/quality/cost/records/{id}/history` | Its audit history |
+| `POST /api/v1/quality/cost/records` | Create (`quality.cost.edit`) |
+| `PUT /api/v1/quality/cost/records/{id}` | Edit with `version` (`quality.cost.edit`) |
+| `GET /api/v1/quality/cost/summary` | COPQ and COQ Matrix figures. `year`, `from`, `through`, the dimension filters, and `poorOnly` for COPQ. Defaults: latest year with records, January through the latest month with a record |
 | `GET /api/v1/quality/cost/estimator` | Products, package types, assumptions and guidance for the estimator |
 | `POST /api/v1/quality/cost/estimate` | Estimate one incident. Nothing is stored |
 
-All require `quality.cost.view`. Responses carry no workbook cell references.
+Reads require `quality.cost.view`. Rule failures answer 422 with
+`{error, message, field}`. Responses carry no workbook cell references.
 
 ### Incident estimator (`app/quality/cost/estimator.py`)
 
@@ -771,9 +808,15 @@ uv run python -m app.quality.cost.legacy_import plan  import_templates/quality_c
 uv run python -m app.quality.cost.legacy_import apply import_templates/quality_cost_of_quality_2026.mapping.json
 ```
 
-`apply` writes in one audited transaction (`quality.cost_monthly_fact`, actor
-`legacy-import`); stored months that differ from the file block it, and
-re-running is a no-op. See `docs/quality-cost-0010/data-quality-report.md`.
+`apply` writes in one audited transaction (`quality.cost_monthly_fact` and
+`quality.cost_record`, actor `legacy-import`): the monthly production and
+sales inputs, plus each month's scrap loss, off-spec loss and customer
+complaint costs as **Imported** Quality Cost records (Internal or External
+Failure, Confirmed, Closed, no area, keyed `coq-workbook/YYYY-MM/...`). Stored
+months or records that differ from the file block it, and re-running is a
+no-op; a database that already holds the 0010 months gets only the records.
+Imported records may be edited (area, product, owner, actions) in the
+Register. See `docs/quality-cost-0010/data-quality-report.md`.
 
 ## Authorization
 
@@ -804,9 +847,11 @@ implied by `edit`:
 | `safety.trir.view`         | TRIR Experience                                                   |
 | `safety.trir.manage`       | TRIR history imports (operator CLI; no endpoint writes TRIR facts) |
 | `quality.view`             | every Quality `view` permission, including `quality.cost.view`    |
+| `quality.edit`             | everything above plus every Quality `edit` permission, including `quality.cost.edit` |
 | `quality.manage`           | everything above plus `quality.cost.manage`                        |
-| `quality.cost.view`        | Cost of Poor Quality, COQ Matrix and the incident cost estimator  |
-| `quality.cost.manage`      | Cost of Quality imports (operator CLI; no endpoint writes them)   |
+| `quality.cost.view`        | Quality Cost Register, Cost of Poor Quality, COQ Matrix and the incident cost estimator |
+| `quality.cost.edit`        | the above plus adding and editing Quality Cost records            |
+| `quality.cost.manage`      | the above plus Cost of Quality imports (operator CLI)             |
 
 The default `DEVELOPMENT_USER_PERMISSIONS` are `safety.view`, `safety.edit`
 and `quality.view`. Moisture Analysis endpoints are not permission-checked yet.

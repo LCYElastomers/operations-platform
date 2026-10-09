@@ -6,7 +6,7 @@ Import every model module here so Alembic autogenerate sees the full metadata.
 from app.audit.models import AuditEvent
 from app.db.base import Base
 from app.ingestion.models import IngestionBatch
-from app.quality.cost.models import CostMonthlyFact
+from app.quality.cost.models import CostMonthlyFact, CostRecord, CostRecordReference
 from app.quality.moisture.models import FinishingMeasurement
 from app.safety.behavior.models import AnnualBehaviorCount, BehaviorCategory
 from app.safety.contacts.models import ContactSupervisor, SupervisorSafetyContact
@@ -23,6 +23,8 @@ __all__ = [
     "BehaviorCategory",
     "ContactSupervisor",
     "CostMonthlyFact",
+    "CostRecord",
+    "CostRecordReference",
     "FinishingMeasurement",
     "IncidentRecord",
     "IngestionBatch",
