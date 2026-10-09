@@ -7,6 +7,7 @@ cell, file location or import reference.
 """
 
 import datetime as dt
+import uuid
 from decimal import Decimal
 from typing import Annotated, Any, Literal
 
@@ -57,6 +58,9 @@ class CostRecordFields(_Input):
     process: ShortText | None = None
     equipment: ShortText | None = None
     counterparty: ShortText | None = None
+    # The owner is a platform user chosen by ID; the server records their name.
+    # ``owner`` may only repeat a name recorded before users existed.
+    owner_user_id: uuid.UUID | None = None
     owner: ShortText | None = None
     notes: LongText | None = None
     material_cost: Money | None = None
@@ -116,6 +120,8 @@ class CostRecordOut(CamelModel):
     equipment: str | None
     counterparty: str | None
     owner: str | None
+    # Null for a name recorded before users existed.
+    owner_user_id: uuid.UUID | None
     notes: str | None
     material_cost: DecimalStr | None
     labor_cost: DecimalStr | None
@@ -148,19 +154,33 @@ class CostRecordOut(CamelModel):
     version: int
     created_at: dt.datetime
     created_by: str
+    created_by_name: str
     updated_at: dt.datetime
     updated_by: str
+    updated_by_name: str
+
+
+class CostAbilitiesOut(CamelModel):
+    """What the signed-in user may do (for the interface; the server enforces it)."""
+
+    create: bool
+    edit: bool
+    assign: bool
+    confirm_financial: bool
+    close: bool
 
 
 class CostRecordListResponse(CamelModel):
     records: list[CostRecordOut]
     total: int
     can_edit: bool
+    abilities: CostAbilitiesOut
 
 
 class CostRecordResponse(CamelModel):
     record: CostRecordOut
     can_edit: bool
+    abilities: CostAbilitiesOut
 
 
 class OptionOut(CamelModel):
@@ -205,11 +225,14 @@ class CostRecordOptionsResponse(CamelModel):
     products: list[str]
     owners: list[str]
     can_edit: bool
+    abilities: CostAbilitiesOut
 
 
 class HistoryEventOut(CamelModel):
     occurred_at: dt.datetime
     actor_id: str
+    # The user's name when the change was made, or a system actor's label.
+    actor_name: str
     action: Literal["create", "update", "delete"]
     change_set_id: str
     old_value: dict[str, Any] | None

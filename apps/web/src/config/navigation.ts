@@ -12,22 +12,38 @@ import {
   Grid2x2,
   HardHat,
   Handshake,
+  Inbox,
   LayoutDashboard,
   Leaf,
   RefreshCw,
   ScrollText,
+  ShieldCheck,
   TableProperties,
   TrendingDown,
   Truck,
+  UserRound,
+  Users,
   Wrench,
 } from "lucide-react";
 
 import { findNavItemByHref, type NavItem, type NavSection } from "@/lib/navigation";
 
+const APP = { all: ["app.view"] } as const;
+
 export const navigation: NavSection[] = [
   {
     id: "main",
-    items: [{ id: "overview", label: "Overview", href: "/", exact: true, icon: LayoutDashboard }],
+    items: [
+      { id: "overview", label: "Overview", href: "/", exact: true, icon: LayoutDashboard, requires: APP },
+      {
+        id: "my-assignments",
+        label: "My Assignments",
+        href: "/my-assignments",
+        icon: Inbox,
+        requires: { all: ["assignments.viewOwn"] },
+        description: "Corrective Action Reports, CAR actions and quality cost items assigned to you.",
+      },
+    ],
   },
   {
     id: "modules",
@@ -40,7 +56,7 @@ export const navigation: NavSection[] = [
         status: "in-development",
         description: "Raw material, in-process, and finished product quality analysis.",
         children: [
-          { id: "quality-overview", label: "Overview", href: "/quality", exact: true },
+          { id: "quality-overview", label: "Overview", href: "/quality", exact: true, requires: { all: ["quality.view"] } },
           {
             id: "quality-raw-materials",
             label: "Raw Materials",
@@ -52,6 +68,7 @@ export const navigation: NavSection[] = [
                 icon: Droplets,
                 status: "in-development",
                 fixture: true,
+                requires: { all: ["quality.view"] },
                 description: "Moisture, color, and combined BD of incoming raw materials.",
               },
             ],
@@ -66,6 +83,7 @@ export const navigation: NavSection[] = [
                 href: "/quality/cost/register",
                 icon: ClipboardList,
                 status: "in-development",
+                requires: { all: ["qualityCost.view"] },
                 description:
                   "Every quality cost item, classified as prevention, appraisal, internal or external failure. Add, review and update items here.",
               },
@@ -75,6 +93,7 @@ export const navigation: NavSection[] = [
                 href: "/quality/cost/copq",
                 icon: CircleDollarSign,
                 status: "in-development",
+                requires: { all: ["qualityCost.view", "qualityDashboard.view"] },
                 description:
                   "Internal and external failure costs from the Quality Cost Register: confirmed cost, potential exposure, recovery, trends and aging, plus an incident cost estimator.",
               },
@@ -84,6 +103,7 @@ export const navigation: NavSection[] = [
                 href: "/quality/cost/matrix",
                 icon: Grid2x2,
                 status: "in-development",
+                requires: { all: ["qualityCost.view", "qualityDashboard.view"] },
                 description:
                   "Prevention, appraisal, internal and external failure costs from the Quality Cost Register, and the cost of quality mix.",
               },
@@ -100,6 +120,7 @@ export const navigation: NavSection[] = [
                 exact: true,
                 icon: ChartColumn,
                 status: "in-development",
+                requires: { all: ["car.view", "qualityDashboard.view"] },
                 description:
                   "Open, past-due and due-soon CARs, effectiveness reviews waiting, trends, aging and cost impact.",
               },
@@ -109,6 +130,7 @@ export const navigation: NavSection[] = [
                 href: "/quality/cars/register",
                 icon: ClipboardCheck,
                 status: "in-development",
+                requires: { all: ["car.view"] },
                 description:
                   "Every Corrective Action Report with its status, actions, effectiveness and cost impact. Select a CAR to open, edit and progress it.",
               },
@@ -118,6 +140,7 @@ export const navigation: NavSection[] = [
                 href: "/quality/cars/new",
                 icon: FilePlus2,
                 status: "in-development",
+                requires: { all: ["car.view", "car.create"] },
                 description:
                   "Record a new Corrective Action Report. Only the subject and request date are needed to save; the other steps can be completed later.",
               },
@@ -131,6 +154,7 @@ export const navigation: NavSection[] = [
         href: "/mechanical-integrity",
         icon: Wrench,
         status: "not-configured",
+        requires: APP,
         description: "Inspection, testing, and preventive maintenance of fixed equipment.",
       },
       {
@@ -141,7 +165,7 @@ export const navigation: NavSection[] = [
         description:
           "Departmental safety reporting: Incident & Near Miss, Safety Observations, Safety Performance, and TRIR Experience.",
         children: [
-          { id: "safety-overview", label: "Overview", href: "/safety", exact: true },
+          { id: "safety-overview", label: "Overview", href: "/safety", exact: true, requires: { all: ["safety.view"] } },
           {
             id: "safety-incidents",
             label: "Incident & Near Miss",
@@ -153,6 +177,7 @@ export const navigation: NavSection[] = [
                 href: "/safety/incidents/data-entry",
                 icon: TableProperties,
                 status: "in-development",
+                requires: { all: ["safetyRecord.view"] },
                 description: "Enter monthly Incident & Near Miss counts in the familiar spreadsheet layout.",
               },
               {
@@ -161,6 +186,7 @@ export const navigation: NavSection[] = [
                 href: "/safety/incidents/dashboard",
                 icon: ChartColumn,
                 status: "in-development",
+                requires: { all: ["safetyRecord.view", "safetyDashboard.view"] },
                 description:
                   "Year-to-date Incident, Near Miss, LOPC, PSIF, PIT and damage counts, with monthly trends through a chosen month.",
               },
@@ -178,6 +204,7 @@ export const navigation: NavSection[] = [
                 exact: true,
                 icon: ClipboardList,
                 status: "in-development",
+                requires: { all: ["safetyObservation.view"] },
                 description: "Record safe and unsafe acts and conditions, and review the month's observations.",
               },
               {
@@ -186,6 +213,7 @@ export const navigation: NavSection[] = [
                 href: "/safety/observations/dashboard",
                 icon: ChartColumn,
                 status: "in-development",
+                requires: { all: ["safetyObservation.view", "safetyDashboard.view"] },
                 description: "Year-to-date Safe vs Unsafe, Act / Condition, and category trends.",
               },
             ],
@@ -201,6 +229,7 @@ export const navigation: NavSection[] = [
                 href: "/safety/performance/data-entry",
                 icon: Clock,
                 status: "in-development",
+                requires: { all: ["safetyRecord.view"] },
                 description: "Enter monthly worked hours and close months once their event counts are complete.",
               },
               {
@@ -209,6 +238,7 @@ export const navigation: NavSection[] = [
                 href: "/safety/performance/dashboard",
                 icon: Activity,
                 status: "in-development",
+                requires: { all: ["safetyRecord.view", "safetyDashboard.view"] },
                 description: "YTD and 12-Month Rolling Average (12MRA) rates, worked hours, and annual TRIR.",
               },
             ],
@@ -224,6 +254,7 @@ export const navigation: NavSection[] = [
                 href: "/safety/trir",
                 icon: TrendingDown,
                 status: "in-development",
+                requires: { all: ["safetyRecord.view", "safetyDashboard.view"] },
                 description:
                   "LCY TRIR by year and month with the benchmark, every calculation shown, and the methodology.",
               },
@@ -237,6 +268,7 @@ export const navigation: NavSection[] = [
         href: "/environmental",
         icon: Leaf,
         status: "not-configured",
+        requires: APP,
         description: "Emissions, permits, and environmental compliance monitoring.",
       },
       {
@@ -245,6 +277,7 @@ export const navigation: NavSection[] = [
         href: "/procurement",
         icon: Truck,
         status: "not-configured",
+        requires: APP,
         description: "Purchasing, supplier performance, and inbound material tracking.",
       },
       {
@@ -253,7 +286,30 @@ export const navigation: NavSection[] = [
         href: "/sales",
         icon: Handshake,
         status: "not-configured",
+        requires: APP,
         description: "Orders, shipments, and customer demand.",
+      },
+    ],
+  },
+  {
+    id: "administration",
+    label: "Administration",
+    items: [
+      {
+        id: "admin-users",
+        label: "Users",
+        href: "/admin/users",
+        icon: Users,
+        requires: { all: ["users.view"] },
+        description: "Create user accounts, assign roles, activate and deactivate users, and issue password setup links.",
+      },
+      {
+        id: "admin-roles",
+        label: "Roles & Permissions",
+        href: "/admin/roles",
+        icon: ShieldCheck,
+        requires: { all: ["roles.view"] },
+        description: "Roles and the permissions each grants. A user's access is the union of their active roles.",
       },
     ],
   },
@@ -266,6 +322,7 @@ export const navigation: NavSection[] = [
         label: "Data Sources",
         href: "/system/data-sources",
         icon: Database,
+        requires: APP,
         description: "Connections to source systems that feed platform modules.",
       },
       {
@@ -273,6 +330,7 @@ export const navigation: NavSection[] = [
         label: "Sync Status",
         href: "/system/sync",
         icon: RefreshCw,
+        requires: APP,
         description: "Health and history of data synchronization jobs.",
       },
       {
@@ -280,7 +338,25 @@ export const navigation: NavSection[] = [
         label: "Audit Log",
         href: "/system/audit",
         icon: ScrollText,
-        description: "Security-relevant and data ingestion events.",
+        requires: { all: ["audit.view"] },
+        description: "Who changed what and when: user and role changes, password links, and record changes.",
+      },
+    ],
+  },
+];
+
+/** Pages reached from the user menu rather than the sidebar. */
+export const accountNavigation: NavSection[] = [
+  {
+    id: "account",
+    items: [
+      {
+        id: "profile",
+        label: "Profile",
+        href: "/profile",
+        icon: UserRound,
+        requires: APP,
+        description: "Your account details, roles and permissions, and your password.",
       },
     ],
   },
@@ -290,7 +366,7 @@ export const moduleItems: NavItem[] =
   navigation.find((section) => section.id === "modules")?.items ?? [];
 
 export function getNavItem(href: string): NavItem {
-  const item = findNavItemByHref(navigation, href);
+  const item = findNavItemByHref([...navigation, ...accountNavigation], href);
   if (!item) throw new Error(`No navigation item registered for ${href}`);
   return item;
 }

@@ -12,10 +12,10 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from principals import TESTER, as_user
 
 from app.audit.recorder import AuditChange
 from app.core.authorization import UserPrincipal, get_user_principal
-from app.core.config import Settings, get_settings
 from app.core.permissions import Permission
 from app.db.session import DatabaseNotConfiguredError
 from app.main import create_app
@@ -270,8 +270,7 @@ def test_unknown_category_is_rejected_before_locking() -> None:
 # API -----------------------------------------------------------------------------
 
 
-def principal(*permissions: Permission) -> UserPrincipal:
-    return UserPrincipal("tester", authenticated=True, granted=frozenset(permissions))
+principal = as_user
 
 
 @pytest.fixture
@@ -290,12 +289,14 @@ def make_client(repository: InMemoryRepository, user: UserPrincipal | None) -> I
 
 @pytest.fixture
 def editor(repository: InMemoryRepository) -> Iterator[TestClient]:
-    yield from make_client(repository, principal(Permission.SAFETY_EDIT))
+    yield from make_client(
+        repository, principal(Permission.SAFETY_RECORD_VIEW, Permission.SAFETY_RECORD_EDIT)
+    )
 
 
 @pytest.fixture
 def viewer(repository: InMemoryRepository) -> Iterator[TestClient]:
-    yield from make_client(repository, principal(Permission.SAFETY_INCIDENTS_VIEW))
+    yield from make_client(repository, principal(Permission.SAFETY_RECORD_VIEW))
 
 
 def body(*changes: dict[str, Any], year: Any = 2026) -> dict[str, Any]:
@@ -315,17 +316,13 @@ def test_anonymous_requests_are_refused_by_default(repository: InMemoryRepositor
     assert repository.stored == {(11, 2026, 1): 2}
 
 
-def test_development_mode_acts_as_the_development_user(repository: InMemoryRepository) -> None:
-    app = create_app()
-    app.dependency_overrides[safety_repository] = lambda: repository
-    app.dependency_overrides[get_settings] = lambda: Settings(
-        _env_file=None, user_auth_mode="development-unauthenticated"
-    )
-    with TestClient(app) as client:
-        response = client.patch(URL, json=body(cell()))
+def test_changes_are_attributed_to_the_session_user(
+    editor: TestClient, repository: InMemoryRepository
+) -> None:
+    response = editor.patch(URL, json=body(cell()))
 
     assert response.status_code == 200
-    assert repository.audit[0][0] == "development-user"
+    assert repository.audit[0][0] == TESTER
 
 
 def test_viewer_reads_but_cannot_edit(viewer: TestClient, repository: InMemoryRepository) -> None:
@@ -338,7 +335,6 @@ def test_viewer_reads_but_cannot_edit(viewer: TestClient, repository: InMemoryRe
     assert response.json()["detail"] == {
         "error": "permission_denied",
         "message": "You do not have permission to perform this action.",
-        "permission": "safety.incidents.edit",
     }
     assert repository.stored == {(11, 2026, 1): 2}
 
@@ -451,7 +447,7 @@ def test_missing_database_is_reported_as_unavailable(monkeypatch: pytest.MonkeyP
 
     monkeypatch.setattr(safety_router, "get_sessionmaker", not_configured)
     app = create_app()
-    app.dependency_overrides[get_user_principal] = lambda: principal(Permission.SAFETY_VIEW)
+    app.dependency_overrides[get_user_principal] = lambda: principal(Permission.SAFETY_RECORD_VIEW)
     with TestClient(app) as client:
         response = client.get(URL, params={"year": 2026})
 
@@ -469,6 +465,6 @@ def test_saves_are_logged_without_values(
     line = next(
         r.getMessage() for r in caplog.records if "event=safety_metrics_saved" in r.getMessage()
     )
-    assert "user=tester" in line
+    assert f"user={TESTER}" in line
     assert "updated=1" in line
     assert "777" not in caplog.text

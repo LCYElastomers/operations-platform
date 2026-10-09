@@ -7,10 +7,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getNavItem, moduleItems } from "@/config/navigation";
 
 import {
+  canCompleteCarAction,
   carQueryFromParams,
   carQueryParams,
   EMPTY_CAR_QUERY,
   type Car,
+  type CarAbilities,
   type CarAction,
   type CarDashboard,
   type CarOptions,
@@ -54,6 +56,27 @@ declare global {
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 const BASE = "/api/v1/quality/cars";
+
+/** Test fixture: a user who may do everything. */
+const ALL_ABILITIES: CarAbilities = {
+  create: true,
+  edit: true,
+  assign: true,
+  manageActions: true,
+  completeAction: true,
+  reviewEffectiveness: true,
+  approve: true,
+  close: true,
+  reopen: true,
+  admin: true,
+  createQualityCost: true,
+  linkQualityCost: true,
+};
+
+/** Test fixture: a user who may only view. */
+const NO_ABILITIES: CarAbilities = Object.fromEntries(
+  Object.keys(ALL_ABILITIES).map((key) => [key, false]),
+) as CarAbilities;
 
 /** Test fixture, not production data. */
 const OPTIONS: CarOptions = {
@@ -110,6 +133,7 @@ const OPTIONS: CarOptions = {
   dueSoonDays: 14,
   canEdit: true,
   canEditCost: true,
+  abilities: ALL_ABILITIES,
 };
 
 /** Test fixture, not production data. */
@@ -118,6 +142,7 @@ const action = (overrides: Partial<CarAction> = {}): CarAction => ({
   position: 1,
   action: "Fixture action",
   owner: "Fixture Person",
+  ownerUserId: "user-fixture",
   targetDate: "2003-03-01",
   status: "open",
   statusLabel: "Open",
@@ -131,6 +156,8 @@ const action = (overrides: Partial<CarAction> = {}): CarAction => ({
   createdBy: "fixture-user",
   updatedAt: "2003-02-10T12:00:00Z",
   updatedBy: "fixture-user",
+  createdByName: "Fixture Person",
+  updatedByName: "Fixture Person",
   ...overrides,
 });
 
@@ -140,8 +167,10 @@ const summary = (overrides: Partial<CarSummary> = {}): CarSummary => ({
   carNumber: "Q-2003-001",
   subject: "Fixture mislabelled drum",
   requestedBy: "Fixture Person",
+  requestedByUserId: "user-fixture",
   requestDate: "2003-02-10",
   assignedTo: "Fixture Person",
+  assignedToUserId: "user-fixture",
   dueDate: "2003-03-01",
   status: "open",
   statusLabel: "Open",
@@ -176,6 +205,10 @@ const car = (overrides: Partial<Car> = {}): Car => {
     whySteps: [],
     dispositionLabels: [],
     qualityCost: null,
+    reviewer: null,
+    reviewerUserId: null,
+    closureApprovedBy: null,
+    closureApprovedByUserId: null,
     approvals: [],
     references: [],
     materialLoss: "1000.5",
@@ -190,6 +223,8 @@ const car = (overrides: Partial<Car> = {}): Car => {
     createdBy: "fixture-user",
     updatedAt: "2003-02-11T12:00:00Z",
     updatedBy: "fixture-user",
+    createdByName: "Fixture Person",
+    updatedByName: "Fixture Person",
     ...overrides,
   } as Car;
 };
@@ -234,6 +269,24 @@ const DASHBOARD: CarDashboard = {
   },
 };
 
+/** A record response as the signed-in fixture user. */
+const carResponse = (record: Car = car(), abilities: CarAbilities = ALL_ABILITIES, currentUserId = "user-fixture") => ({
+  car: record,
+  canEdit: abilities.edit,
+  canEditCost: abilities.createQualityCost,
+  abilities,
+  currentUserId,
+});
+
+/** Test fixture: the user directory behind the person pickers. */
+const DIRECTORY = {
+  users: [
+    { id: "user-fixture", name: "Fixture Person", active: true },
+    { id: "user-other", name: "Fixture Other", active: true },
+    { id: "user-former", name: "Fixture Former", active: false },
+  ],
+};
+
 type Fixture = { status: number; body: unknown };
 let responses: Record<string, Fixture>;
 let requested: { path: string; init?: RequestInit }[];
@@ -247,10 +300,11 @@ beforeEach(() => {
   router.replace.mockReset();
   responses = {
     [`GET ${BASE}/options`]: { status: 200, body: OPTIONS },
-    [`GET ${BASE}`]: { status: 200, body: { cars: [summary()], total: 1, canEdit: true } },
+    [`GET ${BASE}`]: { status: 200, body: { cars: [summary()], total: 1, canEdit: true, abilities: ALL_ABILITIES } },
     [`GET ${BASE}/dashboard`]: { status: 200, body: DASHBOARD },
-    [`GET ${BASE}/9`]: { status: 200, body: { car: car(), canEdit: true, canEditCost: true } },
+    [`GET ${BASE}/9`]: { status: 200, body: carResponse() },
     [`GET ${BASE}/9/history`]: { status: 200, body: { carId: 9, events: [] } },
+    ["GET /api/v1/users/directory"]: { status: 200, body: DIRECTORY },
   };
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   container = document.createElement("div");
@@ -349,7 +403,12 @@ describe("CAR draft", () => {
     expect(fields.previousOccurrence).toBeNull();
     expect(fields.status).toBe("open");
     expect(fields.whySteps).toEqual([]);
-    expect(fields.approvals).toEqual([]);
+    expect(fields.assignedToUserId).toBeNull();
+    expect(fields.assignedTo).toBeNull();
+    // Approvals, the reviewer and the closure approver come from the signed-in user, never the form.
+    expect(fields).not.toHaveProperty("approvals");
+    expect(fields).not.toHaveProperty("reviewer");
+    expect(fields).not.toHaveProperty("closureApprovedBy");
 
     const draft = { ...emptyDraft("2003-03-15"), subject: "  Leak  ", safetyHazard: "no" as const, materialLoss: "0" };
     const filled = fieldsOf(draft);
@@ -390,17 +449,16 @@ describe("CAR draft", () => {
     expect(draftProblems({ ...draft, otherCosts: "12,5" }, "2003-03-15", null).otherCosts).toMatch(/amount/);
   });
 
-  it("only closes a CAR whose actions are complete, with effectiveness, approver and date", () => {
+  it("only closes a CAR whose actions are complete, with effectiveness and date", () => {
     const saved = car();
     const closing = { ...draftOf(saved), status: "closed" as const };
     const problems = draftProblems(closing, "2003-03-15", saved);
     expect(problems.status).toMatch(/1 corrective action\(s\) are not complete/);
     expect(problems.dateClosed).toBe("Enter the date closed.");
-    expect(problems.closureApprovedBy).toBe("Enter who approved closure.");
     expect(problems.effectivenessResult).toMatch(/effectiveness/);
 
     const done = { ...saved, actions: { total: 2, complete: 2, outstanding: 0, overdue: 0 } };
-    const ready = { ...closing, dateClosed: "2003-03-14", closureApprovedBy: "Fixture Person", effectivenessResult: "effective" as const };
+    const ready = { ...closing, dateClosed: "2003-03-14", effectivenessResult: "effective" as const };
     expect(draftProblems(ready, "2003-03-15", done)).toEqual({});
     expect(draftProblems({ ...ready, effectivenessResult: "not_effective" }, "2003-03-15", done).followUpReference).toMatch(/follow-up/);
     expect(draftProblems(ready, "2003-03-15", null).status).toMatch(/Save the CAR/);
@@ -418,6 +476,28 @@ describe("CAR draft", () => {
     const imported = action({ status: "complete", statusLabel: "Complete", completedOn: null });
     expect(actionProblems(draft, "2003-03-15", imported)).toEqual({});
     expect(actionFieldsOf({ ...draft, status: "open", completedOn: "2003-03-01" }).completedOn).toBeNull();
+  });
+
+  it("keeps a name recorded before user accounts without matching it to a user", () => {
+    const legacy = action({ owner: "J. Smith", ownerUserId: null });
+    const saved = car({ assignedTo: "J. Smith", assignedToUserId: null, actionItems: [legacy] });
+    const fields = fieldsOf(draftOf(saved));
+    expect(fields.assignedToUserId).toBeNull();
+    expect(fields.assignedTo).toBe("J. Smith");
+    // A chosen user is sent by id; the server records the name.
+    const chosen = fieldsOf({ ...draftOf(saved), people: { ...draftOf(saved).people, assignedTo: { userId: "user-other", name: "Fixture Other" } } });
+    expect(chosen.assignedToUserId).toBe("user-other");
+    expect(chosen.assignedTo).toBeNull();
+  });
+
+  it("offers Complete only to the action's owner or a CAR administrator", () => {
+    const own = action({ ownerUserId: "user-fixture" });
+    const theirs = action({ ownerUserId: "user-other" });
+    const worker = { abilities: { ...NO_ABILITIES, completeAction: true }, currentUserId: "user-fixture" };
+    expect(canCompleteCarAction(own, worker)).toBe(true);
+    expect(canCompleteCarAction(theirs, worker)).toBe(false);
+    expect(canCompleteCarAction(action({ ownerUserId: null }), worker)).toBe(false);
+    expect(canCompleteCarAction(theirs, { abilities: { ...NO_ABILITIES, admin: true }, currentUserId: "user-fixture" })).toBe(true);
   });
 });
 
@@ -493,7 +573,7 @@ describe("CAR Register", () => {
   });
 
   it("shows an empty state, not invented rows, when there are no CARs", async () => {
-    responses[`GET ${BASE}`] = { status: 200, body: { cars: [], total: 0, canEdit: true } };
+    responses[`GET ${BASE}`] = { status: 200, body: { cars: [], total: 0, canEdit: true, abilities: ALL_ABILITIES } };
     await render(<CarRegisterPage title="CAR Register" initial={EMPTY_CAR_QUERY} />);
     expect(container.textContent).toContain("No Corrective Action Reports yet");
     expect(container.querySelector("tbody")).toBeNull();
@@ -540,7 +620,7 @@ describe("CAR dashboard", () => {
 
 describe("CAR record", () => {
   it("creates a CAR from the subject and request date alone", async () => {
-    responses[`POST ${BASE}`] = { status: 201, body: { car: car({ id: 10, carNumber: "Q-2003-002" }), canEdit: true, canEditCost: true } };
+    responses[`POST ${BASE}`] = { status: 201, body: carResponse(car({ id: 10, carNumber: "Q-2003-002" })) };
     await render(<CarRecordPage id={null} />);
     expect(container.textContent).toContain("New Corrective Action Report");
     await click(button("Create CAR"));
@@ -558,20 +638,41 @@ describe("CAR record", () => {
   });
 
   it("opens at the overview and edits a step with the loaded version", async () => {
-    responses[`PUT ${BASE}/9`] = { status: 200, body: { car: car({ version: 5, assignedTo: "Someone Else" }), canEdit: true, canEditCost: true } };
+    responses[`PUT ${BASE}/9`] = {
+      status: 200,
+      body: carResponse(car({ version: 5, assignedTo: "Fixture Other", assignedToUserId: "user-other" })),
+    };
     await render(<CarRecordPage id={9} />);
     expect(container.textContent).toContain("Q-2003-001");
     expect(container.textContent).toContain("Progress");
     expect(button("Save CAR").disabled).toBe(true);
 
     await click(button("1 Identify"));
-    await change(control<HTMLInputElement>("Assigned to"), "Someone Else");
+    const assignee = control<HTMLSelectElement>("Assigned to");
+    // Inactive users are not offered for new assignments.
+    expect([...assignee.options].map((o) => o.textContent)).toEqual(["Not recorded", "Fixture Person", "Fixture Other"]);
+    await change(assignee, "user-other");
     expect(container.textContent).toContain("Unsaved changes");
     await click(button("Save CAR"));
     const [body] = sent("PUT", `${BASE}/9`);
     expect(body.version).toBe(4);
-    expect(body.assignedTo).toBe("Someone Else");
+    expect(body.assignedToUserId).toBe("user-other");
+    expect(body.assignedTo).toBeNull();
+    // The browser never sends who created or changed the record.
+    expect(body).not.toHaveProperty("updatedBy");
+    expect(body).not.toHaveProperty("createdBy");
     expect(container.textContent).toContain("Saved");
+  });
+
+  it("keeps a name recorded before user accounts selectable, labelled as such", async () => {
+    responses[`GET ${BASE}/9`] = {
+      status: 200,
+      body: carResponse(car({ assignedTo: "J. Smith", assignedToUserId: null })),
+    };
+    await render(<CarRecordPage id={9} />);
+    await click(button("1 Identify"));
+    const assignee = control<HTMLSelectElement>("Assigned to");
+    expect(assignee.selectedOptions[0].textContent).toBe("J. Smith (recorded before user accounts)");
   });
 
   it("opens the step of a field the API refused", async () => {
@@ -592,11 +693,11 @@ describe("CAR record", () => {
     responses[`PUT ${BASE}/9`] = { status: 409, body: { detail: { error: "edit_conflict", message: "This CAR was changed by someone else since you loaded it. Nothing was saved." } } };
     await render(<CarRecordPage id={9} />);
     await click(button("1 Identify"));
-    await change(control<HTMLInputElement>("Assigned to"), "Someone Else");
+    await change(control<HTMLSelectElement>("Assigned to"), "user-other");
     await click(button("Save CAR"));
     expect(container.textContent).toContain("changed by someone else");
     await click(button("Discard my changes and load the latest"));
-    expect(control<HTMLInputElement>("Assigned to").value).toBe("Fixture Person");
+    expect(control<HTMLSelectElement>("Assigned to").value).toBe("user-fixture");
   });
 
   it("does not close a CAR with outstanding actions", async () => {
@@ -610,7 +711,7 @@ describe("CAR record", () => {
   });
 
   it("adds, edits and completes corrective actions on their own", async () => {
-    const updated = { car: car(), canEdit: true, canEditCost: true };
+    const updated = carResponse();
     responses[`POST ${BASE}/9/actions`] = { status: 201, body: updated };
     responses[`PUT ${BASE}/9/actions/31`] = { status: 200, body: updated };
     responses[`POST ${BASE}/9/actions/31/complete`] = { status: 200, body: updated };
@@ -628,9 +729,11 @@ describe("CAR record", () => {
     ]);
 
     await click(button("Edit"));
-    await change(control<HTMLInputElement>("Responsible", dialog()), "Fixture Other");
+    await change(control<HTMLSelectElement>("Responsible", dialog()), "user-other");
     await click(button("Save action", dialog()));
-    expect(sent("PUT", `${BASE}/9/actions/31`)).toEqual([expect.objectContaining({ owner: "Fixture Other", version: 1 })]);
+    expect(sent("PUT", `${BASE}/9/actions/31`)).toEqual([
+      expect.objectContaining({ ownerUserId: "user-other", owner: null, version: 1 }),
+    ]);
 
     await click(button("Complete"));
     expect(dialog().textContent).toContain("does not record the CAR's effectiveness review");
@@ -641,8 +744,8 @@ describe("CAR record", () => {
   it("links the CAR to Quality Cost only when there are no unsaved edits", async () => {
     responses[`GET ${BASE}/9`] = {
       status: 200,
-      body: {
-        car: car({
+      body: carResponse(
+        car({
           qualityCostRecordId: 7,
           qualityCost: {
             id: 7,
@@ -654,9 +757,7 @@ describe("CAR record", () => {
             statusLabel: "Open",
           },
         }),
-        canEdit: true,
-        canEditCost: true,
-      },
+      ),
     };
     await render(<CarRecordPage id={9} />);
     await click(button("7 Cost"));
@@ -668,12 +769,39 @@ describe("CAR record", () => {
   });
 
   it("is read-only without edit permission", async () => {
-    responses[`GET ${BASE}/9`] = { status: 200, body: { car: car(), canEdit: false, canEditCost: false } };
+    responses[`GET ${BASE}/9`] = { status: 200, body: carResponse(car(), NO_ABILITIES) };
     await render(<CarRecordPage id={9} />);
-    expect(container.textContent).toContain("Editing needs the quality.cars.edit permission");
+    expect(container.textContent).toContain("Editing it needs the car.edit permission");
     expect([...container.querySelectorAll("button")].some((b) => b.textContent?.includes("Save CAR"))).toBe(false);
     await click(button("1 Identify"));
     expect(control<HTMLInputElement>("Subject / issue").closest("fieldset")!.disabled).toBe(true);
+    await click(button("5 Correct"));
+    expect(control<HTMLTextAreaElement>("Procedures revised").closest("fieldset")!.disabled).toBe(true);
+    expect([...container.querySelectorAll("button")].some((b) => b.textContent === "Complete")).toBe(false);
+    await click(button("8 Close"));
+    expect([...container.querySelectorAll("button")].some((b) => b.textContent?.startsWith("Approve as"))).toBe(false);
+  });
+
+  it("lets an action owner complete their own action without CAR edit permission", async () => {
+    const worker = { ...NO_ABILITIES, completeAction: true };
+    responses[`GET ${BASE}/9`] = { status: 200, body: carResponse(car(), worker) };
+    responses[`POST ${BASE}/9/actions/31/complete`] = { status: 200, body: carResponse(car(), worker) };
+    await render(<CarRecordPage id={9} />);
+    await click(button("5 Correct"));
+    expect([...container.querySelectorAll("button")].some((b) => b.textContent === "Add action")).toBe(false);
+    await click(button("Complete"));
+    await click(button("Mark complete", container.querySelector("dialog[open]")!));
+    expect(sent("POST", `${BASE}/9/actions/31/complete`)).toEqual([{ version: 1, completedOn: "2003-03-15" }]);
+  });
+
+  it("records approvals as the signed-in user, never a typed name", async () => {
+    const approver = { ...NO_ABILITIES, approve: true };
+    responses[`GET ${BASE}/9`] = { status: 200, body: carResponse(car(), approver) };
+    responses[`POST ${BASE}/9/approvals`] = { status: 200, body: carResponse(car(), approver) };
+    await render(<CarRecordPage id={9} />);
+    await click(button("8 Close"));
+    await click(button("Approve as Quality"));
+    expect(sent("POST", `${BASE}/9/approvals`)).toEqual([{ version: 4, functionCode: "quality" }]);
   });
 
   it("keeps step navigation usable on narrow screens", async () => {

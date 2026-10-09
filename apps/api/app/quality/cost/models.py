@@ -15,6 +15,7 @@ distinct from a recorded 0.
 """
 
 import datetime as dt
+import uuid
 from collections.abc import Iterable
 from decimal import Decimal
 
@@ -36,7 +37,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.db.base import Base
+from app.db.base import Base, user_link
 from app.quality.cost.classification import (
     COMPONENT_FIELDS,
     COQ_CLASSES,
@@ -220,7 +221,9 @@ class CostRecord(Base):
     equipment: Mapped[str | None] = mapped_column(Text)
     # Customer or supplier.
     counterparty: Mapped[str | None] = mapped_column(Text)
+    # The owner's name as recorded; ``owner_user_id`` links the platform user when known.
     owner: Mapped[str | None] = mapped_column(Text)
+    owner_user_id: Mapped[uuid.UUID | None] = user_link()
     notes: Mapped[str | None] = mapped_column(Text)
     # Cost components in US dollars; null is not entered, distinct from 0.
     material_cost: Mapped[Decimal | None] = mapped_column(Numeric)

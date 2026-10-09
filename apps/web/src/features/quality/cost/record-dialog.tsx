@@ -113,7 +113,7 @@ function LoadError({ error }: { error: unknown }) {
 export function AddCostRecordButton({ coqClass, className }: { coqClass?: CoqClass; className?: string }) {
   const options = useCostRecordOptions();
   const [target, setTarget] = useState<CostDialogTarget | null>(null);
-  if (!options.data?.canEdit) return null;
+  if (!options.data?.abilities.create) return null;
   return (
     <>
       <Button onClick={() => setTarget({ kind: "create", coqClass })} className={cn("pointer-coarse:h-11", className)}>
@@ -322,10 +322,10 @@ function RecordDetail({
 
       <DetailSection title="Audit">
         <Item label="Created">
-          {formatTimestamp(record.createdAt)} by {record.createdBy}
+          {formatTimestamp(record.createdAt)} by {record.createdByName}
         </Item>
         <Item label="Last updated">
-          {formatTimestamp(record.updatedAt)} by {record.updatedBy}
+          {formatTimestamp(record.updatedAt)} by {record.updatedByName}
         </Item>
         <Item label="Version">{record.version}</Item>
         <Item label="Source">{record.source === "legacy_import" ? "Imported from the COQ workbook" : "Entered in the platform"}</Item>
@@ -360,7 +360,9 @@ export function historyChanges(event: CostHistoryEvent): { field: string; from: 
   const before = event.oldValue ?? {};
   const after = event.newValue ?? {};
   return Object.keys(after)
-    .filter((field) => field !== "version" && JSON.stringify(before[field]) !== JSON.stringify(after[field]))
+    // A person's user ID changes together with their name, which is what is shown.
+    .filter((field) => field !== "version" && !field.endsWith("_user_id"))
+    .filter((field) => JSON.stringify(before[field]) !== JSON.stringify(after[field]))
     .filter((field) => event.action !== "create" || (after[field] !== null && !(Array.isArray(after[field]) && (after[field] as unknown[]).length === 0)))
     .map((field) => ({ field: humanize(field), from: shown(before[field]), to: shown(after[field]) }));
 }
@@ -379,7 +381,7 @@ function HistoryList({ record }: { record: CostRecord }) {
           {history.data.events.map((event) => (
             <li key={`${event.changeSetId}-${event.occurredAt}`} className="text-sm">
               <p className="font-medium">
-                {event.action === "create" ? "Created" : "Updated"} {formatTimestamp(event.occurredAt)} by {event.actorId}
+                {event.action === "create" ? "Created" : "Updated"} {formatTimestamp(event.occurredAt)} by {event.actorName}
               </p>
               <ul className="mt-1 space-y-0.5 text-xs text-muted-foreground">
                 {historyChanges(event).map((change) => (

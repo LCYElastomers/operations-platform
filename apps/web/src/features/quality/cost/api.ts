@@ -48,6 +48,9 @@ export type CostRecordFields = {
   process: string | null;
   equipment: string | null;
   counterparty: string | null;
+  /** A platform user; the API records their name. */
+  ownerUserId: string | null;
+  /** Only a name recorded before users existed, kept unchanged. */
   owner: string | null;
   notes: string | null;
   financialStatus: FinancialStatus;
@@ -83,12 +86,17 @@ export type CostRecord = Omit<CostRecordFields, "references"> & {
   version: number;
   createdAt: string;
   createdBy: string;
+  createdByName: string;
   updatedAt: string;
   updatedBy: string;
+  updatedByName: string;
 };
 
-export type CostRecordList = { records: CostRecord[]; total: number; canEdit: boolean };
-export type CostRecordResponse = { record: CostRecord; canEdit: boolean };
+/** What the signed-in user may do. The interface uses it to offer controls; the API checks every request. */
+export type CostAbilities = { create: boolean; edit: boolean; assign: boolean; confirmFinancial: boolean; close: boolean };
+
+export type CostRecordList = { records: CostRecord[]; total: number; canEdit: boolean; abilities: CostAbilities };
+export type CostRecordResponse = { record: CostRecord; canEdit: boolean; abilities: CostAbilities };
 
 export type CodeLabel = { code: string; label: string };
 
@@ -100,13 +108,17 @@ export type CostRecordOptions = {
   costComponents: { field: CostField; label: string }[];
   referenceTypes: CodeLabel[];
   products: string[];
+  /** Names already used on records, for the register filter. */
   owners: string[];
   canEdit: boolean;
+  abilities: CostAbilities;
 };
 
 export type CostHistoryEvent = {
   occurredAt: string;
   actorId: string;
+  /** The user's name when the change was made, or a system actor's label. */
+  actorName: string;
   action: "create" | "update" | "delete";
   changeSetId: string;
   oldValue: Record<string, unknown> | null;
@@ -380,7 +392,7 @@ export function describeCostError(error: unknown): string {
   if (!(error instanceof ApiError)) return "The API could not be reached.";
   switch (error.status) {
     case 401:
-      return "Sign-in is required to view Cost of Quality data. User authentication is not enabled on this server yet.";
+      return "Your session has ended. Sign in again to continue.";
     case 403:
       return "You do not have permission to view Cost of Quality data.";
     case 422:

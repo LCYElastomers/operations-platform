@@ -107,12 +107,22 @@ class RecordOut(CamelModel):
     created_by: str
     updated_at: dt.datetime
     updated_by: str
+    created_by_name: str | None = None
+    updated_by_name: str | None = None
 
 
 class RecordPermissions(CamelModel):
+    """What the signed-in user may do. ``*_types`` list the record types each
+    action is allowed for; the server enforces the same rules on every write."""
+
     can_edit: bool
     can_manage: bool
     can_view_history: bool
+    can_classify: bool = False
+    viewable_types: list[EventType] = []
+    creatable_types: list[EventType] = []
+    editable_types: list[EventType] = []
+    voidable_types: list[EventType] = []
 
 
 class RecordListResponse(RecordPermissions):
@@ -144,6 +154,7 @@ class RecordOptionsResponse(CamelModel):
 class HistoryEventOut(CamelModel):
     occurred_at: dt.datetime
     actor_id: str
+    actor_name: str
     action: Literal["create", "update", "delete"]
     change_set_id: str
     old_value: dict[str, Any] | None

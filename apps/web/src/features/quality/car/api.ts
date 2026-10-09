@@ -26,14 +26,21 @@ export type WhyStep = {
   targetDate: string | null;
 };
 
-export type ApprovalInput = { functionCode: ApprovalFunction; name: string; approvedOn: string | null };
 export type ReferenceInput = { type: string; key: string; label: string | null };
 
-/** Everything on the report except its corrective actions. Null is "not recorded". */
+/**
+ * Everything on the report except its corrective actions and approvals. Null
+ * is "not recorded". People are platform users sent by ID; the API records
+ * their names. A name without an ID may only repeat a name recorded before
+ * users existed. The effectiveness reviewer and closure approver are not
+ * fields: the API records the signed-in user who records the review or closes.
+ */
 export type CarFields = {
   subject: string;
+  requestedByUserId: string | null;
   requestedBy: string | null;
   requestDate: string;
+  assignedToUserId: string | null;
   assignedTo: string | null;
   dueDate: string | null;
   sourceCode: string | null;
@@ -47,6 +54,7 @@ export type CarFields = {
   nonconformityDescription: string | null;
   objectiveEvidence: string | null;
   immediateActions: string | null;
+  containmentOwnerUserId: string | null;
   containmentOwner: string | null;
   containmentCompletedOn: string | null;
   dispositionCodes: string[];
@@ -79,17 +87,14 @@ export type CarFields = {
   planCompletedOn: string | null;
   successCriteria: string | null;
   effectivenessEvidence: string | null;
-  reviewer: string | null;
   reviewDate: string | null;
   effectivenessResult: EffectivenessResult | null;
   followUpReference: string | null;
   materialLoss: string | null;
   productionTimeLoss: string | null;
   otherCosts: string | null;
-  approvals: ApprovalInput[];
   status: CarStatus | null;
   dateClosed: string | null;
-  closureApprovedBy: string | null;
   product: string | null;
   campaign: string | null;
   lot: string | null;
@@ -100,6 +105,8 @@ export type CarFields = {
 
 export type ActionFields = {
   action: string;
+  ownerUserId: string | null;
+  /** Only a name recorded before users existed, kept unchanged. */
   owner: string | null;
   targetDate: string | null;
   status: ActionStatus;
@@ -119,8 +126,10 @@ export type CarAction = Omit<ActionFields, "status"> & {
   version: number;
   createdAt: string;
   createdBy: string;
+  createdByName: string;
   updatedAt: string;
   updatedBy: string;
+  updatedByName: string;
 };
 
 export type ActionProgress = { total: number; complete: number; outstanding: number; overdue: number };
@@ -130,8 +139,10 @@ export type CarSummary = {
   carNumber: string;
   subject: string;
   requestedBy: string | null;
+  requestedByUserId: string | null;
   requestDate: string;
   assignedTo: string | null;
+  assignedToUserId: string | null;
   dueDate: string | null;
   status: CarStatus | null;
   statusLabel: string;
@@ -166,12 +177,31 @@ export type LinkedCost = {
   statusLabel: string;
 };
 
+export type Approval = {
+  functionCode: ApprovalFunction;
+  functionLabel: string;
+  name: string;
+  /** The approving user; null on imported approvals. */
+  userId: string | null;
+  approvedOn: string | null;
+  /** The platform user who recorded the approval (not a signature). */
+  recordedBy: string;
+  recordedByName: string;
+  recordedAt: string;
+};
+
 export type Car = CarSummary &
-  Omit<CarFields, keyof CarSummary | "approvals" | "references" | "whySteps"> & {
+  Omit<CarFields, keyof CarSummary | "references" | "whySteps"> & {
     whySteps: (WhyStep & { position: number })[];
     dispositionLabels: string[];
     qualityCost: LinkedCost | null;
-    approvals: (ApprovalInput & { functionLabel: string; recordedBy: string; recordedAt: string })[];
+    /** Who recorded the effectiveness review (the signed-in user), or a name from an imported form. */
+    reviewer: string | null;
+    reviewerUserId: string | null;
+    /** Who closed the CAR (the signed-in user), or a name from an imported form. */
+    closureApprovedBy: string | null;
+    closureApprovedByUserId: string | null;
+    approvals: Approval[];
     references: (ReferenceInput & { typeLabel: string })[];
     actionItems: CarAction[];
     steps: { code: string; label: string; state: StepState }[];
@@ -180,12 +210,36 @@ export type Car = CarSummary &
     version: number;
     createdAt: string;
     createdBy: string;
+    createdByName: string;
     updatedAt: string;
     updatedBy: string;
+    updatedByName: string;
   };
 
-export type CarResponse = { car: Car; canEdit: boolean; canEditCost: boolean };
-export type CarList = { cars: CarSummary[]; total: number; canEdit: boolean };
+/** What the signed-in user may do. The interface uses it to offer controls; the API checks every request. */
+export type CarAbilities = {
+  create: boolean;
+  edit: boolean;
+  assign: boolean;
+  manageActions: boolean;
+  completeAction: boolean;
+  reviewEffectiveness: boolean;
+  approve: boolean;
+  close: boolean;
+  reopen: boolean;
+  admin: boolean;
+  createQualityCost: boolean;
+  linkQualityCost: boolean;
+};
+
+export type CarResponse = {
+  car: Car;
+  canEdit: boolean;
+  canEditCost: boolean;
+  abilities: CarAbilities;
+  currentUserId: string | null;
+};
+export type CarList = { cars: CarSummary[]; total: number; canEdit: boolean; abilities: CarAbilities };
 
 export type Choice = { code: string; label: string; active: boolean };
 export type CodeLabel = { code: string; label: string };
@@ -201,11 +255,13 @@ export type CarOptions = {
   approvalFunctions: { code: ApprovalFunction; label: string }[];
   referenceTypes: CodeLabel[];
   steps: CodeLabel[];
+  /** Names already used on reports, for filters. */
   people: string[];
   assignees: string[];
   dueSoonDays: number;
   canEdit: boolean;
   canEditCost: boolean;
+  abilities: CarAbilities;
 };
 
 export type CarHistoryEvent = CostHistoryEvent & { entity: "car" | "action"; actionId: number | null };
@@ -387,6 +443,42 @@ export function completeAction(carId: number, actionId: number, body: { version:
   return apiSend<CarResponse>("POST", `${BASE}/${carId}/actions/${actionId}/complete`, body);
 }
 
+/** Records the signed-in user's approval for one function, dated today. */
+export function recordApproval(carId: number, body: { version: number; functionCode: ApprovalFunction }) {
+  return apiSend<CarResponse>("POST", `${BASE}/${carId}/approvals`, body);
+}
+
+export function withdrawApproval(carId: number, body: { version: number; functionCode: ApprovalFunction }) {
+  return apiSend<CarResponse>(
+    "DELETE",
+    `${BASE}/${carId}/approvals/${encodeURIComponent(body.functionCode)}?version=${body.version}`,
+  );
+}
+
+/**
+ * Whether the signed-in user may record an action as complete: its owner with
+ * car.completeAction, or a CAR administrator. The API applies the same rule.
+ */
+export function canCompleteCarAction(
+  action: Pick<CarAction, "ownerUserId">,
+  response: Pick<CarResponse, "abilities" | "currentUserId">,
+): boolean {
+  if (response.abilities.admin) return true;
+  return (
+    response.abilities.completeAction &&
+    action.ownerUserId !== null &&
+    action.ownerUserId === response.currentUserId
+  );
+}
+
+/** Whether the signed-in user may withdraw an approval: their own, or any as a CAR administrator. */
+export function canWithdrawApproval(
+  approval: Pick<Approval, "userId">,
+  response: Pick<CarResponse, "abilities" | "currentUserId">,
+): boolean {
+  return response.abilities.admin || (approval.userId !== null && approval.userId === response.currentUserId);
+}
+
 export type QualityCostCreate = {
   version: number;
   areaId: number;
@@ -424,7 +516,7 @@ export function describeCarError(error: unknown): string {
   if (!(error instanceof ApiError)) return "The API could not be reached.";
   switch (error.status) {
     case 401:
-      return "Sign-in is required to view Corrective Action Reports. User authentication is not enabled on this server yet.";
+      return "Your session has ended. Sign in again to continue.";
     case 403:
       return error.detail?.message ?? "You do not have permission to view Corrective Action Reports.";
     case 404:

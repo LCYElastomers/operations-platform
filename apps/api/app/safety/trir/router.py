@@ -1,4 +1,5 @@
-"""TRIR Experience endpoints (read-only; ``safety.trir.view``).
+"""TRIR Experience endpoints (read-only; ``safetyRecord.view`` and
+``safetyDashboard.view``).
 
 ``/experience`` returns everything the module shows; the other endpoints are
 narrower views of the same calculation.
@@ -12,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.core.authorization import UserPrincipal, require_permission
+from app.core.authorization import UserPrincipal, require_all_permissions
 from app.core.permissions import Permission
 from app.db.session import DatabaseNotConfiguredError, get_sessionmaker
 from app.safety.models import MAX_REPORTING_YEAR, MIN_REPORTING_YEAR
@@ -56,13 +57,18 @@ def trir_session() -> Iterator[Session]:
 
 
 SessionDep = Annotated[Session, Depends(trir_session)]
-Viewer = Annotated[UserPrincipal, Depends(require_permission(Permission.SAFETY_TRIR_VIEW))]
+Viewer = Annotated[
+    UserPrincipal,
+    Depends(
+        require_all_permissions(Permission.SAFETY_RECORD_VIEW, Permission.SAFETY_DASHBOARD_VIEW)
+    ),
+]
 Year = Annotated[int | None, Query(ge=MIN_REPORTING_YEAR, le=MAX_REPORTING_YEAR)]
 Through = Annotated[int | None, Query(ge=1, le=12)]
 
 RESPONSES: dict[int | str, dict[str, Any]] = {
     401: {"description": "Not signed in"},
-    403: {"description": "Missing safety.trir.view"},
+    403: {"description": "Missing safetyRecord.view or safetyDashboard.view"},
     503: {"description": "Database unavailable"},
 }
 

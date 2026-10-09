@@ -15,6 +15,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from principals import as_user
 
 from app.core.authorization import UserPrincipal, get_user_principal
 from app.core.permissions import Permission
@@ -471,8 +472,7 @@ def test_unknown_categories_are_refused() -> None:
 # API --------------------------------------------------------------------------------
 
 
-def principal(*permissions: Permission) -> UserPrincipal:
-    return UserPrincipal("tester", authenticated=True, granted=frozenset(permissions))
+principal = as_user
 
 
 def make_client(behavior: InMemoryBehavior, user: UserPrincipal) -> Iterator[TestClient]:
@@ -498,12 +498,14 @@ def behavior() -> InMemoryBehavior:
 
 @pytest.fixture
 def editor(behavior: InMemoryBehavior) -> Iterator[TestClient]:
-    yield from make_client(behavior, principal(Permission.SAFETY_EDIT))
+    yield from make_client(
+        behavior, principal(Permission.SAFETY_RECORD_VIEW, Permission.SAFETY_RECORD_EDIT)
+    )
 
 
 @pytest.fixture
 def viewer(behavior: InMemoryBehavior) -> Iterator[TestClient]:
-    yield from make_client(behavior, principal(Permission.SAFETY_INCIDENTS_VIEW))
+    yield from make_client(behavior, principal(Permission.SAFETY_RECORD_VIEW))
 
 
 def test_get_returns_every_category_with_blanks_as_null(viewer: TestClient) -> None:
@@ -517,8 +519,10 @@ def test_get_returns_every_category_with_blanks_as_null(viewer: TestClient) -> N
     assert data["yearsWithData"] == [2026]
 
 
-def test_analytics_returns_the_behavior_pareto(viewer: TestClient) -> None:
-    data = viewer.get(ANALYTICS_URL, params={"year": 2026, "through": 9}).json()["behavior"]
+def test_analytics_returns_the_behavior_pareto(behavior: InMemoryBehavior) -> None:
+    dashboard = principal(Permission.SAFETY_RECORD_VIEW, Permission.SAFETY_DASHBOARD_VIEW)
+    for viewer in make_client(behavior, dashboard):
+        data = viewer.get(ANALYTICS_URL, params={"year": 2026, "through": 9}).json()["behavior"]
     assert (data["available"], data["totalTags"], data["incidentReports"]) == (True, 44, 41)
     assert data["categories"][0] == {
         "code": "eyes_on_path",

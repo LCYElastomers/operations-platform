@@ -1,21 +1,35 @@
 import { MONEY, MONEY_MESSAGE, previewTotal } from "../cost/record-form";
 
-import type {
-  ActionFields,
-  ApprovalFunction,
-  Car,
-  CarAction,
-  CarFields,
-  CarStatus,
-  EffectivenessResult,
-} from "./api";
+import type { ActionFields, Car, CarAction, CarFields, CarStatus, EffectivenessResult } from "./api";
 
 /** Yes / No / not recorded. "" is not recorded: never treated as No. */
 export type YesNo = "" | "yes" | "no";
 
+/**
+ * A person on a record: a platform user (by ID), a name recorded before users
+ * existed (no ID, kept unchanged), or nobody.
+ */
+export type PersonDraft = { userId: string | null; name: string | null };
+export const NOBODY: PersonDraft = { userId: null, name: null };
+
+/** Person fields and the field carrying the user's ID. */
+export const PERSON_FIELDS = {
+  requestedBy: "requestedByUserId",
+  assignedTo: "assignedToUserId",
+  containmentOwner: "containmentOwnerUserId",
+} as const satisfies Partial<Record<keyof CarFields, keyof CarFields>>;
+export type PersonField = keyof typeof PERSON_FIELDS;
+
+function personOf(userId: string | null, name: string | null): PersonDraft {
+  return { userId, name };
+}
+
+/** The body fields for a person: the user's ID, or the unchanged recorded name. */
+function personFields(person: PersonDraft): { userId: string | null; name: string | null } {
+  return person.userId ? { userId: person.userId, name: null } : { userId: null, name: person.name };
+}
+
 export const TEXT_FIELDS = [
-  "requestedBy",
-  "assignedTo",
   "dueDate",
   "sourceCode",
   "departmentCode",
@@ -27,7 +41,6 @@ export const TEXT_FIELDS = [
   "nonconformityDescription",
   "objectiveEvidence",
   "immediateActions",
-  "containmentOwner",
   "containmentCompletedOn",
   "dispositionOther",
   "incidentType",
@@ -51,14 +64,12 @@ export const TEXT_FIELDS = [
   "planCompletedOn",
   "successCriteria",
   "effectivenessEvidence",
-  "reviewer",
   "reviewDate",
   "followUpReference",
   "materialLoss",
   "productionTimeLoss",
   "otherCosts",
   "dateClosed",
-  "closureApprovedBy",
   "product",
   "campaign",
   "lot",
@@ -102,7 +113,7 @@ export type CarDraft = Record<TextField, string> &
     /** "" only on imported CARs whose form recorded no status. */
     status: "" | CarStatus;
     whySteps: WhyDraft[];
-    approvals: Partial<Record<ApprovalFunction, { name: string; approvedOn: string }>>;
+    people: Record<PersonField, PersonDraft>;
     references: { type: string; key: string; label: string }[];
   };
 
@@ -130,7 +141,7 @@ export function emptyDraft(today: string): CarDraft {
     effectivenessResult: "",
     status: "open",
     whySteps: [],
-    approvals: {},
+    people: { requestedBy: NOBODY, assignedTo: NOBODY, containmentOwner: NOBODY },
     references: [],
   } as unknown as CarDraft;
   for (const field of TEXT_FIELDS) draft[field] = "";
@@ -157,9 +168,11 @@ export function draftOf(car: Car): CarDraft {
     who: step.who ?? "",
     targetDate: step.targetDate ?? "",
   }));
-  draft.approvals = Object.fromEntries(
-    car.approvals.map((a) => [a.functionCode, { name: a.name, approvedOn: a.approvedOn ?? "" }]),
-  );
+  draft.people = {
+    requestedBy: personOf(car.requestedByUserId, car.requestedBy),
+    assignedTo: personOf(car.assignedToUserId, car.assignedTo),
+    containmentOwner: personOf(car.containmentOwnerUserId, car.containmentOwner),
+  };
   draft.references = car.references.map((r) => ({ type: r.type, key: r.key, label: r.label ?? "" }));
   return draft;
 }
@@ -173,6 +186,11 @@ export function fieldsOf(draft: CarDraft): CarFields {
   const fields = {} as Record<string, unknown>;
   for (const field of TEXT_FIELDS) fields[field] = text(draft[field]);
   for (const field of YES_NO_FIELDS) fields[field] = fromYesNo(draft[field]);
+  for (const [field, idField] of Object.entries(PERSON_FIELDS) as [PersonField, string][]) {
+    const { userId, name } = personFields(draft.people[field]);
+    fields[idField] = userId;
+    fields[field] = name;
+  }
   return {
     ...(fields as Omit<CarFields, "subject" | "requestDate">),
     subject: draft.subject.trim(),
@@ -190,13 +208,6 @@ export function fieldsOf(draft: CarDraft): CarFields {
         targetDate: step.targetDate || null,
       }))
       .filter((step) => Object.values(step).some((value) => value !== null)),
-    approvals: Object.entries(draft.approvals)
-      .filter(([, approval]) => approval && (approval.name.trim() || approval.approvedOn))
-      .map(([functionCode, approval]) => ({
-        functionCode: functionCode as ApprovalFunction,
-        name: approval!.name.trim(),
-        approvedOn: approval!.approvedOn || null,
-      })),
     references: draft.references
       .filter((r) => r.key.trim())
       .map((r) => ({ type: r.type, key: r.key.trim(), label: text(r.label) })),
@@ -244,12 +255,6 @@ export function draftProblems(
     const value = text(draft[field]);
     if (value !== null && !MONEY.test(value)) problems[field] = `${label}: ${MONEY_MESSAGE}`;
   }
-  for (const [code, approval] of Object.entries(draft.approvals)) {
-    if (approval && !approval.name.trim() && approval.approvedOn)
-      problems[`approval.${code}`] = "Enter the approver's name for the approval date.";
-    if (approval?.approvedOn && approval.approvedOn > today)
-      problems[`approval.${code}`] = "The approval date cannot be in the future.";
-  }
   if (!draft.status && current?.status !== null) problems.status = "Choose the CAR status.";
   if (draft.status === "closed") {
     if (current === null) problems.status = "Save the CAR and record its actions before closing it.";
@@ -260,7 +265,6 @@ export function draftProblems(
       problems.dateClosed = "The date closed cannot be before the request date.";
     else if (draft.dateClosed > today && draft.dateClosed !== current?.dateClosed)
       problems.dateClosed = "The date closed cannot be in the future.";
-    if (!draft.closureApprovedBy.trim()) problems.closureApprovedBy = "Enter who approved closure.";
     if (!draft.effectivenessResult)
       problems.effectivenessResult = "Record the effectiveness review result before closing.";
     else if (draft.effectivenessResult === "not_effective" && !draft.followUpReference.trim())
@@ -276,7 +280,9 @@ export const FIELD_STEP: Record<string, string> = {
   subject: "identify",
   requestDate: "identify",
   requestedBy: "identify",
+  requestedByUserId: "identify",
   assignedTo: "identify",
+  assignedToUserId: "identify",
   dueDate: "identify",
   sourceCode: "identify",
   departmentCode: "identify",
@@ -284,6 +290,8 @@ export const FIELD_STEP: Record<string, string> = {
   endedOn: "identify",
   previousCar: "identify",
   dispositionCodes: "contain",
+  containmentOwner: "contain",
+  containmentOwnerUserId: "contain",
   containmentCompletedOn: "contain",
   rootCauseCode: "investigate",
   whySteps: "investigate",
@@ -298,20 +306,19 @@ export const FIELD_STEP: Record<string, string> = {
   recordId: "cost",
   status: "close",
   dateClosed: "close",
-  closureApprovedBy: "close",
   approvals: "close",
   references: "related",
 };
 
 export function stepOfProblem(field: string): string {
-  return FIELD_STEP[field] ?? (field.startsWith("approval.") ? "close" : "identify");
+  return FIELD_STEP[field] ?? "identify";
 }
 
 // --- Corrective actions ---
 
 export type ActionDraft = {
   action: string;
-  owner: string;
+  owner: PersonDraft;
   targetDate: string;
   status: ActionFields["status"] | "";
   completedOn: string;
@@ -323,7 +330,7 @@ export type ActionDraft = {
 export function emptyActionDraft(): ActionDraft {
   return {
     action: "",
-    owner: "",
+    owner: NOBODY,
     targetDate: "",
     status: "open",
     completedOn: "",
@@ -336,7 +343,7 @@ export function emptyActionDraft(): ActionDraft {
 export function actionDraftOf(action: CarAction): ActionDraft {
   return {
     action: action.action,
-    owner: action.owner ?? "",
+    owner: personOf(action.ownerUserId, action.owner),
     targetDate: action.targetDate ?? "",
     status: action.status ?? "",
     completedOn: action.completedOn ?? "",
@@ -347,9 +354,11 @@ export function actionDraftOf(action: CarAction): ActionDraft {
 }
 
 export function actionFieldsOf(draft: ActionDraft): ActionFields {
+  const owner = personFields(draft.owner);
   return {
     action: draft.action.trim(),
-    owner: text(draft.owner),
+    ownerUserId: owner.userId,
+    owner: owner.name,
     targetDate: draft.targetDate || null,
     status: draft.status || "open",
     completedOn: draft.status === "complete" ? draft.completedOn || null : null,

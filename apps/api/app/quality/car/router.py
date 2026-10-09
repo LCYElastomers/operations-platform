@@ -1,9 +1,13 @@
 """Corrective Action Report endpoints.
 
-Reading needs ``quality.cars.view``; creating and editing reports, their
-actions and their Quality Cost link ``quality.cars.edit``. Creating a Quality
-Cost record from a report also needs ``quality.cost.edit``; linking an existing
-one needs ``quality.cost.view``.
+Reading needs ``car.view`` (the dashboard also ``qualityDashboard.view``);
+creating ``car.create`` and editing ``car.edit``. Within an edit, assigning
+needs ``car.assign``, recording the effectiveness review
+``car.reviewEffectiveness``, closing ``car.close`` and reopening ``car.reopen``
+(``service.check_permissions``). Adding and changing actions needs
+``car.manageActions``; completing one ``car.completeAction`` as its owner, or
+``car.admin``. Approving needs ``car.approve``. Creating a Quality Cost record
+from a report also needs ``qualityCost.create``; linking one ``qualityCost.view``.
 
 ``/cars`` is the CAR Register; ``/cars/dashboard`` returns the dashboard figures
 of the same reports with the same filters.
@@ -13,10 +17,17 @@ import datetime as dt
 from collections.abc import Iterator
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.core.authorization import UserPrincipal, require_permission
+from app.auth import people
+from app.core.authorization import (
+    UserPrincipal,
+    ensure,
+    require_all_permissions,
+    require_any_permission,
+    require_permission,
+)
 from app.core.config import get_settings
 from app.core.permissions import Permission
 from app.db.session import DatabaseNotConfiguredError, get_sessionmaker
@@ -40,6 +51,8 @@ from app.quality.car.schemas import (
     ActionComplete,
     ActionCreate,
     ActionUpdate,
+    ApprovalRecord,
+    CarAbilitiesOut,
     CarCreate,
     CarDashboardResponse,
     CarHistoryEventOut,
@@ -54,7 +67,8 @@ from app.quality.car.schemas import (
     QualityCostCreate,
     QualityCostLink,
 )
-from app.quality.cost.records import Actor, RecordNotFoundError, RecordRuleError
+from app.quality.cost.records import RecordForbiddenError, RecordNotFoundError, RecordRuleError
+from app.quality.cost.router import actor_of
 from app.safety.site_calendar import site_today
 
 router = APIRouter(prefix="/quality/cars", tags=["quality"])
@@ -86,8 +100,33 @@ def car_repository() -> Iterator[CarRepository]:
 
 
 Repository = Annotated[CarRepository, Depends(car_repository)]
-Viewer = Annotated[UserPrincipal, Depends(require_permission(Permission.QUALITY_CARS_VIEW))]
-Editor = Annotated[UserPrincipal, Depends(require_permission(Permission.QUALITY_CARS_EDIT))]
+Viewer = Annotated[UserPrincipal, Depends(require_permission(Permission.CAR_VIEW))]
+DashboardViewer = Annotated[
+    UserPrincipal,
+    Depends(require_all_permissions(Permission.CAR_VIEW, Permission.QUALITY_DASHBOARD_VIEW)),
+]
+Creator = Annotated[UserPrincipal, Depends(require_permission(Permission.CAR_CREATE))]
+Editor = Annotated[UserPrincipal, Depends(require_permission(Permission.CAR_EDIT))]
+ActionManager = Annotated[UserPrincipal, Depends(require_permission(Permission.CAR_MANAGE_ACTIONS))]
+# Updating an action: managers, or owners updating the status of their own
+# action (checked on the action by the service).
+ActionWorker = Annotated[
+    UserPrincipal,
+    Depends(
+        require_any_permission(
+            Permission.CAR_MANAGE_ACTIONS, Permission.CAR_COMPLETE_ACTION, Permission.CAR_ADMIN
+        )
+    ),
+]
+ActionCompleter = Annotated[
+    UserPrincipal,
+    Depends(require_any_permission(Permission.CAR_COMPLETE_ACTION, Permission.CAR_ADMIN)),
+]
+Approver = Annotated[UserPrincipal, Depends(require_permission(Permission.CAR_APPROVE))]
+ApprovalWithdrawer = Annotated[
+    UserPrincipal,
+    Depends(require_any_permission(Permission.CAR_APPROVE, Permission.CAR_ADMIN)),
+]
 Text = Annotated[str | None, Query(max_length=200)]
 Codes = Annotated[list[str] | None, Query(max_length=20)]
 
@@ -117,21 +156,36 @@ def _due_soon_days() -> int:
 
 
 def _can_edit(principal: UserPrincipal) -> bool:
-    return principal.has(Permission.QUALITY_CARS_EDIT)
+    return principal.has(Permission.CAR_EDIT)
 
 
 def _can_edit_cost(principal: UserPrincipal) -> bool:
-    return _can_edit(principal) and principal.has(Permission.QUALITY_COST_EDIT)
+    return principal.has_all(Permission.CAR_EDIT, Permission.QUALITY_COST_CREATE)
 
 
-def _actor(principal: UserPrincipal) -> Actor:
-    assert principal.user_id is not None  # noqa: S101 - require_permission admits users only
-    return Actor(principal.user_id, dt.datetime.now(dt.UTC))
+def _abilities(principal: UserPrincipal) -> CarAbilitiesOut:
+    p = principal.has
+    return CarAbilitiesOut(
+        create=p(Permission.CAR_CREATE),
+        edit=p(Permission.CAR_EDIT),
+        assign=p(Permission.CAR_ASSIGN),
+        manage_actions=p(Permission.CAR_MANAGE_ACTIONS),
+        complete_action=p(Permission.CAR_COMPLETE_ACTION),
+        review_effectiveness=p(Permission.CAR_REVIEW_EFFECTIVENESS),
+        approve=p(Permission.CAR_APPROVE),
+        close=p(Permission.CAR_CLOSE),
+        reopen=p(Permission.CAR_REOPEN),
+        admin=p(Permission.CAR_ADMIN),
+        create_quality_cost=_can_edit_cost(principal),
+        link_quality_cost=principal.has_all(Permission.CAR_EDIT, Permission.QUALITY_COST_VIEW),
+    )
 
 
 def _write_error(error: Exception) -> HTTPException:
     if isinstance(error, RecordNotFoundError):
         return _error(status.HTTP_404_NOT_FOUND, "record_not_found", "No such record.")
+    if isinstance(error, RecordForbiddenError):
+        return _error(status.HTTP_403_FORBIDDEN, "permission_denied", error.message)
     if isinstance(error, service.CarConflictError):
         return _error(
             status.HTTP_409_CONFLICT,
@@ -148,14 +202,23 @@ def _write_error(error: Exception) -> HTTPException:
     return _database_unavailable()
 
 
-_WRITE_ERRORS = (RecordNotFoundError, service.CarConflictError, RecordRuleError, SQLAlchemyError)
+_WRITE_ERRORS = (
+    RecordNotFoundError,
+    service.CarConflictError,
+    RecordRuleError,
+    RecordForbiddenError,
+    SQLAlchemyError,
+)
 
 
-def _response(principal: UserPrincipal, row: Any) -> CarResponse:
+def _response(principal: UserPrincipal, repository: CarRepository, row: Any) -> CarResponse:
+    names = repository.actor_names(service.actor_ids(row))
     return CarResponse(
-        car=service.car_out(row, _today(), _due_soon_days()),
+        car=service.car_out(row, _today(), _due_soon_days(), names),
         can_edit=_can_edit(principal),
         can_edit_cost=_can_edit_cost(principal),
+        abilities=_abilities(principal),
+        current_user_id=principal.user_id,
     )
 
 
@@ -242,6 +305,7 @@ def list_cars(
         cars=[service.list_item_out(r, today, days) for r in rows],
         total=total,
         can_edit=_can_edit(principal),
+        abilities=_abilities(principal),
     )
 
 
@@ -280,12 +344,13 @@ def options(principal: Viewer, repository: Repository) -> CarOptionsResponse:
         due_soon_days=_due_soon_days(),
         can_edit=_can_edit(principal),
         can_edit_cost=_can_edit_cost(principal),
+        abilities=_abilities(principal),
     )
 
 
 @router.get("/dashboard", response_model=CarDashboardResponse, responses=READ_RESPONSES)
 def car_dashboard(
-    principal: Viewer,
+    principal: DashboardViewer,
     repository: Repository,
     date_from: From = None,
     date_to: To = None,
@@ -330,11 +395,11 @@ def linked_cars(
 def get_car(principal: Viewer, repository: Repository, car_id: int) -> CarResponse:
     try:
         row = repository.get(car_id)
+        if row is None:
+            raise _error(status.HTTP_404_NOT_FOUND, "record_not_found", "No such CAR.")
+        return _response(principal, repository, row)
     except SQLAlchemyError:
         raise _database_unavailable() from None
-    if row is None:
-        raise _error(status.HTTP_404_NOT_FOUND, "record_not_found", "No such CAR.")
-    return _response(principal, row)
 
 
 @router.get("/{car_id}/history", response_model=CarHistoryResponse, responses=READ_RESPONSES)
@@ -354,6 +419,7 @@ def car_history(principal: Viewer, repository: Repository, car_id: int) -> CarHi
             CarHistoryEventOut(
                 occurred_at=e.occurred_at,
                 actor_id=e.actor_id,
+                actor_name=e.actor_name or people.actor_label(e.actor_id, {}),
                 action=e.action,  # type: ignore[arg-type]
                 change_set_id=str(e.change_set_id),
                 old_value=service.public_audit_value(e.old_value),
@@ -373,14 +439,14 @@ def car_history(principal: Viewer, repository: Repository, car_id: int) -> CarHi
 @router.post(
     "", response_model=CarResponse, status_code=status.HTTP_201_CREATED, responses=WRITE_RESPONSES
 )
-def create_car(principal: Editor, repository: Repository, request: CarCreate) -> CarResponse:
+def create_car(principal: Creator, repository: Repository, request: CarCreate) -> CarResponse:
     """A new report. Only the subject and request date are required; the rest
     can be completed later. The CAR number is assigned from the request year."""
     try:
-        row = service.create(repository, request, _actor(principal))
+        row = service.create(repository, request, actor_of(principal))
+        return _response(principal, repository, row)
     except _WRITE_ERRORS as error:
         raise _write_error(error) from None
-    return _response(principal, row)
 
 
 @router.put("/{car_id}", response_model=CarResponse, responses=WRITE_RESPONSES)
@@ -388,10 +454,42 @@ def update_car(
     principal: Editor, repository: Repository, car_id: int, request: CarUpdate
 ) -> CarResponse:
     try:
-        row = service.update(repository, car_id, request, _actor(principal))
+        row = service.update(repository, car_id, request, actor_of(principal))
+        return _response(principal, repository, row)
     except _WRITE_ERRORS as error:
         raise _write_error(error) from None
-    return _response(principal, row)
+
+
+@router.post("/{car_id}/approvals", response_model=CarResponse, responses=WRITE_RESPONSES)
+def record_approval(
+    principal: Approver, repository: Repository, car_id: int, request: ApprovalRecord
+) -> CarResponse:
+    """Record your approval for one function, dated today, under your name."""
+    try:
+        row = service.record_approval(repository, car_id, request, actor_of(principal))
+        return _response(principal, repository, row)
+    except _WRITE_ERRORS as error:
+        raise _write_error(error) from None
+
+
+@router.delete(
+    "/{car_id}/approvals/{function_code}", response_model=CarResponse, responses=WRITE_RESPONSES
+)
+def withdraw_approval(
+    principal: ApprovalWithdrawer,
+    repository: Repository,
+    car_id: int,
+    function_code: Annotated[str, Path(pattern=r"^[a-z_]{1,50}$")],
+    version: Annotated[int, Query(ge=1)],
+) -> CarResponse:
+    """Withdraw an approval: your own, or any with ``car.admin``."""
+    try:
+        row = service.withdraw_approval(
+            repository, car_id, function_code, version, actor_of(principal)
+        )
+        return _response(principal, repository, row)
+    except _WRITE_ERRORS as error:
+        raise _write_error(error) from None
 
 
 @router.post(
@@ -401,26 +499,31 @@ def update_car(
     responses=WRITE_RESPONSES,
 )
 def add_action(
-    principal: Editor, repository: Repository, car_id: int, request: ActionCreate
+    principal: ActionManager, repository: Repository, car_id: int, request: ActionCreate
 ) -> CarResponse:
     try:
-        row = service.add_action(repository, car_id, request, _actor(principal))
+        row = service.add_action(repository, car_id, request, actor_of(principal))
+        return _response(principal, repository, row)
     except _WRITE_ERRORS as error:
         raise _write_error(error) from None
-    return _response(principal, row)
 
 
 @router.put("/{car_id}/actions/{action_id}", response_model=CarResponse, responses=WRITE_RESPONSES)
 def update_action(
-    principal: Editor, repository: Repository, car_id: int, action_id: int, request: ActionUpdate
+    principal: ActionWorker,
+    repository: Repository,
+    car_id: int,
+    action_id: int,
+    request: ActionUpdate,
 ) -> CarResponse:
+    """Change an action (``car.manageActions``), or, as its owner, its status."""
     try:
         row = service.update_action(
-            repository, car_id, action_id, request, request.version, _actor(principal)
+            repository, car_id, action_id, request, request.version, actor_of(principal)
         )
+        return _response(principal, repository, row)
     except _WRITE_ERRORS as error:
         raise _write_error(error) from None
-    return _response(principal, row)
 
 
 @router.post(
@@ -429,17 +532,18 @@ def update_action(
     responses=WRITE_RESPONSES,
 )
 def complete_action(
-    principal: Editor,
+    principal: ActionCompleter,
     repository: Repository,
     car_id: int,
     action_id: int,
     request: ActionComplete,
 ) -> CarResponse:
+    """Complete an action: its owner (``car.completeAction``) or ``car.admin``."""
     try:
-        row = service.complete_action(repository, car_id, action_id, request, _actor(principal))
+        row = service.complete_action(repository, car_id, action_id, request, actor_of(principal))
+        return _response(principal, repository, row)
     except _WRITE_ERRORS as error:
         raise _write_error(error) from None
-    return _response(principal, row)
 
 
 @router.post("/{car_id}/quality-cost", response_model=CarResponse, responses=WRITE_RESPONSES)
@@ -447,17 +551,12 @@ def create_quality_cost(
     principal: Editor, repository: Repository, car_id: int, request: QualityCostCreate
 ) -> CarResponse:
     """Create a Quality Cost record from the report's cost impact and link it."""
-    if not principal.has(Permission.QUALITY_COST_EDIT):
-        raise _error(
-            status.HTTP_403_FORBIDDEN,
-            "forbidden",
-            "Adding Quality Cost records needs the quality.cost.edit permission.",
-        )
+    ensure(principal, Permission.QUALITY_COST_CREATE)
     try:
-        row = service.create_quality_cost(repository, car_id, request, _actor(principal))
+        row = service.create_quality_cost(repository, car_id, request, actor_of(principal))
+        return _response(principal, repository, row)
     except _WRITE_ERRORS as error:
         raise _write_error(error) from None
-    return _response(principal, row)
 
 
 @router.put("/{car_id}/quality-cost", response_model=CarResponse, responses=WRITE_RESPONSES)
@@ -465,14 +564,9 @@ def link_quality_cost(
     principal: Editor, repository: Repository, car_id: int, request: QualityCostLink
 ) -> CarResponse:
     """Link an existing Quality Cost record (``recordId``), or remove the link (null)."""
-    if not principal.has(Permission.QUALITY_COST_VIEW):
-        raise _error(
-            status.HTTP_403_FORBIDDEN,
-            "forbidden",
-            "Linking Quality Cost records needs the quality.cost.view permission.",
-        )
+    ensure(principal, Permission.QUALITY_COST_VIEW)
     try:
-        row = service.link_quality_cost(repository, car_id, request, _actor(principal))
+        row = service.link_quality_cost(repository, car_id, request, actor_of(principal))
+        return _response(principal, repository, row)
     except _WRITE_ERRORS as error:
         raise _write_error(error) from None
-    return _response(principal, row)

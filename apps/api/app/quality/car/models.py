@@ -13,6 +13,7 @@ and any older-form values without a current field (``legacy_fields``).
 """
 
 import datetime as dt
+import uuid
 from decimal import Decimal
 from typing import Any
 
@@ -37,7 +38,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.db.base import Base
+from app.db.base import Base, user_link
 from app.quality.car.reference import (
     ACTION_STATUSES,
     APPROVAL_FUNCTIONS,
@@ -173,13 +174,18 @@ class Car(Base):
     # Identification.
     car_number: Mapped[str] = mapped_column(Text, nullable=False)
     subject: Mapped[str] = mapped_column(Text, nullable=False)
+    # Person fields keep the name as recorded (imported reports keep the original
+    # text); the matching ``*_user_id`` links the platform user when one is known.
     requested_by: Mapped[str | None] = mapped_column(Text)
+    requested_by_user_id: Mapped[uuid.UUID | None] = user_link()
     request_date: Mapped[dt.date] = mapped_column(Date, nullable=False)
     assigned_to: Mapped[str | None] = mapped_column(Text)
+    assigned_to_user_id: Mapped[uuid.UUID | None] = user_link()
     due_date: Mapped[dt.date | None] = mapped_column(Date)
     status: Mapped[str | None] = mapped_column(Text)
     date_closed: Mapped[dt.date | None] = mapped_column(Date)
     closure_approved_by: Mapped[str | None] = mapped_column(Text)
+    closure_approved_by_user_id: Mapped[uuid.UUID | None] = user_link()
     # 1 Nonconformity identification.
     source_code: Mapped[str | None] = mapped_column(Text)
     department_code: Mapped[str | None] = mapped_column(Text)
@@ -194,6 +200,7 @@ class Car(Base):
     # 2 Immediate correction and containment.
     immediate_actions: Mapped[str | None] = mapped_column(Text)
     containment_owner: Mapped[str | None] = mapped_column(Text)
+    containment_owner_user_id: Mapped[uuid.UUID | None] = user_link()
     containment_completed_on: Mapped[dt.date | None] = mapped_column(Date)
     disposition_codes: Mapped[list[str]] = mapped_column(
         ARRAY(Text), nullable=False, server_default=text("'{}'::text[]")
@@ -222,6 +229,7 @@ class Car(Base):
     success_criteria: Mapped[str | None] = mapped_column(Text)
     effectiveness_evidence: Mapped[str | None] = mapped_column(Text)
     reviewer: Mapped[str | None] = mapped_column(Text)
+    reviewer_user_id: Mapped[uuid.UUID | None] = user_link()
     review_date: Mapped[dt.date | None] = mapped_column(Date)
     effectiveness_result: Mapped[str | None] = mapped_column(Text)
     follow_up_reference: Mapped[str | None] = mapped_column(Text)
@@ -301,6 +309,7 @@ class CarAction(Base):
     position: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     action: Mapped[str] = mapped_column(Text, nullable=False)
     owner: Mapped[str | None] = mapped_column(Text)
+    owner_user_id: Mapped[uuid.UUID | None] = user_link()
     target_date: Mapped[dt.date | None] = mapped_column(Date)
     status: Mapped[str | None] = mapped_column(Text)
     completed_on: Mapped[dt.date | None] = mapped_column(Date)
@@ -357,8 +366,9 @@ class CarWhyStep(Base):
 class CarApproval(Base):
     """An approval as recorded on the report: the function, a name and a date.
 
-    This records who approved; it is not an electronic signature.
-    ``created_by`` is the platform user who recorded it.
+    New approvals are recorded by the approving user themself (``car.approve``):
+    the name, user and date come from their session. This records who approved;
+    it is not an electronic signature.
     """
 
     __tablename__ = "car_approvals"
@@ -379,6 +389,8 @@ class CarApproval(Base):
     )
     function_code: Mapped[str] = mapped_column(Text, nullable=False)
     name: Mapped[str] = mapped_column(Text, nullable=False)
+    # The approving user; null on imported approvals, which keep the recorded name.
+    user_id: Mapped[uuid.UUID | None] = user_link()
     approved_on: Mapped[dt.date | None] = mapped_column(Date)
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

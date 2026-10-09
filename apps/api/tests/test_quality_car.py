@@ -8,19 +8,23 @@ from the workbooks in docs/cars.
 import datetime as dt
 import itertools
 import json
+import uuid
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 import pytest
+from principals import TESTER, TESTER_ID, TESTER_NAME
 from pydantic import ValidationError
 
-from app.core.permissions import Permission, grants
+from app.core.permissions import Permission, module_of
 from app.quality.car import calculations, dashboard, legacy_import, service, workbook
 from app.quality.car.models import Car, CarAction
 from app.quality.car.repository import CarRow
 from app.quality.car.schemas import ActionFields, CarCreate, CarUpdate
-from app.quality.cost.records import RecordRuleError
+from app.quality.cost.records import Actor, RecordForbiddenError, RecordRuleError
+
+OTHER_ID = uuid.UUID("00000000-0000-4000-8000-000000000002")
 
 TODAY = dt.date(2026, 10, 9)
 NOW = dt.datetime(2026, 10, 9, 15, 0, tzinfo=dt.UTC)
@@ -216,7 +220,6 @@ def _closing(**overrides: Any) -> CarUpdate:
             "requestDate": "2026-09-01",
             "status": "closed",
             "dateClosed": "2026-10-05",
-            "closureApprovedBy": "Fixture approver",
             "effectivenessResult": "effective",
             "version": 1,
             **overrides,
@@ -224,29 +227,113 @@ def _closing(**overrides: Any) -> CarUpdate:
     )
 
 
+class _NoDatabase:
+    """Validation looks users up only for a chosen user ID; these tests choose none."""
+
+    @property
+    def session(self) -> Any:
+        raise AssertionError("no database in unit tests")
+
+
+ACTOR = Actor(
+    TESTER,
+    dt.datetime(2026, 10, 6, 12, tzinfo=dt.UTC),
+    permissions=None,
+    user_id=TESTER_ID,
+    name=TESTER_NAME,
+)
+
+
+def validated(fields: Any, **kwargs: Any) -> Any:
+    return service._validated(_NoDatabase(), fields, actor=ACTOR, today=TODAY, **kwargs)  # type: ignore[arg-type]
+
+
 def test_a_draft_needs_only_a_subject_and_request_date() -> None:
-    values, why, approvals, references = service._validated(_fields(), today=TODAY)
+    values, why, references = validated(_fields())
     assert values["subject"] == "Fixture: label mismatch"
     assert values["status"] == "open"
     assert values["material_loss"] is None
     assert values["safety_hazard"] is None
-    assert (why, approvals, references) == ((), (), ())
+    assert (why, references) == ((), ())
+    assert values["closure_approved_by"] is None and values["reviewer"] is None
 
 
 def test_text_is_trimmed_and_blank_rows_are_dropped() -> None:
-    values, why, approvals, _ = service._validated(
+    values, why, _ = validated(
         _fields(
             subject="  Fixture  ",
             assignedTo="   ",
             whySteps=[{"what": " "}, {"why": " Because "}],
-            approvals=[{"functionCode": "quality", "name": "  "}],
         ),
-        today=TODAY,
     )
     assert values["subject"] == "Fixture"
-    assert values["assigned_to"] is None
+    assert values["assigned_to"] is None and values["assigned_to_user_id"] is None
     assert [s.why for s in why] == ["Because"]
-    assert approvals == ()
+
+
+@pytest.mark.parametrize("field", ["requestedBy", "assignedTo", "containmentOwner"])
+def test_free_text_people_are_refused(field: str) -> None:
+    with pytest.raises(RecordRuleError) as raised:
+        validated(_fields(**{field: "Somebody typed"}))
+    assert (raised.value.error, raised.value.field) == ("invalid_person", field)
+
+
+def test_a_recorded_legacy_name_is_kept_unchanged_and_not_linked() -> None:
+    imported = car(assigned_to="J. Smith (from workbook)", assigned_to_user_id=None)
+    update = CarUpdate.model_validate(
+        {
+            "subject": "Fixture",
+            "requestDate": "2026-09-01",
+            "status": "open",
+            "assignedTo": "J. Smith (from workbook)",
+            "version": 1,
+        }
+    )
+    values, *_ = validated(update, current=imported)
+    assert values["assigned_to"] == "J. Smith (from workbook)"
+    assert values["assigned_to_user_id"] is None
+
+
+def test_closure_approver_and_reviewer_come_from_the_session() -> None:
+    values, *_ = validated(_closing(), current=car())
+    assert (values["closure_approved_by"], values["closure_approved_by_user_id"]) == (
+        TESTER_NAME,
+        TESTER_ID,
+    )
+    assert (values["reviewer"], values["reviewer_user_id"]) == (TESTER_NAME, TESTER_ID)
+
+
+def test_browser_supplied_approver_and_reviewer_are_rejected() -> None:
+    for field in ("closureApprovedBy", "reviewer", "approvals"):
+        with pytest.raises(ValidationError):
+            _closing(**{field: "Someone else"})
+
+
+def test_closure_approver_is_kept_while_closed_and_cleared_on_reopen() -> None:
+    closed = car(
+        status="closed",
+        date_closed=dt.date(2026, 10, 5),
+        effectiveness_result="effective",
+        closure_approved_by="Original approver",
+        closure_approved_by_user_id=None,
+        reviewer="Original reviewer",
+    )
+    values, *_ = validated(_closing(), current=closed)
+    assert values["closure_approved_by"] == "Original approver"
+    assert values["reviewer"] == "Original reviewer"
+
+    reopened = CarUpdate.model_validate(
+        {
+            "subject": "Fixture: label mismatch",
+            "requestDate": "2026-09-01",
+            "status": "open",
+            "effectivenessResult": "effective",
+            "version": 1,
+        }
+    )
+    values, *_ = validated(reopened, current=closed)
+    assert values["closure_approved_by"] is None
+    assert values["reviewer"] == "Original reviewer"
 
 
 @pytest.mark.parametrize(
@@ -263,27 +350,12 @@ def test_text_is_trimmed_and_blank_rows_are_dropped() -> None:
         ({"startedOn": "2026-09-02", "endedOn": "2026-09-01"}, "ended_before_started", "endedOn"),
         ({"reviewDate": "2026-10-10"}, "future_date", "reviewDate"),
         ({"dateClosed": "2026-10-01"}, "date_closed_not_closed", "dateClosed"),
-        (
-            {"approvals": [{"functionCode": "quality", "name": "", "approvedOn": "2026-09-02"}]},
-            "approver_required",
-            "approvals",
-        ),
-        (
-            {
-                "approvals": [
-                    {"functionCode": "quality", "name": "A"},
-                    {"functionCode": "quality", "name": "B"},
-                ]
-            },
-            "duplicate_approval",
-            "approvals",
-        ),
         ({"references": [{"type": "invoice", "key": "1"}]}, "invalid_reference", "references"),
     ],
 )
 def test_report_rules(overrides: dict[str, Any], error: str, field: str) -> None:
     with pytest.raises(RecordRuleError) as raised:
-        service._validated(_fields(**overrides), today=TODAY)
+        validated(_fields(**overrides))
     assert (raised.value.error, raised.value.field) == (error, field)
 
 
@@ -293,34 +365,30 @@ def test_report_rules(overrides: dict[str, Any], error: str, field: str) -> None
         ({"dateClosed": None}, "date_closed_required"),
         ({"dateClosed": "2026-08-31"}, "closed_before_request"),
         ({"dateClosed": "2026-10-10"}, "future_date_closed"),
-        ({"closureApprovedBy": " "}, "closure_approver_required"),
         ({"effectivenessResult": None}, "effectiveness_required"),
         ({"effectivenessResult": "not_effective"}, "follow_up_required"),
     ],
 )
 def test_closing_rules(overrides: dict[str, Any], error: str) -> None:
     with pytest.raises(RecordRuleError) as raised:
-        service._validated(_closing(**overrides), today=TODAY, current=car())
+        validated(_closing(**overrides), current=car())
     assert raised.value.error == error
 
 
 def test_a_car_cannot_close_with_outstanding_actions() -> None:
     actions = (action(status="complete"), action(status="on_hold"), action(status=None))
     with pytest.raises(RecordRuleError) as raised:
-        service._validated(_closing(), today=TODAY, actions=actions, current=car())
+        validated(_closing(), actions=actions, current=car())
     assert raised.value.error == "actions_outstanding"
     assert "2 corrective action(s)" in raised.value.message
 
-    values, *_ = service._validated(
-        _closing(), today=TODAY, actions=(action(status="complete"),), current=car()
-    )
+    values, *_ = validated(_closing(), actions=(action(status="complete"),), current=car())
     assert values["status"] == "closed"
 
 
 def test_not_effective_closes_with_a_follow_up_reference() -> None:
-    values, *_ = service._validated(
+    values, *_ = validated(
         _closing(effectivenessResult="not_effective", followUpReference="Q-2026-010"),
-        today=TODAY,
         current=car(),
     )
     assert values["follow_up_reference"] == "Q-2026-010"
@@ -343,20 +411,20 @@ def test_imported_older_form_values_stay_valid_when_unchanged() -> None:
             "version": 1,
         }
     )
-    values, *_ = service._validated(update, today=TODAY, current=imported)
+    values, *_ = validated(update, current=imported)
     assert values["department_code"] == "ca_operation"
     assert values["disposition_codes"] == ["blended", "rework"]
     assert values["status"] is None
 
     with pytest.raises(RecordRuleError) as raised:
-        service._validated(update, today=TODAY, current=car())
+        validated(update, current=car())
     assert raised.value.error == "invalid_department"
 
     no_status = CarUpdate.model_validate(
         {"subject": "Fixture", "requestDate": "2026-09-01", "status": None, "version": 1}
     )
     with pytest.raises(RecordRuleError) as raised:
-        service._validated(no_status, today=TODAY, current=car())
+        validated(no_status, current=car())
     assert raised.value.error == "status_required"
 
 
@@ -372,18 +440,63 @@ def test_imported_older_form_values_stay_valid_when_unchanged() -> None:
 def test_action_rules(fields: dict[str, Any], error: str) -> None:
     request = ActionFields.model_validate({"action": "Fixture action", **fields})
     with pytest.raises(RecordRuleError) as raised:
-        service._validated_action(request, today=TODAY)
+        service._validated_action(_NoDatabase(), request, today=TODAY)  # type: ignore[arg-type]
     assert raised.value.error == error
 
 
 def test_an_imported_complete_action_without_a_date_can_still_be_edited() -> None:
-    imported = action(status="complete", completed_on=None)
+    imported = action(status="complete", completed_on=None, owner="Fixture")
     request = ActionFields.model_validate(
         {"action": "Fixture action", "owner": "Fixture", "status": "complete"}
     )
-    values = service._validated_action(request, today=TODAY, current=imported)
+    values = service._validated_action(
+        _NoDatabase(),  # type: ignore[arg-type]
+        request,
+        today=TODAY,
+        current=imported,
+    )
     assert values["completed_on"] is None
-    assert values["owner"] == "Fixture"
+    assert values["owner"] == "Fixture" and values["owner_user_id"] is None
+
+
+@pytest.mark.parametrize(
+    ("permissions", "owner", "allowed"),
+    [
+        ({Permission.CAR_COMPLETE_ACTION}, TESTER_ID, True),
+        ({Permission.CAR_COMPLETE_ACTION}, None, False),
+        ({Permission.CAR_COMPLETE_ACTION}, OTHER_ID, False),
+        ({Permission.CAR_MANAGE_ACTIONS}, TESTER_ID, False),
+        ({Permission.CAR_ADMIN}, OTHER_ID, True),
+    ],
+)
+def test_only_the_owner_or_a_car_admin_completes_an_action(
+    permissions: set[Permission], owner: Any, allowed: bool
+) -> None:
+    actor = Actor(TESTER, ACTOR.now, permissions=frozenset(permissions), user_id=TESTER_ID)
+    assert service.can_complete_action(owner, actor) is allowed
+
+
+def test_assigning_closing_and_reviewing_need_their_permissions() -> None:
+    editor = Actor(
+        TESTER, ACTOR.now, permissions=frozenset({Permission.CAR_EDIT}), user_id=TESTER_ID
+    )
+    base = {
+        "assigned_to": None,
+        "assigned_to_user_id": None,
+        "effectiveness_result": None,
+        "review_date": None,
+        "status": "open",
+    }
+    service.check_permissions(base, car(), editor)
+    for change, needed in [
+        ({"assigned_to": "x", "assigned_to_user_id": OTHER_ID}, "car.assign"),
+        ({"effectiveness_result": "effective"}, "car.reviewEffectiveness"),
+        ({"status": "closed"}, "car.close"),
+    ]:
+        with pytest.raises(RecordForbiddenError, match=needed):
+            service.check_permissions({**base, **change}, car(), editor)
+    with pytest.raises(RecordForbiddenError, match="car.reopen"):
+        service.check_permissions(base, car(status="closed"), editor)
 
 
 @pytest.mark.parametrize(
@@ -472,12 +585,24 @@ def test_dashboard_without_costs_reports_no_total() -> None:
 # Permissions ------------------------------------------------------------------------
 
 
-def test_car_permissions_follow_the_quality_scope() -> None:
-    assert grants(Permission.QUALITY_VIEW, Permission.QUALITY_CARS_VIEW)
-    assert grants(Permission.QUALITY_EDIT, Permission.QUALITY_CARS_EDIT)
-    assert not grants(Permission.QUALITY_VIEW, Permission.QUALITY_CARS_EDIT)
-    assert not grants(Permission.QUALITY_COST_EDIT, Permission.QUALITY_CARS_VIEW)
-    assert not grants(Permission.QUALITY_CARS_EDIT, Permission.QUALITY_CARS_MANAGE)
+def test_car_permissions_are_explicit_and_not_implied() -> None:
+    car = {p for p in Permission if p.startswith("car.")}
+    assert car == {
+        Permission.CAR_VIEW,
+        Permission.CAR_CREATE,
+        Permission.CAR_EDIT,
+        Permission.CAR_DELETE,
+        Permission.CAR_ASSIGN,
+        Permission.CAR_MANAGE_ACTIONS,
+        Permission.CAR_COMPLETE_ACTION,
+        Permission.CAR_REVIEW_EFFECTIVENESS,
+        Permission.CAR_APPROVE,
+        Permission.CAR_CLOSE,
+        Permission.CAR_REOPEN,
+        Permission.CAR_EXPORT,
+        Permission.CAR_ADMIN,
+    }
+    assert {module_of(p) for p in car} == {"car"}
 
 
 # Workbook parsing --------------------------------------------------------------------

@@ -4,13 +4,29 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from principals import as_user
 
+from app.core.authorization import UserPrincipal, get_user_principal
+from app.core.permissions import Permission
 from app.main import create_app
 from app.quality.moisture.repository import FixtureMoistureRepository, get_moisture_repository
 from app.quality.moisture.schemas import MoistureRecord
 from app.quality.moisture.source import load_fixture_records, record_from_source_row
 
 BASE = "/api/v1/quality/moisture"
+
+
+def quality_viewer() -> UserPrincipal:
+    return as_user(Permission.QUALITY_VIEW)
+
+
+def test_moisture_requires_quality_view() -> None:
+    app = create_app()
+    with TestClient(app) as client:
+        assert client.get(BASE + "/recent").status_code == 401
+    app.dependency_overrides[get_user_principal] = lambda: as_user(Permission.SAFETY_VIEW)
+    with TestClient(app) as client:
+        assert client.get(BASE + "/recent").status_code == 403
 
 
 def source_row(**overrides: Any) -> dict[str, Any]:
@@ -43,6 +59,7 @@ def use_records() -> Iterator[Any]:
         app.dependency_overrides[get_moisture_repository] = lambda: FixtureMoistureRepository(
             tuple(data)
         )
+        app.dependency_overrides[get_user_principal] = quality_viewer
         client = TestClient(app)
         clients.append(client)
         return client
@@ -106,7 +123,9 @@ def test_missing_source_field_is_rejected() -> None:
 
 def test_development_fixture_loads_and_is_labeled(use_records: Any) -> None:
     assert len(load_fixture_records()) > 50
-    client = TestClient(create_app())
+    app = create_app()
+    app.dependency_overrides[get_user_principal] = quality_viewer
+    client = TestClient(app)
 
     for path in ("/recent", "/lots", "/trends", "/filters"):
         body = client.get(BASE + path).json()

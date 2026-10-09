@@ -20,6 +20,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from principals import TESTER, as_user
 from sqlalchemy.exc import OperationalError
 
 from app.audit.recorder import AuditChange
@@ -270,8 +271,7 @@ def accepted(repository: InMemoryRepository) -> InMemoryRepository:
     return repository
 
 
-def principal(*permissions: Permission) -> UserPrincipal:
-    return UserPrincipal("tester", authenticated=True, granted=frozenset(permissions))
+principal = as_user
 
 
 @pytest.fixture(autouse=True)
@@ -290,12 +290,21 @@ def make_client(repository: InMemoryRepository, user: UserPrincipal | None) -> I
 
 @pytest.fixture
 def editor(repository: InMemoryRepository) -> Iterator[TestClient]:
-    yield from make_client(repository, principal(P.SAFETY_PERFORMANCE_EDIT))
+    yield from make_client(
+        repository,
+        principal(
+            P.SAFETY_RECORD_VIEW,
+            P.SAFETY_RECORD_EDIT,
+            P.SAFETY_RECORD_DELETE,
+            P.SAFETY_RECORD_CLOSE,
+            P.SAFETY_DASHBOARD_VIEW,
+        ),
+    )
 
 
 @pytest.fixture
 def viewer(repository: InMemoryRepository) -> Iterator[TestClient]:
-    yield from make_client(repository, principal(P.SAFETY_PERFORMANCE_VIEW))
+    yield from make_client(repository, principal(P.SAFETY_RECORD_VIEW, P.SAFETY_DASHBOARD_VIEW))
 
 
 def dashboard(client: TestClient, year: int = 2026, **params: Any) -> dict[str, Any]:
@@ -724,9 +733,9 @@ def test_save_creates_a_month_and_audits_it(
     body = response.json()
     assert body["totalHours"] == 17000.5
     assert body["monthClosed"] is True
-    assert body["updatedBy"] == "tester"
+    assert body["updatedBy"] == TESTER
     [(actor, _, change)] = repository.audit
-    assert actor == "tester"
+    assert actor == TESTER
     assert (change.action, change.entity_type, change.entity_key) == (
         "create",
         "safety.performance_hours",
@@ -760,7 +769,7 @@ def test_closing_a_month_is_an_audited_update(
     assert change.action == "update"
     assert change.old_value is not None and change.old_value["month_closed"] is False
     assert change.new_value is not None and change.new_value["month_closed"] is True
-    assert repository.hour_rows[(2026, 9)].updated_by == "tester"
+    assert repository.hour_rows[(2026, 9)].updated_by == TESTER
 
 
 def test_unchanged_save_writes_nothing(repository: InMemoryRepository, editor: TestClient) -> None:
@@ -1004,30 +1013,59 @@ def test_invalid_periods_are_rejected(editor: TestClient, year: int, month: int)
 
 
 @pytest.mark.parametrize(
-    ("permissions", "read", "write"),
+    ("permissions", "read", "dashboard", "write", "clear"),
     [
-        ((P.SAFETY_PERFORMANCE_VIEW,), 200, 403),
-        ((P.SAFETY_PERFORMANCE_EDIT,), 200, 200),
-        ((P.SAFETY_VIEW,), 200, 403),
-        ((P.SAFETY_EDIT,), 200, 200),
-        ((P.SAFETY_INCIDENTS_EDIT,), 403, 403),
-        ((P.SAFETY_OBSERVATIONS_EDIT,), 403, 403),
-        ((), 403, 403),
+        ((P.SAFETY_RECORD_VIEW,), 200, 403, 403, 403),
+        ((P.SAFETY_RECORD_VIEW, P.SAFETY_DASHBOARD_VIEW), 200, 200, 403, 403),
+        ((P.SAFETY_RECORD_VIEW, P.SAFETY_RECORD_EDIT), 200, 403, 200, 403),
+        ((P.SAFETY_RECORD_VIEW, P.SAFETY_RECORD_EDIT, P.SAFETY_RECORD_DELETE), 200, 403, 200, 204),
+        ((P.SAFETY_DASHBOARD_VIEW,), 403, 403, 403, 403),
+        ((P.INCIDENT_EDIT,), 403, 403, 403, 403),
+        ((P.SAFETY_OBSERVATION_EDIT,), 403, 403, 403, 403),
+        ((), 403, 403, 403, 403),
     ],
 )
 def test_permissions_are_enforced_server_side(
     repository: InMemoryRepository,
     permissions: tuple[Permission, ...],
     read: int,
+    dashboard: int,
     write: int,
+    clear: int,
 ) -> None:
     for client in make_client(repository, principal(*permissions)):
         assert client.get(URL + "/months", params={"year": 2026}).status_code == read
-        assert client.get(URL + "/dashboard", params={"year": 2026}).status_code == read
+        assert client.get(URL + "/dashboard", params={"year": 2026}).status_code == dashboard
         assert save(client, 2026, 9).status_code == write
-        assert client.delete(
-            f"{URL}/months/2026/9", params={"expectedUpdatedAt": NOW.isoformat()}
-        ).status_code == (write if write == 403 else 204)
+        assert (
+            client.delete(
+                f"{URL}/months/2026/9", params={"expectedUpdatedAt": NOW.isoformat()}
+            ).status_code
+            == clear
+        )
+
+
+def test_closing_or_changing_a_closed_month_needs_close(repository: InMemoryRepository) -> None:
+    editor_only = (P.SAFETY_RECORD_VIEW, P.SAFETY_RECORD_EDIT, P.SAFETY_RECORD_DELETE)
+    for client in make_client(repository, principal(*editor_only)):
+        response = save(client, 2026, 9, monthClosed=True)
+        assert response.status_code == 403
+        assert response.json()["detail"]["error"] == "permission_denied"
+    assert (2026, 9) not in repository.hour_rows
+
+    for client in make_client(repository, principal(*editor_only, P.SAFETY_RECORD_CLOSE)):
+        assert save(client, 2026, 9, monthClosed=True).status_code == 200
+    updated_at = repository.hour_rows[(2026, 9)].updated_at.isoformat()
+
+    for client in make_client(repository, principal(*editor_only)):
+        assert save(client, 2026, 9, expectedUpdatedAt=updated_at).status_code == 403
+        assert (
+            client.delete(
+                f"{URL}/months/2026/9", params={"expectedUpdatedAt": updated_at}
+            ).status_code
+            == 403
+        )
+    assert repository.hour_rows[(2026, 9)].values.month_closed is True
 
 
 def test_anonymous_requests_are_refused(repository: InMemoryRepository) -> None:

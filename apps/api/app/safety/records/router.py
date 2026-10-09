@@ -1,9 +1,10 @@
 """Incident and Near Miss record endpoints.
 
-Reading records needs ``safety.incidents.records.view``; creating and editing
-``safety.incidents.records.edit``; voiding and reclassifying
-``safety.incidents.records.manage``; reading a record's audit history
-``safety.incidents.history.view``.
+Permissions follow the record's type: ``incident.*`` for incidents and
+``nearMiss.*`` for near misses. Reading needs ``.view`` (lists show only the
+types the user may view); creating ``.create``; editing ``.edit``; voiding
+``.delete``. Reclassifying (incident <-> near miss) needs ``incident.classify``.
+A record's audit history also needs ``safetyRecord.view``.
 """
 
 import datetime as dt
@@ -13,7 +14,13 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.core.authorization import UserPrincipal, require_permission
+from app.auth import people
+from app.core.authorization import (
+    UserPrincipal,
+    ensure,
+    require_any_permission,
+    require_permission,
+)
 from app.core.permissions import Permission
 from app.db.session import DatabaseNotConfiguredError, get_sessionmaker
 from app.safety.models import MAX_REPORTING_YEAR, MIN_REPORTING_YEAR
@@ -31,6 +38,7 @@ from app.safety.records.schemas import (
     RecordCreate,
     RecordListResponse,
     RecordOptionsResponse,
+    RecordOut,
     RecordResponse,
     RecordStatus,
     RecordUpdate,
@@ -67,17 +75,56 @@ def record_repository() -> Iterator[RecordRepository]:
 
 Repository = Annotated[RecordRepository, Depends(record_repository)]
 Viewer = Annotated[
-    UserPrincipal, Depends(require_permission(Permission.SAFETY_INCIDENT_RECORDS_VIEW))
+    UserPrincipal,
+    Depends(require_any_permission(Permission.INCIDENT_VIEW, Permission.NEAR_MISS_VIEW)),
+]
+Creator = Annotated[
+    UserPrincipal,
+    Depends(require_any_permission(Permission.INCIDENT_CREATE, Permission.NEAR_MISS_CREATE)),
 ]
 Editor = Annotated[
-    UserPrincipal, Depends(require_permission(Permission.SAFETY_INCIDENT_RECORDS_EDIT))
+    UserPrincipal,
+    Depends(require_any_permission(Permission.INCIDENT_EDIT, Permission.NEAR_MISS_EDIT)),
 ]
-Manager = Annotated[
-    UserPrincipal, Depends(require_permission(Permission.SAFETY_INCIDENT_RECORDS_MANAGE))
+Voider = Annotated[
+    UserPrincipal,
+    Depends(require_any_permission(Permission.INCIDENT_DELETE, Permission.NEAR_MISS_DELETE)),
 ]
-HistoryViewer = Annotated[
-    UserPrincipal, Depends(require_permission(Permission.SAFETY_INCIDENT_HISTORY_VIEW))
-]
+Classifier = Annotated[UserPrincipal, Depends(require_permission(Permission.INCIDENT_CLASSIFY))]
+HistoryViewer = Annotated[UserPrincipal, Depends(require_permission(Permission.SAFETY_RECORD_VIEW))]
+
+# Record-type permissions: (view, create, edit, delete).
+TYPE_PERMISSIONS: dict[str, tuple[Permission, Permission, Permission, Permission]] = {
+    "incident": (
+        Permission.INCIDENT_VIEW,
+        Permission.INCIDENT_CREATE,
+        Permission.INCIDENT_EDIT,
+        Permission.INCIDENT_DELETE,
+    ),
+    "near_miss": (
+        Permission.NEAR_MISS_VIEW,
+        Permission.NEAR_MISS_CREATE,
+        Permission.NEAR_MISS_EDIT,
+        Permission.NEAR_MISS_DELETE,
+    ),
+}
+VIEW, CREATE, EDIT, DELETE = range(4)
+
+
+def _viewable_types(principal: UserPrincipal) -> tuple[str, ...]:
+    return tuple(t for t, perms in TYPE_PERMISSIONS.items() if principal.has(perms[VIEW]))
+
+
+def _require_type(principal: UserPrincipal, event_type: str, which: int) -> None:
+    ensure(principal, TYPE_PERMISSIONS[event_type][which])
+
+
+def _type_of(repository: RecordRepository, record_id: int) -> str:
+    row = repository.get(record_id)
+    if row is None:
+        raise _error(status.HTTP_404_NOT_FOUND, "record_not_found", "No such record.")
+    return row.record.event_type
+
 
 WRITE_RESPONSES: dict[int | str, dict[str, Any]] = {
     401: {"description": "Not signed in"},
@@ -89,17 +136,45 @@ WRITE_RESPONSES: dict[int | str, dict[str, Any]] = {
 }
 
 
-def _permissions(principal: UserPrincipal) -> dict[str, bool]:
+def _types(principal: UserPrincipal, which: int) -> list[str]:
+    return [t for t, perms in TYPE_PERMISSIONS.items() if principal.has(perms[which])]
+
+
+def _permissions(principal: UserPrincipal) -> dict[str, Any]:
+    can_classify = principal.has(Permission.INCIDENT_CLASSIFY)
+    voidable = _types(principal, DELETE)
     return {
-        "can_edit": principal.has(Permission.SAFETY_INCIDENT_RECORDS_EDIT),
-        "can_manage": principal.has(Permission.SAFETY_INCIDENT_RECORDS_MANAGE),
-        "can_view_history": principal.has(Permission.SAFETY_INCIDENT_HISTORY_VIEW),
+        "can_edit": bool(_types(principal, EDIT)),
+        "can_manage": bool(voidable) or can_classify,
+        "can_view_history": principal.has(Permission.SAFETY_RECORD_VIEW),
+        "can_classify": can_classify,
+        "viewable_types": _types(principal, VIEW),
+        "creatable_types": _types(principal, CREATE),
+        "editable_types": _types(principal, EDIT),
+        "voidable_types": voidable,
     }
 
 
+def _out(repository: RecordRepository, *rows: Any) -> list[RecordOut]:
+    names = repository.actor_names(
+        actor for row in rows for actor in (row.record.created_by, row.record.updated_by)
+    )
+    outs = []
+    for row in rows:
+        out = service.record_out(row)
+        outs.append(
+            out.model_copy(
+                update={
+                    "created_by_name": people.actor_label(out.created_by, names),
+                    "updated_by_name": people.actor_label(out.updated_by, names),
+                }
+            )
+        )
+    return outs
+
+
 def _actor(principal: UserPrincipal) -> service.Actor:
-    assert principal.user_id is not None  # noqa: S101 - require_permission admits users only
-    return service.Actor(principal.user_id, dt.datetime.now(dt.UTC))
+    return service.Actor(principal.actor_id, dt.datetime.now(dt.UTC))
 
 
 def _write_error(error: Exception) -> HTTPException:
@@ -150,6 +225,11 @@ def list_records(
             "year_required",
             "Choose a year to filter by month.",
         )
+    viewable = _viewable_types(principal)
+    if event_type is not None:
+        _require_type(principal, event_type, VIEW)
+    elif len(viewable) == 1:
+        event_type = viewable[0]  # type: ignore[assignment]
     text = search.strip() if search else None
     try:
         number = normalize_incident_number(text) if text else None
@@ -168,11 +248,10 @@ def list_records(
     )
     try:
         rows, total = repository.search(criteria, limit=limit, offset=offset)
+        records = _out(repository, *rows)
     except SQLAlchemyError:
         raise _database_unavailable() from None
-    return RecordListResponse(
-        records=[service.record_out(r) for r in rows], total=total, **_permissions(principal)
-    )
+    return RecordListResponse(records=records, total=total, **_permissions(principal))
 
 
 @router.get("/records/options", response_model=RecordOptionsResponse)
@@ -207,11 +286,13 @@ def record_reconciliation(
 def get_record(principal: Viewer, repository: Repository, record_id: int) -> RecordResponse:
     try:
         row = repository.get(record_id)
+        if row is None:
+            raise _error(status.HTTP_404_NOT_FOUND, "record_not_found", "No such record.")
+        _require_type(principal, row.record.event_type, VIEW)
+        (record,) = _out(repository, row)
     except SQLAlchemyError:
         raise _database_unavailable() from None
-    if row is None:
-        raise _error(status.HTTP_404_NOT_FOUND, "record_not_found", "No such record.")
-    return RecordResponse(record=service.record_out(row), **_permissions(principal))
+    return RecordResponse(record=record, **_permissions(principal))
 
 
 @router.get("/records/{record_id}/history", response_model=HistoryResponse)
@@ -220,9 +301,9 @@ def record_history(
 ) -> HistoryResponse:
     """The record's audit trail, oldest first."""
     try:
-        if repository.get(record_id) is None:
-            raise _error(status.HTTP_404_NOT_FOUND, "record_not_found", "No such record.")
+        _require_type(principal, _type_of(repository, record_id), VIEW)
         events = repository.history(service.ENTITY_TYPE, service.entity_key(record_id))
+        names = repository.actor_names(e.actor_id for e in events)
     except SQLAlchemyError:
         raise _database_unavailable() from None
     return HistoryResponse(
@@ -231,6 +312,7 @@ def record_history(
             HistoryEventOut(
                 occurred_at=e.occurred_at,
                 actor_id=e.actor_id,
+                actor_name=e.actor_name or people.actor_label(e.actor_id, names),
                 action=e.action,  # type: ignore[arg-type]
                 change_set_id=str(e.change_set_id),
                 old_value=service.public_audit_value(e.old_value),
@@ -248,13 +330,15 @@ def record_history(
     responses=WRITE_RESPONSES,
 )
 def create_record(
-    principal: Editor, repository: Repository, request: RecordCreate
+    principal: Creator, repository: Repository, request: RecordCreate
 ) -> RecordResponse:
+    _require_type(principal, request.event_type, CREATE)
     try:
         row = service.create(repository, request, _actor(principal))
+        (record,) = _out(repository, row)
     except _WRITE_ERRORS as error:
         raise _write_error(error) from None
-    return RecordResponse(record=service.record_out(row), **_permissions(principal))
+    return RecordResponse(record=record, **_permissions(principal))
 
 
 @router.put("/records/{record_id}", response_model=RecordResponse, responses=WRITE_RESPONSES)
@@ -262,21 +346,25 @@ def update_record(
     principal: Editor, repository: Repository, record_id: int, request: RecordUpdate
 ) -> RecordResponse:
     try:
+        _require_type(principal, _type_of(repository, record_id), EDIT)
         row = service.update(repository, record_id, request, _actor(principal))
+        (record,) = _out(repository, row)
     except _WRITE_ERRORS as error:
         raise _write_error(error) from None
-    return RecordResponse(record=service.record_out(row), **_permissions(principal))
+    return RecordResponse(record=record, **_permissions(principal))
 
 
 @router.post("/records/{record_id}/void", response_model=RecordResponse, responses=WRITE_RESPONSES)
 def void_record(
-    principal: Manager, repository: Repository, record_id: int, request: VoidRequest
+    principal: Voider, repository: Repository, record_id: int, request: VoidRequest
 ) -> RecordResponse:
     try:
+        _require_type(principal, _type_of(repository, record_id), DELETE)
         row = service.void(repository, record_id, request, _actor(principal))
+        (record,) = _out(repository, row)
     except _WRITE_ERRORS as error:
         raise _write_error(error) from None
-    return RecordResponse(record=service.record_out(row), **_permissions(principal))
+    return RecordResponse(record=record, **_permissions(principal))
 
 
 @router.post(
@@ -285,16 +373,13 @@ def void_record(
     responses=WRITE_RESPONSES,
 )
 def reclassify_record(
-    principal: Manager, repository: Repository, record_id: int, request: ReclassifyRequest
+    principal: Classifier, repository: Repository, record_id: int, request: ReclassifyRequest
 ) -> ReclassifyResponse:
     try:
         original, replacement = service.reclassify(
             repository, record_id, request, _actor(principal)
         )
+        record, replacement_out = _out(repository, original, replacement)
     except _WRITE_ERRORS as error:
         raise _write_error(error) from None
-    return ReclassifyResponse(
-        record=service.record_out(original),
-        replacement=service.record_out(replacement),
-        **_permissions(principal),
-    )
+    return ReclassifyResponse(record=record, replacement=replacement_out, **_permissions(principal))

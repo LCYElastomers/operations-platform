@@ -7,9 +7,10 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from principals import as_user
 from pydantic import ValidationError
 
-from app.core.authorization import UserPrincipal, get_user_principal
+from app.core.authorization import get_user_principal
 from app.core.permissions import Permission
 from app.main import create_app
 from app.safety.records import router as records_router
@@ -112,9 +113,7 @@ def client_for() -> Callable[..., TestClient]:
     def make(*permissions: Permission) -> TestClient:
         app = create_app()
         app.dependency_overrides[records_router.record_repository] = _UnusedRepository
-        app.dependency_overrides[get_user_principal] = lambda: UserPrincipal(
-            "tester", authenticated=True, granted=frozenset(permissions)
-        )
+        app.dependency_overrides[get_user_principal] = lambda: as_user(*permissions)
         return TestClient(app)
 
     return make
@@ -125,15 +124,15 @@ RECLASSIFY = {"version": 1, "reason": "Was a near miss", "replacementId": 2}
 
 
 @pytest.mark.parametrize(
-    ("method", "path", "body", "allowed"),
+    ("method", "path", "body", "weaker"),
     [
-        ("get", "", None, P.SAFETY_INCIDENT_RECORDS_VIEW),
-        ("get", "/reconciliation?year=2026", None, P.SAFETY_INCIDENT_RECORDS_VIEW),
-        ("post", "", _create(), P.SAFETY_INCIDENT_RECORDS_EDIT),
-        ("put", "/1", {**_create(), "version": 1}, P.SAFETY_INCIDENT_RECORDS_EDIT),
-        ("post", "/1/void", VOID, P.SAFETY_INCIDENT_RECORDS_MANAGE),
-        ("post", "/1/reclassify", RECLASSIFY, P.SAFETY_INCIDENT_RECORDS_MANAGE),
-        ("get", "/1/history", None, P.SAFETY_INCIDENT_HISTORY_VIEW),
+        ("get", "", None, (P.SAFETY_RECORD_EDIT, P.SAFETY_DASHBOARD_VIEW)),
+        ("get", "/reconciliation?year=2026", None, (P.SAFETY_RECORD_VIEW,)),
+        ("post", "", _create(), (P.INCIDENT_VIEW, P.INCIDENT_EDIT, P.SAFETY_RECORD_EDIT)),
+        ("put", "/1", {**_create(), "version": 1}, (P.INCIDENT_VIEW, P.SAFETY_RECORD_EDIT)),
+        ("post", "/1/void", VOID, (P.INCIDENT_EDIT, P.SAFETY_RECORD_DELETE)),
+        ("post", "/1/reclassify", RECLASSIFY, (P.INCIDENT_EDIT, P.INCIDENT_DELETE)),
+        ("get", "/1/history", None, (P.INCIDENT_VIEW, P.INCIDENT_EDIT)),
     ],
 )
 def test_each_action_needs_its_permission(
@@ -141,30 +140,37 @@ def test_each_action_needs_its_permission(
     method: str,
     path: str,
     body: dict[str, Any] | None,
-    allowed: Permission,
+    weaker: tuple[Permission, ...],
 ) -> None:
-    weaker = {
-        P.SAFETY_INCIDENT_RECORDS_VIEW: (P.SAFETY_PERFORMANCE_EDIT, P.SAFETY_TRIR_VIEW),
-        P.SAFETY_INCIDENT_RECORDS_EDIT: (P.SAFETY_INCIDENT_RECORDS_VIEW, P.SAFETY_VIEW),
-        P.SAFETY_INCIDENT_RECORDS_MANAGE: (P.SAFETY_INCIDENT_RECORDS_EDIT, P.SAFETY_EDIT),
-        P.SAFETY_INCIDENT_HISTORY_VIEW: (P.SAFETY_INCIDENT_RECORDS_MANAGE,),
-    }[allowed]
     for permissions in [(), weaker]:
         client = client_for(*permissions)
         response = client.request(method, URL + path, json=body)
         assert response.status_code == 403, (permissions, response.text)
 
 
+def test_creating_a_type_needs_that_types_permission(
+    client_for: Callable[..., TestClient],
+) -> None:
+    client = client_for(P.NEAR_MISS_VIEW, P.NEAR_MISS_CREATE)
+    response = client.post(URL, json=_create(eventType="incident"))
+    assert response.status_code == 403
+    assert response.json()["detail"]["error"] == "permission_denied"
+
+
+def test_listing_a_type_needs_that_types_view(client_for: Callable[..., TestClient]) -> None:
+    client = client_for(P.NEAR_MISS_VIEW)
+    response = client.get(URL, params={"eventType": "incident"})
+    assert response.status_code == 403
+
+
 def test_month_filters_need_a_year(client_for: Callable[..., TestClient]) -> None:
-    response = client_for(P.SAFETY_INCIDENT_RECORDS_VIEW).get(URL, params={"month": 3})
+    response = client_for(P.INCIDENT_VIEW).get(URL, params={"month": 3})
     assert response.status_code == 422
     assert response.json()["detail"]["error"] == "year_required"
 
 
 def test_missing_database_is_a_503() -> None:
     app = create_app()
-    app.dependency_overrides[get_user_principal] = lambda: UserPrincipal(
-        "tester", authenticated=True, granted=frozenset({P.SAFETY_INCIDENT_RECORDS_VIEW})
-    )
+    app.dependency_overrides[get_user_principal] = lambda: as_user(P.INCIDENT_VIEW)
     with TestClient(app) as client:
         assert client.get(URL).status_code == 503

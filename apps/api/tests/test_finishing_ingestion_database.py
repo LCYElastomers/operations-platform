@@ -11,6 +11,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 from postgres_support import requires_postgres
+from principals import as_user
 from sqlalchemy import Engine, delete, func, inspect, select
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError, OperationalError
@@ -24,7 +25,9 @@ from test_finishing_ingestion import (
     window,
 )
 
+from app.core.authorization import UserPrincipal, get_user_principal
 from app.core.machine_auth import DEVELOPMENT_CONNECTOR_ID
+from app.core.permissions import Permission
 from app.ingestion.models import IngestionBatch
 from app.quality.moisture import ingestion_service
 from app.quality.moisture.ingestion_schemas import FinishingBatchIn
@@ -38,6 +41,11 @@ from app.quality.moisture.repository import (
 from app.quality.moisture.schemas import MoistureFilterParams
 
 pytestmark = requires_postgres
+
+
+def quality_viewer() -> UserPrincipal:
+    return as_user(Permission.QUALITY_VIEW)
+
 
 SOURCE = "access-qryFINISHING-AVG"
 T1 = "2026-10-02T08:00:00Z"
@@ -344,6 +352,7 @@ def test_ingested_rows_are_served_by_the_moisture_api(
         repository = DatabaseMoistureRepository(session)
         records, total = repository.recent(MoistureFilterParams(), 50)
         client.app.dependency_overrides[get_moisture_repository] = lambda: repository
+        client.app.dependency_overrides[get_user_principal] = quality_viewer
         api = client.get("/api/v1/quality/moisture/recent").json()
 
     assert total == 2
@@ -709,6 +718,7 @@ def test_moisture_api_serves_only_current_versions(
         client.app.dependency_overrides[get_moisture_repository] = lambda: (
             DatabaseMoistureRepository(session)
         )
+        client.app.dependency_overrides[get_user_principal] = quality_viewer
         api = client.get("/api/v1/quality/moisture/recent").json()
         filters = client.get("/api/v1/quality/moisture/filters").json()
 

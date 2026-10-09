@@ -8,6 +8,7 @@ read or changed; the reviewed 2026 mapping is applied only to empty tables.
 import datetime as dt
 import importlib.util
 import json
+import uuid
 from collections.abc import Iterator
 from decimal import Decimal
 from pathlib import Path
@@ -16,11 +17,13 @@ from typing import Any
 
 import pytest
 from postgres_support import requires_postgres
+from principals import TESTER, TESTER_ID, TESTER_NAME
 from sqlalchemy import Engine, insert, inspect, select, text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.orm import Session
 
 from app.audit.models import AuditEvent
+from app.auth.models import User
 from app.quality.cost import legacy_import, records, service
 from app.quality.cost.models import CostMonthlyFact, CostRecord
 from app.quality.cost.repository import CostRepository, RecordFilter
@@ -33,6 +36,9 @@ TODAY = dt.date(2026, 10, 8)
 API_ROOT = Path(__file__).resolve().parents[1]
 MAPPING = API_ROOT / "import_templates" / "quality_cost_of_quality_2026.mapping.json"
 YEAR_2003 = RecordFilter(date_from=dt.date(2003, 1, 1), date_to=dt.date(2003, 12, 31))
+OWNER_ID = uuid.UUID("00000000-0000-4000-8000-000000000003")
+OWNER_NAME = "Fixture Owner"
+OTHER_ID = uuid.UUID("00000000-0000-4000-8000-000000000004")
 
 
 def migration(revision: str) -> ModuleType:
@@ -220,7 +226,7 @@ def _create(area_id: int, **overrides: Any) -> CostRecordCreate:
         "financialStatus": "potential",
         "status": "open",
         "product": "3411",
-        "owner": "Fixture Owner",
+        "ownerUserId": str(OWNER_ID),
         "references": [{"type": "reference", "key": "QN-FIXTURE"}],
         **overrides,
     }
@@ -228,9 +234,25 @@ def _create(area_id: int, **overrides: Any) -> CostRecordCreate:
 
 
 def _actor() -> records.Actor:
-    return records.Actor("db-cost-tester", NOW)
+    return records.Actor(TESTER, NOW, user_id=TESTER_ID, name=TESTER_NAME)
 
 
+@pytest.fixture
+def users(session: Session) -> None:
+    """Fixture users (rolled back with the test)."""
+    for user_id, name in ((TESTER_ID, TESTER_NAME), (OWNER_ID, OWNER_NAME), (OTHER_ID, "Other")):
+        session.execute(
+            insert(User).values(
+                id=user_id,
+                email=f"{user_id.hex}@fixture.test",
+                name=name,
+                created_by="fixture",
+                updated_by="fixture",
+            )
+        )
+
+
+@pytest.mark.usefixtures("users")
 def test_create_stores_null_and_zero_apart_and_audits(session: Session, area_id: int) -> None:
     repository = NonCommittingCost(session)
 
@@ -239,7 +261,8 @@ def test_create_stores_null_and_zero_apart_and_audits(session: Session, area_id:
     stored = row.record
     assert stored.material_cost == 0 and stored.freight_cost is None
     assert stored.labor_cost == Decimal("1200.50")
-    assert stored.created_by == stored.updated_by == "db-cost-tester"
+    assert stored.created_by == stored.updated_by == TESTER
+    assert (stored.owner, stored.owner_user_id) == (OWNER_NAME, OWNER_ID)
     assert [(r.type, r.key) for r in row.references] == [("reference", "QN-FIXTURE")]
     assert row.area_name is not None
     out = records.record_out(row, TODAY)
@@ -247,13 +270,15 @@ def test_create_stores_null_and_zero_apart_and_audits(session: Session, area_id:
     event = session.scalars(
         select(AuditEvent).where(AuditEvent.entity_key == records.entity_key(stored.id))
     ).one()
-    assert event.action == "create" and event.actor_id == "db-cost-tester"
+    assert event.action == "create" and event.actor_id == TESTER
+    assert (event.actor_user_id, event.actor_name) == (TESTER_ID, TESTER_NAME)
     assert event.new_value["material_cost"] == "0"
     assert event.new_value["references"] == [
         {"type": "reference", "key": "QN-FIXTURE", "label": None}
     ]
 
 
+@pytest.mark.usefixtures("users")
 def test_update_audits_old_and_new_values_and_refuses_stale_versions(
     session: Session, area_id: int
 ) -> None:
@@ -290,6 +315,7 @@ def test_update_audits_old_and_new_values_and_refuses_stale_versions(
     assert events[1].new_value["references"] == []
 
 
+@pytest.mark.usefixtures("users")
 def test_filters_and_search(session: Session, area_id: int) -> None:
     repository = NonCommittingCost(session)
     first = records.create(repository, _create(area_id), _actor()).record
@@ -301,7 +327,7 @@ def test_filters_and_search(session: Session, area_id: int) -> None:
             categoryCode="appraisal.calibration",
             title="Fixture calibration",
             product=None,
-            owner="Someone Else",
+            ownerUserId=str(OTHER_ID),
             financialStatus="confirmed",
         ),
         _actor(),
@@ -315,7 +341,7 @@ def test_filters_and_search(session: Session, area_id: int) -> None:
 
     assert len(ids()) == 2
     assert ids(product="3411") == [first.id]
-    assert ids(owner="fixture owner") == [first.id]
+    assert ids(owner=OWNER_NAME.lower()) == [first.id]
     assert ids(coq_classes=("internal_failure", "external_failure")) == [first.id]
     assert ids(financial_statuses=("potential",)) == [first.id]
     assert ids(search="fixture REWORK") == [first.id]

@@ -30,9 +30,33 @@ export type IncidentRecord = {
   createdBy: string;
   updatedAt: string;
   updatedBy: string;
+  createdByName?: string | null;
+  updatedByName?: string | null;
 };
 
-export type RecordPermissions = { canEdit: boolean; canManage: boolean; canViewHistory: boolean };
+/** What the signed-in user may do; `*Types` list the record types each action is allowed for. */
+export type RecordPermissions = {
+  canEdit: boolean;
+  canManage: boolean;
+  canViewHistory: boolean;
+  canClassify?: boolean;
+  viewableTypes?: EventType[];
+  creatableTypes?: EventType[];
+  editableTypes?: EventType[];
+  voidableTypes?: EventType[];
+};
+
+/** Per-type ability, falling back to the overall flag for older responses. */
+export function allowsType(
+  permissions: RecordPermissions | undefined,
+  list: "creatableTypes" | "editableTypes" | "voidableTypes",
+  type: EventType,
+): boolean {
+  if (!permissions) return false;
+  const types = permissions[list];
+  if (types) return types.includes(type);
+  return list === "voidableTypes" ? permissions.canManage : permissions.canEdit;
+}
 
 export type RecordListResponse = RecordPermissions & { records: IncidentRecord[]; total: number };
 export type RecordResponse = RecordPermissions & { record: IncidentRecord };
@@ -44,6 +68,7 @@ export type RecordOptionsResponse = { areas: RecordOption[]; classifications: Re
 export type HistoryEvent = {
   occurredAt: string;
   actorId: string;
+  actorName?: string;
   action: "create" | "update" | "delete";
   changeSetId: string;
   oldValue: Record<string, unknown> | null;

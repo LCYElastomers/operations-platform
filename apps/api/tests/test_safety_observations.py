@@ -13,11 +13,11 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from principals import TESTER, as_user
 from sqlalchemy.exc import OperationalError
 
 from app.audit.recorder import AuditChange
 from app.core.authorization import UserPrincipal, get_user_principal
-from app.core.config import Settings, get_settings
 from app.core.permissions import Permission
 from app.db.session import DatabaseNotConfiguredError
 from app.main import create_app
@@ -316,8 +316,14 @@ def test_period_covers_whole_months(month: int | None, start: dt.date, end: dt.d
 # API -----------------------------------------------------------------------------
 
 
-def principal(*permissions: Permission) -> UserPrincipal:
-    return UserPrincipal("tester", authenticated=True, granted=frozenset(permissions))
+principal = as_user
+EDITOR = (
+    P.SAFETY_OBSERVATION_VIEW,
+    P.SAFETY_OBSERVATION_CREATE,
+    P.SAFETY_OBSERVATION_EDIT,
+    P.SAFETY_OBSERVATION_DELETE,
+    P.SAFETY_DASHBOARD_VIEW,
+)
 
 
 @pytest.fixture
@@ -341,12 +347,14 @@ def make_client(repository: InMemoryRepository, user: UserPrincipal | None) -> I
 
 @pytest.fixture
 def editor(repository: InMemoryRepository) -> Iterator[TestClient]:
-    yield from make_client(repository, principal(P.SAFETY_OBSERVATIONS_EDIT))
+    yield from make_client(repository, principal(*EDITOR))
 
 
 @pytest.fixture
 def viewer(repository: InMemoryRepository) -> Iterator[TestClient]:
-    yield from make_client(repository, principal(P.SAFETY_OBSERVATIONS_VIEW))
+    yield from make_client(
+        repository, principal(P.SAFETY_OBSERVATION_VIEW, P.SAFETY_DASHBOARD_VIEW)
+    )
 
 
 def payload(**overrides: Any) -> dict[str, Any]:
@@ -397,7 +405,7 @@ def test_viewer_reads_but_cannot_write(viewer: TestClient, repository: InMemoryR
 
     response = viewer.post(URL, json=payload())
     assert response.status_code == 403
-    assert response.json()["detail"]["permission"] == "safety.observations.edit"
+    assert response.json()["detail"]["error"] == "permission_denied"
     put = payload(expectedUpdatedAt=(NOW - dt.timedelta(days=1)).isoformat())
     assert viewer.put(f"{URL}/{observation_id}", json=put).status_code == 403
     assert viewer.delete(f"{URL}/{observation_id}").status_code == 403
@@ -406,40 +414,50 @@ def test_viewer_reads_but_cannot_write(viewer: TestClient, repository: InMemoryR
 
 
 @pytest.mark.parametrize(
-    ("granted", "can_view", "can_edit"),
+    ("granted", "can_view", "can_create"),
     [
-        (P.SAFETY_VIEW, True, False),
-        (P.SAFETY_EDIT, True, True),
-        (P.SAFETY_OBSERVATIONS_VIEW, True, False),
-        (P.SAFETY_OBSERVATIONS_EDIT, True, True),
-        (P.SAFETY_INCIDENTS_EDIT, False, False),
+        ((P.SAFETY_OBSERVATION_VIEW,), True, False),
+        ((P.SAFETY_OBSERVATION_VIEW, P.SAFETY_OBSERVATION_EDIT), True, False),
+        ((P.SAFETY_OBSERVATION_VIEW, P.SAFETY_OBSERVATION_CREATE), True, True),
+        ((P.SAFETY_OBSERVATION_CREATE,), False, True),
+        ((P.SAFETY_RECORD_EDIT, P.INCIDENT_EDIT), False, False),
     ],
 )
-def test_module_grants_cover_observations(
-    repository: InMemoryRepository, granted: Permission, can_view: bool, can_edit: bool
+def test_observation_permissions_are_separate(
+    repository: InMemoryRepository,
+    granted: tuple[Permission, ...],
+    can_view: bool,
+    can_create: bool,
 ) -> None:
-    for client in make_client(repository, principal(granted)):
+    for client in make_client(repository, principal(*granted)):
         response = client.get(URL)
         assert response.status_code == (200 if can_view else 403)
         if can_view:
-            assert response.json()["canEdit"] is can_edit
-        assert client.post(URL, json=payload()).status_code == (201 if can_edit else 403)
+            assert response.json()["canCreate"] is can_create
+        assert client.post(URL, json=payload()).status_code == (201 if can_create else 403)
 
 
-def test_development_mode_creates_as_the_development_user(
+def test_editing_and_deleting_need_their_own_permissions(
     repository: InMemoryRepository,
 ) -> None:
-    app = create_app()
-    app.dependency_overrides[observation_repository] = lambda: repository
-    app.dependency_overrides[get_settings] = lambda: Settings(
-        _env_file=None, user_auth_mode="development-unauthenticated"
-    )
-    with TestClient(app) as client:
-        response = client.post(URL, json=payload())
+    [observation_id] = seed(repository, values())
+    put = payload(expectedUpdatedAt=(NOW - dt.timedelta(days=1)).isoformat())
+    for client in make_client(
+        repository, principal(P.SAFETY_OBSERVATION_VIEW, P.SAFETY_OBSERVATION_EDIT)
+    ):
+        assert client.delete(f"{URL}/{observation_id}").status_code == 403
+    for client in make_client(
+        repository, principal(P.SAFETY_OBSERVATION_VIEW, P.SAFETY_OBSERVATION_DELETE)
+    ):
+        assert client.put(f"{URL}/{observation_id}", json=put).status_code == 403
+    assert list(repository.records) == [observation_id]
+    assert repository.audit == []
 
-    assert response.status_code == 201
-    assert response.json()["createdBy"] == "development-user"
-    assert repository.audit[0][0] == "development-user"
+
+def test_dashboard_needs_the_dashboard_permission(repository: InMemoryRepository) -> None:
+    for client in make_client(repository, principal(P.SAFETY_OBSERVATION_VIEW)):
+        assert client.get(URL + "/summary?year=2026").status_code == 200
+        assert client.get(URL + "/dashboard?year=2026").status_code == 403
 
 
 # Categories
@@ -475,13 +493,13 @@ def test_create_returns_the_record_and_audits_it(
         "description": "Pallet wrap on walkway",
         "correctiveAction": "Cleared and briefed the crew",
         "createdAt": "2026-10-07T12:00:00Z",
-        "createdBy": "tester",
+        "createdBy": TESTER,
         "updatedAt": "2026-10-07T12:00:00Z",
-        "updatedBy": "tester",
+        "updatedBy": TESTER,
     }
     assert repository.commits == 1
     [(actor, _, change)] = repository.audit
-    assert actor == "tester"
+    assert actor == TESTER
     assert change.action == "create"
     assert change.entity_type == "safety.observation"
     assert change.entity_key == "observations/1"
@@ -930,7 +948,7 @@ def test_missing_database_is_reported_as_unavailable(monkeypatch: pytest.MonkeyP
 
     monkeypatch.setattr(observations_router, "get_sessionmaker", not_configured)
     app = create_app()
-    app.dependency_overrides[get_user_principal] = lambda: principal(P.SAFETY_OBSERVATIONS_VIEW)
+    app.dependency_overrides[get_user_principal] = lambda: principal(P.SAFETY_OBSERVATION_VIEW)
     with TestClient(app) as client:
         response = client.get(URL)
 
@@ -964,6 +982,6 @@ def test_saves_are_logged_without_free_text(
     )
     assert "action=create" in line
     assert "observation_id=1" in line
-    assert "user=tester" in line
+    assert f"user={TESTER}" in line
     assert "secret-ish" not in caplog.text
     assert "Dock 9" not in caplog.text

@@ -1,7 +1,10 @@
 """Cost of Quality endpoints.
 
-Reading needs ``quality.cost.view``; adding and editing Quality Cost records
-``quality.cost.edit``.
+Reading needs ``qualityCost.view`` (the COPQ / COQ figures also
+``qualityDashboard.view``); adding records ``qualityCost.create`` and editing
+them ``qualityCost.edit``. Within an edit, changing the owner also needs
+``qualityCost.assign``, confirming a cost ``qualityCost.confirmFinancial`` and
+closing or reopening ``qualityCost.close`` (``records.check_permissions``).
 
 ``/records`` is the Quality Cost Register. ``/summary`` returns the COPQ and
 COQ Matrix figures calculated from the same records, with the same filters.
@@ -17,7 +20,8 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.core.authorization import UserPrincipal, require_permission
+from app.auth import people
+from app.core.authorization import UserPrincipal, require_all_permissions, require_permission
 from app.core.permissions import Permission
 from app.db.session import DatabaseNotConfiguredError, get_sessionmaker
 from app.quality.cost import estimator, records, service
@@ -40,6 +44,7 @@ from app.quality.cost.repository import CostRepository, RecordFilter
 from app.quality.cost.schemas import (
     CodeLabelOut,
     CoqClassOptionOut,
+    CostAbilitiesOut,
     CostComponentOut,
     CostRecordCreate,
     CostRecordListResponse,
@@ -87,6 +92,13 @@ def cost_repository() -> Iterator[CostRepository]:
 
 Repository = Annotated[CostRepository, Depends(cost_repository)]
 Viewer = Annotated[UserPrincipal, Depends(require_permission(Permission.QUALITY_COST_VIEW))]
+DashboardViewer = Annotated[
+    UserPrincipal,
+    Depends(
+        require_all_permissions(Permission.QUALITY_COST_VIEW, Permission.QUALITY_DASHBOARD_VIEW)
+    ),
+]
+Creator = Annotated[UserPrincipal, Depends(require_permission(Permission.QUALITY_COST_CREATE))]
 Editor = Annotated[UserPrincipal, Depends(require_permission(Permission.QUALITY_COST_EDIT))]
 Year = Annotated[int | None, Query(ge=MIN_REPORTING_YEAR, le=MAX_REPORTING_YEAR)]
 Month = Annotated[int | None, Query(ge=1, le=12)]
@@ -117,14 +129,43 @@ def _can_edit(principal: UserPrincipal) -> bool:
     return principal.has(Permission.QUALITY_COST_EDIT)
 
 
-def _actor(principal: UserPrincipal) -> records.Actor:
-    assert principal.user_id is not None  # noqa: S101 - require_permission admits users only
-    return records.Actor(principal.user_id, dt.datetime.now(dt.UTC))
+def _abilities(principal: UserPrincipal) -> CostAbilitiesOut:
+    return CostAbilitiesOut(
+        create=principal.has(Permission.QUALITY_COST_CREATE),
+        edit=principal.has(Permission.QUALITY_COST_EDIT),
+        assign=principal.has(Permission.QUALITY_COST_ASSIGN),
+        confirm_financial=principal.has(Permission.QUALITY_COST_CONFIRM_FINANCIAL),
+        close=principal.has(Permission.QUALITY_COST_CLOSE),
+    )
+
+
+def actor_of(principal: UserPrincipal) -> records.Actor:
+    """The acting user, from the session (never from the request body)."""
+    return records.Actor(
+        principal.actor_id,
+        dt.datetime.now(dt.UTC),
+        permissions=principal.granted,
+        user_id=principal.user_id,
+        name=principal.name,
+    )
+
+
+def _record_response(
+    principal: UserPrincipal, repository: CostRepository, row: Any
+) -> CostRecordResponse:
+    names = repository.actor_names(records.actor_ids([row]))
+    return CostRecordResponse(
+        record=records.record_out(row, _today(), names),
+        can_edit=_can_edit(principal),
+        abilities=_abilities(principal),
+    )
 
 
 def _write_error(error: Exception) -> HTTPException:
     if isinstance(error, records.RecordNotFoundError):
         return _error(status.HTTP_404_NOT_FOUND, "record_not_found", "No such record.")
+    if isinstance(error, records.RecordForbiddenError):
+        return _error(status.HTTP_403_FORBIDDEN, "permission_denied", error.message)
     if isinstance(error, records.RecordConflictError):
         return _error(
             status.HTTP_409_CONFLICT,
@@ -145,6 +186,7 @@ _WRITE_ERRORS = (
     records.RecordNotFoundError,
     records.RecordConflictError,
     records.RecordRuleError,
+    records.RecordForbiddenError,
     SQLAlchemyError,
 )
 
@@ -223,13 +265,15 @@ def list_records(
     )
     try:
         rows, total = repository.search(criteria, limit=limit, offset=offset)
+        names = repository.actor_names(records.actor_ids(rows))
     except SQLAlchemyError:
         raise _database_unavailable() from None
     today = _today()
     return CostRecordListResponse(
-        records=[records.record_out(r, today) for r in rows],
+        records=[records.record_out(r, today, names) for r in rows],
         total=total,
         can_edit=_can_edit(principal),
+        abilities=_abilities(principal),
     )
 
 
@@ -273,6 +317,7 @@ def record_options(principal: Viewer, repository: Repository) -> CostRecordOptio
         products=products,
         owners=owners,
         can_edit=_can_edit(principal),
+        abilities=_abilities(principal),
     )
 
 
@@ -285,13 +330,11 @@ def _camel(name: str) -> str:
 def get_record(principal: Viewer, repository: Repository, record_id: int) -> CostRecordResponse:
     try:
         row = repository.get(record_id)
+        if row is None:
+            raise _error(status.HTTP_404_NOT_FOUND, "record_not_found", "No such record.")
+        return _record_response(principal, repository, row)
     except SQLAlchemyError:
         raise _database_unavailable() from None
-    if row is None:
-        raise _error(status.HTTP_404_NOT_FOUND, "record_not_found", "No such record.")
-    return CostRecordResponse(
-        record=records.record_out(row, _today()), can_edit=_can_edit(principal)
-    )
 
 
 @router.get(
@@ -311,6 +354,7 @@ def record_history(principal: Viewer, repository: Repository, record_id: int) ->
             HistoryEventOut(
                 occurred_at=e.occurred_at,
                 actor_id=e.actor_id,
+                actor_name=e.actor_name or people.actor_label(e.actor_id, {}),
                 action=e.action,  # type: ignore[arg-type]
                 change_set_id=str(e.change_set_id),
                 old_value=records.public_audit_value(e.old_value),
@@ -328,13 +372,13 @@ def record_history(principal: Viewer, repository: Repository, record_id: int) ->
     responses=WRITE_RESPONSES,
 )
 def create_record(
-    principal: Editor, repository: Repository, request: CostRecordCreate
+    principal: Creator, repository: Repository, request: CostRecordCreate
 ) -> CostRecordResponse:
     try:
-        row = records.create(repository, request, _actor(principal))
+        row = records.create(repository, request, actor_of(principal))
+        return _record_response(principal, repository, row)
     except _WRITE_ERRORS as error:
         raise _write_error(error) from None
-    return CostRecordResponse(record=records.record_out(row, _today()), can_edit=True)
 
 
 @router.put("/records/{record_id}", response_model=CostRecordResponse, responses=WRITE_RESPONSES)
@@ -342,15 +386,15 @@ def update_record(
     principal: Editor, repository: Repository, record_id: int, request: CostRecordUpdate
 ) -> CostRecordResponse:
     try:
-        row = records.update(repository, record_id, request, _actor(principal))
+        row = records.update(repository, record_id, request, actor_of(principal))
+        return _record_response(principal, repository, row)
     except _WRITE_ERRORS as error:
         raise _write_error(error) from None
-    return CostRecordResponse(record=records.record_out(row, _today()), can_edit=True)
 
 
 @router.get("/summary", response_model=CostSummaryResponse, responses=READ_RESPONSES)
 def summary(
-    principal: Viewer,
+    principal: DashboardViewer,
     repository: Repository,
     year: Year = None,
     from_month: Annotated[int | None, Query(alias="from", ge=1, le=12)] = None,

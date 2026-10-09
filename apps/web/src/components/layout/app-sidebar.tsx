@@ -6,7 +6,8 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 
 import { navigation } from "@/config/navigation";
-import { containsActive, isNavItemActive, type NavItem } from "@/lib/navigation";
+import { useSession } from "@/features/auth/use-session";
+import { containsActive, filterNavigation, isNavItemActive, type NavItem } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 
 type AppSidebarProps = {
@@ -16,6 +17,8 @@ type AppSidebarProps = {
 
 export function AppSidebar({ open, onClose }: AppSidebarProps) {
   const pathname = usePathname();
+  const session = useSession();
+  const sections = session.data ? filterNavigation(navigation, session.data.permissions) : [];
   // Explicit user toggles. Groups without an entry follow the active route.
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
@@ -84,7 +87,7 @@ export function AppSidebar({ open, onClose }: AppSidebarProps) {
       </div>
 
       <nav className="flex-1 space-y-6 overflow-y-auto px-3 py-4">
-        {navigation.map((section) => (
+        {sections.map((section) => (
           <div key={section.id}>
             {section.label && (
               <p className="mb-2 px-3 text-[11px] font-semibold tracking-wider text-sidebar-muted uppercase">

@@ -7,9 +7,15 @@ included), each corrective action as ``quality.car_action`` with key
 separately, of each action, so recording an action never invalidates an open
 edit of the report. Reports and actions are never deleted.
 
-Closing a report requires the date closed, who approved closure, an
-effectiveness result (with a follow-up reference when Not Effective) and every
-corrective action complete, so a closed status never hides open actions.
+Closing a report requires the date closed, an effectiveness result (with a
+follow-up reference when Not Effective) and every corrective action complete,
+so a closed status never hides open actions.
+
+People are platform users chosen by ID (``app.auth.people``); names recorded
+before users existed are kept as they are. Who approved closure, who reviewed
+effectiveness and who gave an approval are never taken from the request: they
+are the signed-in user making that change, who must hold the permission for it
+(``check_permissions``).
 """
 
 import datetime as dt
@@ -20,6 +26,8 @@ from decimal import Decimal
 from typing import Any
 
 from app.audit.recorder import AuditAction, AuditChange
+from app.auth import people
+from app.core.permissions import Permission
 from app.quality.car import calculations
 from app.quality.car.models import EARLIEST_CAR_DATE, Car, CarAction
 from app.quality.car.reference import (
@@ -43,6 +51,7 @@ from app.quality.car.schemas import (
     ActionFields,
     ActionProgressOut,
     ApprovalOut,
+    ApprovalRecord,
     CarActionOut,
     CarCreate,
     CarFields,
@@ -62,6 +71,7 @@ from app.quality.cost import records as cost_records
 from app.quality.cost.classification import COQ_CLASSES, FINANCIAL_STATUSES, OPERATIONAL_STATUSES
 from app.quality.cost.records import (
     Actor,
+    RecordForbiddenError,
     RecordNotFoundError,
     RecordRuleError,
 )
@@ -176,11 +186,18 @@ _TEXT_FIELDS = frozenset(
         "root_cause_code",
     }
 )
+# Person fields chosen from platform users (name + user link).
+PERSON_FIELDS = ("requested_by", "assigned_to", "containment_owner")
+# Set from the signed-in user making the change, never from the request.
+SESSION_PERSON_FIELDS = ("reviewer", "closure_approved_by")
+USER_LINK_FIELDS = tuple(f"{f}_user_id" for f in (*PERSON_FIELDS, *SESSION_PERSON_FIELDS))
+EFFECTIVENESS_FIELDS = ("effectiveness_result", "review_date")
 # The audit trail is the report's provenance, so it includes the source
 # reference; the public history omits it.
 AUDITED_FIELDS = (
     "car_number",
     *EDITABLE_FIELDS,
+    *USER_LINK_FIELDS,
     "quality_cost_record_id",
     "legacy_fields",
     "migration_notes",
@@ -192,6 +209,7 @@ AUDITED_FIELDS = (
 ACTION_FIELDS = (
     "action",
     "owner",
+    "owner_user_id",
     "target_date",
     "status",
     "completed_on",
@@ -263,8 +281,10 @@ def _summary_fields(row: CarRow, today: dt.date, due_soon_days: int) -> dict[str
         "car_number": c.car_number,
         "subject": c.subject,
         "requested_by": c.requested_by,
+        "requested_by_user_id": c.requested_by_user_id,
         "request_date": c.request_date,
         "assigned_to": c.assigned_to,
+        "assigned_to_user_id": c.assigned_to_user_id,
         "due_date": c.due_date,
         "status": c.status,
         "status_label": _status_label(c.status),
@@ -299,12 +319,24 @@ def list_item_out(row: CarRow, today: dt.date, due_soon_days: int) -> CarListIte
     return CarListItemOut(**_summary_fields(row, today, due_soon_days))
 
 
-def action_out(action: CarAction, today: dt.date) -> CarActionOut:
+def actor_ids(row: CarRow) -> list[str]:
+    """created_by / updated_by of a report and its actions, for ``people.display_names``."""
+    ids = [row.car.created_by, row.car.updated_by, *(a.created_by for a in row.approvals)]
+    for action in row.actions:
+        ids.extend((action.created_by, action.updated_by))
+    return ids
+
+
+def action_out(
+    action: CarAction, today: dt.date, names: dict[str, str] | None = None
+) -> CarActionOut:
+    names = names or {}
     return CarActionOut(
         id=action.id,
         position=action.position,
         action=action.action,
         owner=action.owner,
+        owner_user_id=action.owner_user_id,
         target_date=action.target_date,
         status=action.status,  # type: ignore[arg-type]
         status_label=(
@@ -324,8 +356,10 @@ def action_out(action: CarAction, today: dt.date) -> CarActionOut:
         version=action.version,
         created_at=action.created_at,
         created_by=action.created_by,
+        created_by_name=people.actor_label(action.created_by, names),
         updated_at=action.updated_at,
         updated_by=action.updated_by,
+        updated_by_name=people.actor_label(action.updated_by, names),
     )
 
 
@@ -342,8 +376,12 @@ def linked_cost_out(row: RecordRow) -> LinkedCostOut:
     )
 
 
-def car_out(row: CarRow, today: dt.date, due_soon_days: int) -> CarOut:
+def car_out(
+    row: CarRow, today: dt.date, due_soon_days: int, names: dict[str, str] | None = None
+) -> CarOut:
+    """``names``: display names of users (``people.display_names`` of ``actor_ids``)."""
     c = row.car
+    names = names or {}
     progress = calculations.action_progress(row.actions, today)
     return CarOut(
         **_summary_fields(row, today, due_soon_days),
@@ -356,6 +394,7 @@ def car_out(row: CarRow, today: dt.date, due_soon_days: int) -> CarOut:
         objective_evidence=c.objective_evidence,
         immediate_actions=c.immediate_actions,
         containment_owner=c.containment_owner,
+        containment_owner_user_id=c.containment_owner_user_id,
         containment_completed_on=c.containment_completed_on,
         disposition_codes=list(c.disposition_codes),
         disposition_labels=[disposition_label(code) for code in c.disposition_codes],
@@ -399,6 +438,7 @@ def car_out(row: CarRow, today: dt.date, due_soon_days: int) -> CarOut:
         success_criteria=c.success_criteria,
         effectiveness_evidence=c.effectiveness_evidence,
         reviewer=c.reviewer,
+        reviewer_user_id=c.reviewer_user_id,
         review_date=c.review_date,
         follow_up_reference=c.follow_up_reference,
         material_loss=c.material_loss,
@@ -406,13 +446,16 @@ def car_out(row: CarRow, today: dt.date, due_soon_days: int) -> CarOut:
         other_costs=c.other_costs,
         quality_cost=linked_cost_out(row.quality_cost) if row.quality_cost else None,
         closure_approved_by=c.closure_approved_by,
+        closure_approved_by_user_id=c.closure_approved_by_user_id,
         approvals=[
             ApprovalOut(
                 function_code=a.function_code,  # type: ignore[arg-type]
                 function_label=APPROVAL_FUNCTIONS[a.function_code],
                 name=a.name,
+                user_id=a.user_id,
                 approved_on=a.approved_on,
                 recorded_by=a.created_by,
+                recorded_by_name=people.actor_label(a.created_by, names),
                 recorded_at=a.created_at,
             )
             for a in sorted(
@@ -433,7 +476,7 @@ def car_out(row: CarRow, today: dt.date, due_soon_days: int) -> CarOut:
             )
             for r in row.references
         ],
-        action_items=[action_out(a, today) for a in row.actions],
+        action_items=[action_out(a, today, names) for a in row.actions],
         steps=[
             StepOut(code=code, label=label, state=state)
             for code, label, state in calculations.step_states(c, progress, len(row.approvals))
@@ -446,8 +489,10 @@ def car_out(row: CarRow, today: dt.date, due_soon_days: int) -> CarOut:
         version=c.version,
         created_at=c.created_at,
         created_by=c.created_by,
+        created_by_name=people.actor_label(c.created_by, names),
         updated_at=c.updated_at,
         updated_by=c.updated_by,
+        updated_by_name=people.actor_label(c.updated_by, names),
     )
 
 
@@ -456,6 +501,8 @@ def _audit_scalar(value: Any) -> Any:
         return format(value.normalize(), "f")
     if isinstance(value, (dt.date, dt.time)):
         return value.isoformat()
+    if isinstance(value, uuid.UUID):
+        return str(value)
     if isinstance(value, (list, tuple)):
         return [_audit_scalar(v) for v in value]
     return value
@@ -477,7 +524,12 @@ def audit_value(
         {k: _audit_scalar(v) for k, v in vars(step).items()} for step in why_steps
     ]
     values["approvals"] = [
-        {"function": a.function_code, "name": a.name, "approved_on": _audit_scalar(a.approved_on)}
+        {
+            "function": a.function_code,
+            "name": a.name,
+            "user_id": _audit_scalar(a.user_id),
+            "approved_on": _audit_scalar(a.approved_on),
+        }
         for a in _sorted_approvals(approvals)
     ]
     values["references"] = [{"type": r.type, "key": r.key, "label": r.label} for r in references]
@@ -525,13 +577,49 @@ def _not_future(day: dt.date | None, today: dt.date, *, label: str, field: str) 
         raise RecordRuleError("future_date", f"The {label} cannot be in the future.", field=field)
 
 
+def _person(
+    repository: CarRepository,
+    current: Car | None,
+    field: str,
+    user_id: uuid.UUID | None,
+    name: str | None,
+    label: str,
+) -> people.Person:
+    recorded = (
+        people.Person(getattr(current, field), getattr(current, f"{field}_user_id"))
+        if current is not None
+        else people.NOBODY
+    )
+    try:
+        return people.resolve(
+            lambda: repository.session, user_id=user_id, name=name, current=recorded
+        )
+    except people.PersonChoiceError:
+        raise RecordRuleError(
+            "invalid_person",
+            f"Choose the {label} from the list of active users.",
+            field=_camel(field),
+        ) from None
+
+
+def _camel(name: str) -> str:
+    first, *rest = name.split("_")
+    return first + "".join(part.title() for part in rest)
+
+
+def _acting_person(actor: Actor) -> people.Person:
+    return people.Person(actor.name, actor.user_id)
+
+
 def _validated(
+    repository: CarRepository,
     fields: CarFields,
     *,
+    actor: Actor,
     today: dt.date,
     actions: tuple[CarAction, ...] = (),
     current: Car | None = None,
-) -> tuple[dict[str, Any], tuple[WhyStep, ...], tuple[Approval, ...], tuple[Reference, ...]]:
+) -> tuple[dict[str, Any], tuple[WhyStep, ...], tuple[Reference, ...]]:
     subject = _text(fields.subject)
     if subject is None:
         raise RecordRuleError("blank_subject", "Enter the subject / issue.", field="subject")
@@ -619,8 +707,29 @@ def _validated(
     status = fields.status
     if status is None and not (current is not None and current.status is None):
         raise RecordRuleError("status_required", "Choose the CAR status.", field="status")
-    closure_approved_by = _text(fields.closure_approved_by)
     follow_up = _text(fields.follow_up_reference)
+    # Who approved closure is whoever closes the report; it stays while closed.
+    if status != "closed":
+        closure = people.NOBODY
+    elif current is not None and current.status == "closed":
+        closure = people.Person(current.closure_approved_by, current.closure_approved_by_user_id)
+    else:
+        closure = _acting_person(actor)
+    # The reviewer is whoever records (or changes) the effectiveness review.
+    review_changed = current is None or any(
+        getattr(current, f) != getattr(fields, f) for f in EFFECTIVENESS_FIELDS
+    )
+    if fields.effectiveness_result is None and fields.review_date is None:
+        reviewer = (
+            people.Person(current.reviewer, current.reviewer_user_id)
+            if current is not None and not review_changed
+            else people.NOBODY
+        )
+    elif review_changed:
+        reviewer = _acting_person(actor)
+    else:
+        assert current is not None  # noqa: S101 - unchanged review implies a current report
+        reviewer = people.Person(current.reviewer, current.reviewer_user_id)
     if status == "closed":
         if fields.date_closed is None:
             raise RecordRuleError(
@@ -637,12 +746,6 @@ def _validated(
         ):
             raise RecordRuleError(
                 "future_date_closed", "The date closed cannot be in the future.", field="dateClosed"
-            )
-        if closure_approved_by is None:
-            raise RecordRuleError(
-                "closure_approver_required",
-                "Enter who approved closure.",
-                field="closureApprovedBy",
             )
         if fields.effectiveness_result is None:
             raise RecordRuleError(
@@ -687,25 +790,34 @@ def _validated(
         if any(v is not None for v in vars(step).values())
     )
 
-    approvals: list[Approval] = []
-    for a in fields.approvals:
-        name = _text(a.name)
-        if name is None:
-            if a.approved_on is not None:
-                raise RecordRuleError(
-                    "approver_required",
-                    f"Enter the {APPROVAL_FUNCTIONS[a.function_code]} approver's name.",
-                    field="approvals",
-                )
-            continue
-        if any(x.function_code == a.function_code for x in approvals):
-            raise RecordRuleError(
-                "duplicate_approval",
-                f"{APPROVAL_FUNCTIONS[a.function_code]} is approved twice.",
-                field="approvals",
-            )
-        _not_future(a.approved_on, today, label="approval date", field="approvals")
-        approvals.append(Approval(a.function_code, name, a.approved_on))
+    persons = {
+        "requested_by": _person(
+            repository,
+            current,
+            "requested_by",
+            fields.requested_by_user_id,
+            fields.requested_by,
+            "requester",
+        ),
+        "assigned_to": _person(
+            repository,
+            current,
+            "assigned_to",
+            fields.assigned_to_user_id,
+            fields.assigned_to,
+            "assignee",
+        ),
+        "containment_owner": _person(
+            repository,
+            current,
+            "containment_owner",
+            fields.containment_owner_user_id,
+            fields.containment_owner,
+            "containment owner",
+        ),
+        "reviewer": reviewer,
+        "closure_approved_by": closure,
+    }
 
     references: list[Reference] = []
     for reference in fields.references:
@@ -720,22 +832,72 @@ def _validated(
 
     values: dict[str, Any] = {}
     for field in EDITABLE_FIELDS:
+        if field in persons:
+            continue
         value = getattr(fields, field)
         values[field] = _text(value) if field in _TEXT_FIELDS else value
+    for field, person in persons.items():
+        values[field] = person.name
+        values[f"{field}_user_id"] = person.user_id
     values.update(
         subject=subject,
         source_code=source_code,
         department_code=department_code,
         root_cause_code=root_cause_code,
         disposition_codes=dispositions,
-        closure_approved_by=closure_approved_by,
         follow_up_reference=follow_up,
     )
-    return values, why_steps, tuple(approvals), tuple(references)
+    return values, why_steps, tuple(references)
+
+
+def check_permissions(values: dict[str, Any], current: Car | None, actor: Actor) -> None:
+    """Report changes that need more than ``car.create`` / ``car.edit``."""
+
+    def before(field: str) -> Any:
+        return getattr(current, field) if current is not None else None
+
+    if (values["assigned_to"], values["assigned_to_user_id"]) != (
+        before("assigned_to"),
+        before("assigned_to_user_id"),
+    ):
+        actor.require(Permission.CAR_ASSIGN, "Assigning a CAR needs car.assign.")
+    if any(values[f] != before(f) for f in EFFECTIVENESS_FIELDS):
+        actor.require(
+            Permission.CAR_REVIEW_EFFECTIVENESS,
+            "Recording the effectiveness review needs car.reviewEffectiveness.",
+        )
+    was_closed = before("status") == "closed"
+    if values["status"] == "closed" and not was_closed:
+        actor.require(Permission.CAR_CLOSE, "Closing a CAR needs car.close.")
+    if was_closed and values["status"] != "closed":
+        actor.require(Permission.CAR_REOPEN, "Reopening a CAR needs car.reopen.")
+
+
+COMPLETE_FORBIDDEN = (
+    "Only the action's owner (with car.completeAction) or a CAR administrator "
+    "can record an action as complete."
+)
+
+
+def can_complete_action(owner_user_id: uuid.UUID | None, actor: Actor) -> bool:
+    """Completing an action needs car.completeAction and being its owner, or car.admin."""
+    if actor.permissions is None:
+        return True
+    if Permission.CAR_ADMIN in actor.permissions:
+        return True
+    return (
+        Permission.CAR_COMPLETE_ACTION in actor.permissions
+        and owner_user_id is not None
+        and owner_user_id == actor.user_id
+    )
 
 
 def _validated_action(
-    fields: ActionFields, *, today: dt.date, current: CarAction | None = None
+    repository: CarRepository,
+    fields: ActionFields,
+    *,
+    today: dt.date,
+    current: CarAction | None = None,
 ) -> dict[str, Any]:
     action = _text(fields.action)
     if action is None:
@@ -766,9 +928,22 @@ def _validated_action(
             "Set the status to Complete or clear the date.",
             field="completedOn",
         )
+    recorded = people.Person(current.owner, current.owner_user_id) if current else people.NOBODY
+    try:
+        owner = people.resolve(
+            lambda: repository.session,
+            user_id=fields.owner_user_id,
+            name=fields.owner,
+            current=recorded,
+        )
+    except people.PersonChoiceError:
+        raise RecordRuleError(
+            "invalid_person", "Choose the owner from the list of active users.", field="owner"
+        ) from None
     return {
         "action": action,
-        "owner": _text(fields.owner),
+        "owner": owner.name,
+        "owner_user_id": owner.user_id,
         "target_date": fields.target_date,
         "status": fields.status,
         "completed_on": fields.completed_on,
@@ -899,7 +1074,8 @@ def create(repository: CarRepository, request: CarCreate, actor: Actor) -> CarRo
                 "Save the CAR and record its actions before closing it.",
                 field="status",
             )
-        values, why, approvals, references = _validated(request, today=_today(actor))
+        values, why, references = _validated(repository, request, actor=actor, today=_today(actor))
+        check_permissions(values, None, actor)
         repository.lock_numbers()
         year = request.request_date.year
         number = next_number(repository.numbers_for_year(CAR_NUMBER_PREFIX, year), year)
@@ -907,7 +1083,7 @@ def create(repository: CarRepository, request: CarCreate, actor: Actor) -> CarRo
             repository,
             {**values, "car_number": number, "source": "manual"},
             why,
-            approvals,
+            (),
             references,
             actor,
             change_set,
@@ -926,9 +1102,10 @@ def update(repository: CarRepository, car_id: int, request: CarUpdate, actor: Ac
     try:
         car = _locked(repository, car_id, request.version)
         actions = repository.actions_of(car_id)
-        values, why, approvals, references = _validated(
-            request, today=_today(actor), actions=actions, current=car
+        values, why, references = _validated(
+            repository, request, actor=actor, today=_today(actor), actions=actions, current=car
         )
+        check_permissions(values, car, actor)
         before_why = repository.why_steps_of(car_id)
         before_approvals = repository.approvals_of(car_id)
         before_references = repository.references_of(car_id)
@@ -936,9 +1113,8 @@ def update(repository: CarRepository, car_id: int, request: CarUpdate, actor: Ac
             k: v for k, v in values.items() if _comparable(getattr(car, k)) != _comparable(v)
         }
         why_changed = before_why != why
-        approvals_changed = set(before_approvals) != set(approvals)
         references_changed = before_references != references
-        if not (changed or why_changed or approvals_changed or references_changed):
+        if not (changed or why_changed or references_changed):
             repository.rollback()
             return _row(repository, car_id)
         before = audit_value(car, before_why, before_approvals, before_references)
@@ -948,8 +1124,6 @@ def update(repository: CarRepository, car_id: int, request: CarUpdate, actor: Ac
         )
         if why_changed:
             repository.replace_why_steps(car_id, why, actor_id=actor.actor_id, at=actor.now)
-        if approvals_changed:
-            repository.replace_approvals(car_id, approvals, actor_id=actor.actor_id, at=actor.now)
         if references_changed:
             repository.replace_references(car_id, references, actor_id=actor.actor_id, at=actor.now)
         after = repository.lock(car_id)
@@ -986,7 +1160,11 @@ def add_action(
     try:
         car = _locked(repository, car_id, None)
         _refuse_if_closed(car)
-        values = _validated_action(request, today=_today(actor))
+        values = _validated_action(repository, request, today=_today(actor))
+        if values["status"] == "complete" and not can_complete_action(
+            values["owner_user_id"], actor
+        ):
+            raise RecordForbiddenError(COMPLETE_FORBIDDEN)
         action_id = insert_action_audited(repository, car_id, values, actor, change_set)
         repository.commit()
     except Exception:
@@ -1020,6 +1198,14 @@ def _write_action(
         if not changed:
             repository.rollback()
             return _row(repository, car_id)
+        completing = values["status"] == "complete" and action.status != "complete"
+        if completing and not can_complete_action(values["owner_user_id"], actor):
+            raise RecordForbiddenError(COMPLETE_FORBIDDEN)
+        # Without car.manageActions, owners may only update the status of their own action.
+        if actor.permissions is not None and Permission.CAR_MANAGE_ACTIONS not in actor.permissions:
+            own = action.owner_user_id is not None and action.owner_user_id == actor.user_id
+            if set(changed) - {"status", "completed_on"} or not own:
+                raise RecordForbiddenError("Changing corrective actions needs car.manageActions.")
         before = action_audit_value(action)
         repository.update_action(
             action_id, changed, version=action.version, actor_id=actor.actor_id, at=actor.now
@@ -1061,7 +1247,9 @@ def update_action(
         car_id,
         action_id,
         version,
-        lambda current: _validated_action(request, today=_today(actor), current=current),
+        lambda current: _validated_action(
+            repository, request, today=_today(actor), current=current
+        ),
         actor,
     )
 
@@ -1073,6 +1261,7 @@ def complete_action(
         fields = ActionFields(
             action=current.action,
             owner=current.owner,
+            owner_user_id=current.owner_user_id,
             target_date=current.target_date,
             status="complete",
             completed_on=request.completed_on,
@@ -1080,7 +1269,7 @@ def complete_action(
             training_completed=current.training_completed,
             supporting_documents=current.supporting_documents,
         )
-        return _validated_action(fields, today=_today(actor), current=current)
+        return _validated_action(repository, fields, today=_today(actor), current=current)
 
     return _write_action(repository, car_id, action_id, request.version, values_for, actor)
 
@@ -1121,6 +1310,14 @@ def create_quality_cost(
                 field="qualityCost",
             )
         closed = car.status == "closed"
+        # The assignee becomes the owner when they are an active user and the
+        # actor may set owners; a name recorded before users existed is not copied.
+        owner_id = (
+            car.assigned_to_user_id
+            if people.is_active_user(repository.session, car.assigned_to_user_id)
+            and (actor.permissions is None or Permission.QUALITY_COST_ASSIGN in actor.permissions)
+            else None
+        )
         cost_request = CostRecordCreate(
             record_date=car.request_date,
             title=f"{car.car_number} {car.subject}"[:200],
@@ -1134,7 +1331,7 @@ def create_quality_cost(
             location=car.location,
             equipment=(car.equipment_involved or None),
             counterparty=car.counterparty,
-            owner=car.assigned_to,
+            owner_user_id=owner_id,
             material_cost=car.material_loss,
             production_cost=car.production_time_loss,
             other_cost=car.other_costs,
@@ -1145,6 +1342,7 @@ def create_quality_cost(
         )
         costs = CostRepository(repository.session)
         values, references = cost_records._validated(costs, cost_request, today=_today(actor))
+        cost_records.check_permissions(values, None, actor)
         record_id = cost_records.insert_audited(
             costs, {**values, "source": "manual"}, references, actor, change_set
         )
@@ -1185,4 +1383,88 @@ def link_quality_cost(
         repository.rollback()
         raise
     _log("quality_car_cost_link_updated", entity_key(car_id), actor, change_set)
+    return _row(repository, car_id)
+
+
+def _write_approvals(
+    repository: CarRepository,
+    car: Car,
+    approvals: tuple[Approval, ...],
+    actor: Actor,
+    change_set: uuid.UUID,
+) -> None:
+    before = _current_value(repository, car)
+    repository.replace_approvals(car.id, approvals, actor_id=actor.actor_id, at=actor.now)
+    repository.touch_car(car.id, version=car.version, actor_id=actor.actor_id, at=actor.now)
+    after = repository.lock(car.id)
+    assert after is not None  # noqa: S101 - updated above
+    repository.record_audit(
+        actor_id=actor.actor_id,
+        change_set_id=change_set,
+        at=actor.now,
+        changes=[_change("update", entity_key(car.id), before, _current_value(repository, after))],
+    )
+
+
+def record_approval(
+    repository: CarRepository, car_id: int, request: ApprovalRecord, actor: Actor
+) -> CarRow:
+    """Record the signed-in user's approval for one function, dated today. The
+    approver's name and identity come from the session."""
+    change_set = uuid.uuid4()
+    label = APPROVAL_FUNCTIONS[request.function_code]
+    try:
+        car = _locked(repository, car_id, request.version)
+        if car.status == "closed":
+            raise RecordRuleError(
+                "car_closed",
+                "This CAR is closed. Reopen it to change approvals.",
+                field="approvals",
+            )
+        current = repository.approvals_of(car_id)
+        if any(a.function_code == request.function_code for a in current):
+            raise RecordRuleError(
+                "already_approved", f"{label} approval is already recorded.", field="approvals"
+            )
+        if actor.user_id is None or not actor.name:
+            raise RecordForbiddenError("Approvals are recorded by a signed-in user.")
+        approval = Approval(request.function_code, actor.name, _today(actor), actor.user_id)
+        _write_approvals(repository, car, (*current, approval), actor, change_set)
+        repository.commit()
+    except Exception:
+        repository.rollback()
+        raise
+    _log("quality_car_approval_recorded", entity_key(car_id), actor, change_set)
+    return _row(repository, car_id)
+
+
+def withdraw_approval(
+    repository: CarRepository, car_id: int, function_code: str, version: int, actor: Actor
+) -> CarRow:
+    """Remove an approval: your own, or any with car.admin."""
+    change_set = uuid.uuid4()
+    try:
+        car = _locked(repository, car_id, version)
+        if car.status == "closed":
+            raise RecordRuleError(
+                "car_closed",
+                "This CAR is closed. Reopen it to change approvals.",
+                field="approvals",
+            )
+        current = repository.approvals_of(car_id)
+        approval = next((a for a in current if a.function_code == function_code), None)
+        if approval is None:
+            raise RecordNotFoundError(function_code)
+        own = approval.user_id is not None and approval.user_id == actor.user_id
+        if not own:
+            actor.require(
+                Permission.CAR_ADMIN, "Only the approver or a CAR administrator can withdraw it."
+            )
+        remaining = tuple(a for a in current if a.function_code != function_code)
+        _write_approvals(repository, car, remaining, actor, change_set)
+        repository.commit()
+    except Exception:
+        repository.rollback()
+        raise
+    _log("quality_car_approval_withdrawn", entity_key(car_id), actor, change_set)
     return _row(repository, car_id)

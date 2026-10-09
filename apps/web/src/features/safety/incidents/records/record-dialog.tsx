@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 
 import { describeSafetyError } from "../api";
 import {
+  allowsType,
   recordError,
   type EventType,
   type IncidentRecord,
@@ -238,7 +239,7 @@ function MonthList({
       )}
 
       <div className="flex flex-wrap items-center gap-2">
-        {permissions.canEdit && started && (
+        {allowsType(permissions, "creatableTypes", scope.eventType) && started && (
           <Button onClick={() => onPanel({ kind: "create", eventType: scope.eventType })} className="pointer-coarse:h-11">
             <Plus />
             Add record
@@ -298,10 +299,10 @@ export function RecordActions({
   const name = recordName(record);
   const active = record.status === "active";
   const actions: [RecordPanel["kind"], string, React.ComponentType, boolean][] = [
-    ["edit", "Edit", Pencil, permissions.canEdit && active],
+    ["edit", "Edit", Pencil, allowsType(permissions, "editableTypes", record.eventType) && active],
     ["history", "View history", History, permissions.canViewHistory],
-    ["void", "Void", Ban, permissions.canManage && active],
-    ["reclassify", "Reclassify", Repeat2, permissions.canManage && active],
+    ["void", "Void", Ban, allowsType(permissions, "voidableTypes", record.eventType) && active],
+    ["reclassify", "Reclassify", Repeat2, (permissions.canClassify ?? permissions.canManage) && active],
   ];
   return (
     <div className="flex flex-wrap gap-1.5">
@@ -882,7 +883,7 @@ function HistoryList({
         return (
           <li key={`${event.changeSetId}-${event.occurredAt}`} className="rounded-lg border bg-card p-3 text-sm">
             <p className="font-medium">
-              {verb} by {event.actorId}
+              {verb} by {event.actorName ?? event.actorId}
             </p>
             <p className="text-xs text-muted-foreground">
               <time dateTime={event.occurredAt}>{new Date(event.occurredAt).toLocaleString()}</time>

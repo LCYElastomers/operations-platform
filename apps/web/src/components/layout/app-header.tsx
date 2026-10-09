@@ -5,8 +5,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { ApiStatusIndicator } from "@/components/system/api-status";
-import { navigation } from "@/config/navigation";
+import { accountNavigation, navigation } from "@/config/navigation";
 import { findNavTrail } from "@/lib/navigation";
+
+import { UserMenu } from "./user-menu";
 
 type AppHeaderProps = {
   sidebarOpen: boolean;
@@ -15,7 +17,7 @@ type AppHeaderProps = {
 
 export function AppHeader({ sidebarOpen, onOpenSidebar }: AppHeaderProps) {
   const pathname = usePathname();
-  const trail = findNavTrail(navigation, pathname);
+  const trail = findNavTrail([...navigation, ...accountNavigation], pathname);
 
   return (
     <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-3 border-b bg-card/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-card/80 sm:px-6">
@@ -64,6 +66,7 @@ export function AppHeader({ sidebarOpen, onOpenSidebar }: AppHeaderProps) {
       </nav>
 
       <ApiStatusIndicator />
+      <UserMenu />
     </header>
   );
 }

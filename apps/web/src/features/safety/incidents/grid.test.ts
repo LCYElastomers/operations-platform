@@ -198,7 +198,7 @@ describe("Safety API errors", () => {
   });
 
   it("explains authorization and availability failures", () => {
-    expect(describeSafetyError(new ApiError(401, "x"))).toContain("Sign-in is required");
+    expect(describeSafetyError(new ApiError(401, "x"))).toContain("Sign in again");
     expect(describeSafetyError(new ApiError(403, "x"))).toContain("permission");
     expect(describeSafetyError(new ApiError(503, "x"))).toContain("database");
     expect(describeSafetyError(new TypeError("fetch failed"))).toBe("The API could not be reached.");

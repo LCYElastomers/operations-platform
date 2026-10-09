@@ -2,7 +2,7 @@
 
 import datetime as dt
 import uuid
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.audit.models import AuditEvent
 from app.audit.recorder import AuditChange, record_changes
+from app.auth import people
 from app.quality.car.models import Car, CarAction, CarApproval, CarReference, CarWhyStep
 from app.quality.cost.repository import CostRepository, RecordRow
 
@@ -40,6 +41,8 @@ class Approval:
     function_code: str
     name: str
     approved_on: dt.date | None
+    # The approving user; None on imported approvals.
+    user_id: uuid.UUID | None = None
 
 
 @dataclass(frozen=True)
@@ -87,6 +90,9 @@ def _with_not_recorded(column: Any, values: tuple[str, ...]) -> Any:
 class CarRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
+
+    def actor_names(self, actor_ids: Iterable[str | None]) -> dict[str, str]:
+        return people.display_names(self.session, actor_ids)
 
     # Reading -------------------------------------------------------------------
 
@@ -406,18 +412,27 @@ class CarRepository:
             for a in self.session.scalars(select(CarApproval).where(CarApproval.car_id == car_id))
         }
         wanted = {a.function_code: a for a in approvals}
+
+        def same(new: Approval, row: CarApproval) -> bool:
+            return (new.name, new.approved_on, new.user_id) == (
+                row.name,
+                row.approved_on,
+                row.user_id,
+            )
+
         for code, row in current.items():
             new = wanted.get(code)
-            if new is None or (new.name, new.approved_on) != (row.name, row.approved_on):
+            if new is None or not same(new, row):
                 self.session.execute(delete(CarApproval).where(CarApproval.id == row.id))
         for code, new in wanted.items():
             row = current.get(code)
-            if row is None or (new.name, new.approved_on) != (row.name, row.approved_on):
+            if row is None or not same(new, row):
                 self.session.execute(
                     insert(CarApproval).values(
                         car_id=car_id,
                         function_code=code,
                         name=new.name,
+                        user_id=new.user_id,
                         approved_on=new.approved_on,
                         created_at=at,
                         created_by=actor_id,
@@ -458,7 +473,7 @@ class CarRepository:
         rows = self.session.scalars(
             select(CarApproval).where(CarApproval.car_id == car_id).order_by(CarApproval.id)
         )
-        return tuple(Approval(r.function_code, r.name, r.approved_on) for r in rows)
+        return tuple(Approval(r.function_code, r.name, r.approved_on, r.user_id) for r in rows)
 
     def record_audit(
         self,

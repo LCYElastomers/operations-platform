@@ -4,8 +4,9 @@ for a user holding every Safety permission. Its tables are kept
 
 import pytest
 from fastapi.testclient import TestClient
+from principals import as_user
 
-from app.core.authorization import UserPrincipal, get_user_principal
+from app.core.authorization import get_user_principal
 from app.core.permissions import Permission
 from app.main import create_app
 
@@ -27,12 +28,10 @@ def test_no_route_serves_supervisor_safety_contacts() -> None:
 )
 def test_retired_endpoints_are_not_found(method: str, path: str) -> None:
     app = create_app()
-    app.dependency_overrides[get_user_principal] = lambda: UserPrincipal(
-        "tester", authenticated=True, granted=frozenset({Permission.SAFETY_MANAGE})
-    )
+    app.dependency_overrides[get_user_principal] = lambda: as_user(*Permission)
     with TestClient(app) as client:
         assert client.request(method, path).status_code == 404
 
 
 def test_contact_permissions_are_removed() -> None:
-    assert not [p for p in Permission if ".contacts." in p]
+    assert not [p for p in Permission if "contact" in p.lower()]

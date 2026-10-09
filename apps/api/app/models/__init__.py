@@ -4,6 +4,15 @@ Import every model module here so Alembic autogenerate sees the full metadata.
 """
 
 from app.audit.models import AuditEvent
+from app.auth.models import (
+    AuthSession,
+    PasswordToken,
+    PermissionDefinition,
+    Role,
+    RolePermission,
+    User,
+    UserRole,
+)
 from app.db.base import Base
 from app.ingestion.models import IngestionBatch
 from app.quality.car.models import Car, CarAction, CarApproval, CarReference, CarWhyStep
@@ -20,6 +29,7 @@ from app.safety.trir.models import TrirAnnualFact
 __all__ = [
     "AnnualBehaviorCount",
     "AuditEvent",
+    "AuthSession",
     "Base",
     "BehaviorCategory",
     "Car",
@@ -39,8 +49,14 @@ __all__ = [
     "MonthlyMetricValue",
     "Observation",
     "ObservationCategory",
+    "PasswordToken",
     "PerformanceAnnualLegacy",
     "PerformanceHours",
+    "PermissionDefinition",
+    "Role",
+    "RolePermission",
     "SupervisorSafetyContact",
     "TrirAnnualFact",
+    "User",
+    "UserRole",
 ]

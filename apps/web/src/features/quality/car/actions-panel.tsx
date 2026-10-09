@@ -7,14 +7,31 @@ import { StatusBadge } from "@/components/common/status-badge";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { siteToday } from "@/features/safety/site-calendar";
+import { PersonSelect } from "@/features/users/person-select";
 import { cn } from "@/lib/utils";
 
 import { NotEntered } from "../cost/cost-shared";
 import { formatDate } from "../cost/format";
 import { Field, fieldClasses, inputClasses } from "../cost/record-form";
 
-import { carSaveError, describeCarError, type Car, type CarAction, type CarOptions } from "./api";
-import { actionDraftOf, actionFieldsOf, actionProblems, emptyActionDraft, type ActionDraft, type Problems } from "./car-draft";
+import {
+  canCompleteCarAction,
+  carSaveError,
+  describeCarError,
+  type Car,
+  type CarAbilities,
+  type CarAction,
+  type CarOptions,
+} from "./api";
+import {
+  actionDraftOf,
+  actionFieldsOf,
+  actionProblems,
+  emptyActionDraft,
+  NOBODY,
+  type ActionDraft,
+  type Problems,
+} from "./car-draft";
 import { useAddAction, useCompleteAction, useUpdateAction } from "./use-car";
 
 const STATUS_TONES = { open: "info", in_progress: "info", complete: "success", on_hold: "warning" } as const;
@@ -31,7 +48,17 @@ type Editing = { kind: "add" } | { kind: "edit"; action: CarAction } | { kind: "
  * own; the CAR cannot be closed while any is outstanding, and its status never
  * stands in for theirs.
  */
-export function ActionsPanel({ car, canEdit, options }: { car: Car | null; canEdit: boolean; options: CarOptions }) {
+export function ActionsPanel({
+  car,
+  options,
+  abilities,
+  currentUserId,
+}: {
+  car: Car | null;
+  options: CarOptions;
+  abilities: CarAbilities;
+  currentUserId: string | null;
+}) {
   const [editing, setEditing] = useState<Editing | null>(null);
   if (car === null) {
     return (
@@ -41,7 +68,10 @@ export function ActionsPanel({ car, canEdit, options }: { car: Car | null; canEd
     );
   }
   const closed = car.status === "closed";
-  const writable = canEdit && !closed;
+  const writable = abilities.manageActions && !closed;
+  const canEdit = abilities.manageActions;
+  const canComplete = (action: CarAction) =>
+    !closed && action.status !== "complete" && canCompleteCarAction(action, { abilities, currentUserId });
   const { total, complete, outstanding, overdue } = car.actions;
   return (
     <div className="space-y-3">
@@ -82,7 +112,11 @@ export function ActionsPanel({ car, canEdit, options }: { car: Car | null; canEd
                 <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                   <ActionStatusBadge action={action} />
                   {action.overdue && <StatusBadge tone="danger">Overdue</StatusBadge>}
-                  <span>Owner: {action.owner ?? <NotEntered label="not recorded" />}</span>
+                  <span>
+                    Owner: {action.owner ?? <NotEntered label="not recorded" />}
+                    {action.owner && !action.ownerUserId && " (recorded before user accounts)"}
+                    {action.ownerUserId !== null && action.ownerUserId === currentUserId && " (you)"}
+                  </span>
                   <span>Target: {action.targetDate ? formatDate(action.targetDate) : <NotEntered label="not recorded" />}</span>
                   {action.status === "complete" && (
                     <span>
@@ -113,13 +147,15 @@ export function ActionsPanel({ car, canEdit, options }: { car: Car | null; canEd
                   </dl>
                 )}
               </div>
-              {writable && (
+              {(writable || canComplete(action)) && (
                 <div className="flex shrink-0 gap-2">
-                  <Button variant="ghost" size="sm" onClick={() => setEditing({ kind: "edit", action })}>
-                    <Pencil />
-                    Edit
-                  </Button>
-                  {action.status !== "complete" && (
+                  {writable && (
+                    <Button variant="ghost" size="sm" onClick={() => setEditing({ kind: "edit", action })}>
+                      <Pencil />
+                      Edit
+                    </Button>
+                  )}
+                  {canComplete(action) && (
                     <Button variant="outline" size="sm" onClick={() => setEditing({ kind: "complete", action })}>
                       <CheckCircle2 />
                       Complete
@@ -235,20 +271,20 @@ function ActionForm({
         />
       </Field>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field id={fieldId("owner")} label="Responsible">
-          <input
+        <Field
+          id={fieldId("owner")}
+          label="Responsible"
+          error={problems.owner ?? problems.ownerUserId}
+          hint="Only the responsible user (or a CAR administrator) can mark the action complete."
+        >
+          <PersonSelect
             id={fieldId("owner")}
-            maxLength={200}
-            list={`${fieldId("owner")}-list`}
             value={draft.owner}
-            onChange={(event) => set({ owner: event.target.value })}
+            recorded={action ? { userId: action.ownerUserId, name: action.owner } : NOBODY}
+            onChange={(owner) => set({ owner })}
+            aria-invalid={problems.owner || problems.ownerUserId ? true : undefined}
             className={inputClasses}
           />
-          <datalist id={`${fieldId("owner")}-list`}>
-            {options.people.map((name) => (
-              <option key={name} value={name} />
-            ))}
-          </datalist>
         </Field>
         <Field id={fieldId("targetDate")} label="Target date">
           <input

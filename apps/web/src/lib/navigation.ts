@@ -1,5 +1,7 @@
 import type { ComponentType } from "react";
 
+import { meets, type Permission, type Requirement } from "./permissions";
+
 export type ModuleStatus = "available" | "in-development" | "not-configured";
 
 export type NavItem = {
@@ -14,6 +16,11 @@ export type NavItem = {
   status?: ModuleStatus;
   /** The page shows development fixture data, labelled as such where it is listed. */
   fixture?: boolean;
+  /**
+   * Permissions needed to see the item and open its page. Hiding is a
+   * convenience only: the API refuses the page's requests on its own.
+   */
+  requires?: Requirement;
   children?: NavItem[];
 };
 
@@ -54,6 +61,37 @@ export function findNavTrail(sections: NavSection[], pathname: string): NavItem[
     if (trail.length > 0) return trail;
   }
   return [];
+}
+
+/**
+ * The navigation a user may use: items whose requirements they meet, and
+ * groups with at least one such item left. Sections left empty are dropped.
+ */
+export function filterNavigation(sections: NavSection[], granted: ReadonlySet<Permission>): NavSection[] {
+  const keep = (items: NavItem[]): NavItem[] =>
+    items.flatMap((item) => {
+      if (!meets(granted, item.requires)) return [];
+      if (!item.children) return [item];
+      const children = keep(item.children);
+      return children.length > 0 ? [{ ...item, children }] : [];
+    });
+  return sections
+    .map((section) => ({ ...section, items: keep(section.items) }))
+    .filter((section) => section.items.length > 0);
+}
+
+/** The requirements of each page under an item; the item is usable if any one is met. */
+export function pageRequirements(item: NavItem): Requirement[] {
+  if (!item.children) return [item.requires ?? {}];
+  return item.children.flatMap(pageRequirements).map((requirement) => ({
+    all: [...(item.requires?.all ?? []), ...(requirement.all ?? [])],
+    any: requirement.any,
+  }));
+}
+
+/** Whether the page at `pathname` is one the user may open, judged by its navigation trail. */
+export function canOpen(sections: NavSection[], pathname: string, granted: ReadonlySet<Permission>): boolean {
+  return findNavTrail(sections, pathname).every((item) => meets(granted, item.requires));
 }
 
 export function findNavItemByHref(sections: NavSection[], href: string): NavItem | undefined {

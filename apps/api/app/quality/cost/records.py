@@ -16,9 +16,12 @@ from decimal import Decimal
 from typing import Any
 
 from app.audit.recorder import AuditAction, AuditChange
+from app.auth import people
+from app.core.permissions import Permission
 from app.quality.cost import calculations
 from app.quality.cost.classification import (
     CATEGORY_BY_CODE,
+    CONFIRMED_FINANCIAL,
     COQ_CLASSES,
     FINANCIAL_STATUSES,
     OPERATIONAL_STATUSES,
@@ -57,6 +60,7 @@ EDITABLE_FIELDS = (
     "description",
     *IDENTIFICATION_FIELDS,
     "owner",
+    "owner_user_id",
     "notes",
     *MONEY_FIELDS,
     "financial_status",
@@ -106,17 +110,39 @@ class RecordConflictError(RuntimeError):
         self.current = current
 
 
+class RecordForbiddenError(PermissionError):
+    """The user may edit the record but not make this change. Nothing was written."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
 @dataclass(frozen=True)
 class Actor:
+    """Who makes a change. ``permissions`` is None for system actors (imports),
+    which are not subject to user permission rules."""
+
     actor_id: str
     now: dt.datetime
+    permissions: frozenset[Permission] | None = None
+    user_id: uuid.UUID | None = None
+    name: str | None = None
+
+    def require(self, permission: Permission, message: str) -> None:
+        if self.permissions is not None and permission not in self.permissions:
+            raise RecordForbiddenError(message)
 
 
 # Reading ---------------------------------------------------------------------------
 
 
-def record_out(row: RecordRow, today: dt.date) -> CostRecordOut:
+def record_out(
+    row: RecordRow, today: dt.date, names: dict[str, str] | None = None
+) -> CostRecordOut:
+    """``names``: display names of users (``people.display_names``) for created/updated by."""
     r = row.record
+    names = names or {}
     return CostRecordOut(
         id=r.id,
         record_number=record_number(r.id),
@@ -138,6 +164,7 @@ def record_out(row: RecordRow, today: dt.date) -> CostRecordOut:
         equipment=r.equipment,
         counterparty=r.counterparty,
         owner=r.owner,
+        owner_user_id=r.owner_user_id,
         notes=r.notes,
         material_cost=r.material_cost,
         labor_cost=r.labor_cost,
@@ -175,9 +202,15 @@ def record_out(row: RecordRow, today: dt.date) -> CostRecordOut:
         version=r.version,
         created_at=r.created_at,
         created_by=r.created_by,
+        created_by_name=people.actor_label(r.created_by, names),
         updated_at=r.updated_at,
         updated_by=r.updated_by,
+        updated_by_name=people.actor_label(r.updated_by, names),
     )
+
+
+def actor_ids(rows: Any) -> list[str]:
+    return [a for row in rows for a in (row.record.created_by, row.record.updated_by)]
 
 
 def _audit_scalar(value: Any) -> Any:
@@ -185,6 +218,8 @@ def _audit_scalar(value: Any) -> Any:
         return format(value.normalize(), "f")
     if isinstance(value, dt.date):
         return value.isoformat()
+    if isinstance(value, uuid.UUID):
+        return str(value)
     return value
 
 
@@ -290,6 +325,20 @@ def _validated(
             continue
         references.append(Reference(reference.type, key, _text(reference.label)))
 
+    try:
+        owner = people.resolve(
+            lambda: repository.session,
+            user_id=fields.owner_user_id,
+            name=fields.owner,
+            current=people.Person(current.owner, current.owner_user_id)
+            if current
+            else people.NOBODY,
+        )
+    except people.PersonChoiceError:
+        raise RecordRuleError(
+            "invalid_owner", "Choose the owner from the list of active users.", field="owner"
+        ) from None
+
     values: dict[str, Any] = {
         "record_date": day,
         "title": title,
@@ -297,7 +346,9 @@ def _validated(
         "coq_class": fields.coq_class,
         "category_code": fields.category_code,
         "description": description,
-        **{f: _text(getattr(fields, f)) for f in (*IDENTIFICATION_FIELDS, "owner")},
+        **{f: _text(getattr(fields, f)) for f in IDENTIFICATION_FIELDS},
+        "owner": owner.name,
+        "owner_user_id": owner.user_id,
         "notes": _text(fields.notes),
         **{f: getattr(fields, f) for f in MONEY_FIELDS},
         "financial_status": fields.financial_status,
@@ -311,6 +362,31 @@ def _validated(
 
 def _comparable(value: Any) -> Any:
     return value.normalize() if isinstance(value, Decimal) else value
+
+
+def check_permissions(values: dict[str, Any], current: CostRecord | None, actor: Actor) -> None:
+    """Changes that need more than ``qualityCost.edit``: the owner, confirming
+    (or un-confirming) the financial status, and closing or reopening."""
+    owner = (values["owner"], values["owner_user_id"])
+    if owner != ((current.owner, current.owner_user_id) if current else (None, None)):
+        actor.require(
+            Permission.QUALITY_COST_ASSIGN, "Changing the owner needs qualityCost.assign."
+        )
+    before_financial = current.financial_status if current else None
+    if values["financial_status"] != before_financial and (
+        values["financial_status"] in CONFIRMED_FINANCIAL or before_financial in CONFIRMED_FINANCIAL
+    ):
+        actor.require(
+            Permission.QUALITY_COST_CONFIRM_FINANCIAL,
+            "Confirming a cost (or undoing it) needs qualityCost.confirmFinancial.",
+        )
+    before_status = current.status if current else None
+    if (values["status"] == "closed") != (before_status == "closed") and (
+        current is not None or values["status"] == "closed"
+    ):
+        actor.require(
+            Permission.QUALITY_COST_CLOSE, "Closing or reopening a record needs qualityCost.close."
+        )
 
 
 def _change(action: AuditAction, record_id: int, old: dict | None, new: dict | None) -> AuditChange:
@@ -361,6 +437,7 @@ def create(repository: CostRepository, request: CostRecordCreate, actor: Actor) 
     change_set = uuid.uuid4()
     try:
         values, references = _validated(repository, request, today=_today(actor))
+        check_permissions(values, None, actor)
         record_id = insert_audited(
             repository, {**values, "source": "manual"}, references, actor, change_set
         )
@@ -388,6 +465,7 @@ def update(
             assert current is not None  # noqa: S101 - locked above
             raise RecordConflictError(current)
         values, references = _validated(repository, request, today=_today(actor), current=record)
+        check_permissions(values, record, actor)
         before_references = repository.references_of(record_id)
         changed = {
             k: v for k, v in values.items() if _comparable(getattr(record, k)) != _comparable(v)

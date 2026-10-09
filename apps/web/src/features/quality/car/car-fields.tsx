@@ -2,15 +2,18 @@
 
 import { createContext, useContext } from "react";
 
+import { PersonSelect } from "@/features/users/person-select";
 import { cn } from "@/lib/utils";
 
 import { Field, fieldClasses, inputClasses } from "../cost/record-form";
 
-import type { CarDraft, Problems, TextField, YesNo, YesNoField } from "./car-draft";
+import { PERSON_FIELDS, type CarDraft, type PersonField, type Problems, type TextField, type YesNo, type YesNoField } from "./car-draft";
 
 type DraftContextValue = {
   id: string;
   draft: CarDraft;
+  /** The draft of the saved CAR (or an empty one), e.g. to keep recorded names selectable. */
+  baseline: CarDraft;
   update: (patch: Partial<CarDraft>) => void;
   problems: Problems;
   readOnly: boolean;
@@ -63,6 +66,26 @@ export function TextInput({ name, label, required, hint, type = "text", suggesti
           ))}
         </datalist>
       )}
+    </Field>
+  );
+}
+
+/** A person on the CAR, chosen from platform users. */
+export function PersonInput({ name, label, hint }: { name: PersonField; label: string; hint?: string }) {
+  const { id, draft, baseline, update, problems } = useDraft();
+  const fieldId = `${id}-${name}`;
+  const error = problems[name] ?? problems[PERSON_FIELDS[name]];
+  return (
+    <Field id={fieldId} label={label} hint={hint} error={error}>
+      <PersonSelect
+        id={fieldId}
+        value={draft.people[name]}
+        recorded={baseline.people[name]}
+        onChange={(person) => update({ people: { ...draft.people, [name]: person } })}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? `${fieldId}-error` : hint ? `${fieldId}-hint` : undefined}
+        className={inputClasses}
+      />
     </Field>
   );
 }

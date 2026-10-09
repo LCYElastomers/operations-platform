@@ -51,7 +51,7 @@ from app.quality.car.reference import (
     SOURCES,
 )
 from app.quality.car.repository import Approval, CarRepository, WhyStep
-from app.quality.car.schemas import CarFields, LongText, ShortText
+from app.quality.car.schemas import ApprovalFunction, CarFields, LongText, ShortText
 from app.quality.cost.records import Actor
 from app.safety.legacy_import import LEGACY_IMPORT_ACTOR
 
@@ -65,10 +65,20 @@ class _Input(CamelModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+class ImportedApproval(_Input):
+    function_code: ApprovalFunction
+    name: Annotated[str, Field(min_length=1, max_length=200)]
+    approved_on: dt.date | None = None
+
+
 class ImportedCar(CarFields):
     car_number: Annotated[str, Field(pattern=r"^[A-Z]{1,5}-[0-9]{4}-[0-9]{3,6}$")]
     # Older-form reports record no status.
     status: Literal["open", "closed"] | None = None
+    # Names as written on the workbook; kept verbatim and not linked to users.
+    reviewer: ShortText | None = None
+    closure_approved_by: ShortText | None = None
+    approvals: Annotated[list[ImportedApproval], Field(max_length=10)] = []
 
 
 class ImportedAction(_Input):

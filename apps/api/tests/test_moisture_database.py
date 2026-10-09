@@ -26,11 +26,14 @@ from postgres_support import (
     current_revision,
     requires_postgres,
 )
+from principals import as_user
 from sqlalchemy import Engine, func, insert, inspect, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.core.authorization import get_user_principal
 from app.core.config import Settings
+from app.core.permissions import Permission
 from app.db.base import ALEMBIC_VERSION_SCHEMA, ALEMBIC_VERSION_TABLE, MANAGED_SCHEMAS
 from app.main import create_app
 from app.models import Base, IngestionBatch
@@ -50,7 +53,7 @@ pytestmark = requires_postgres
 SYNCED_AT = dt.datetime(2026, 10, 2, 12, 0, tzinfo=dt.UTC)
 SOURCE = "access-test"
 BASE = "/api/v1/quality/moisture"
-HEAD = "0012"
+HEAD = "0013"
 
 
 @pytest.fixture
@@ -475,6 +478,7 @@ def test_filter_options_on_empty_table(session: Session) -> None:
 def _client(repo: Any) -> TestClient:
     app = create_app()
     app.dependency_overrides[get_moisture_repository] = lambda: repo
+    app.dependency_overrides[get_user_principal] = lambda: as_user(Permission.QUALITY_VIEW)
     return TestClient(app)
 
 

@@ -149,7 +149,7 @@ export function describePerformanceError(error: unknown): string {
   if (!(error instanceof ApiError)) return "The API could not be reached.";
   switch (error.status) {
     case 401:
-      return "Sign-in is required to view Safety data. User authentication is not enabled on this server yet.";
+      return "Your session has ended. Sign in again to continue.";
     case 403:
       return "You do not have permission for Safety Performance.";
     case 503:

@@ -16,8 +16,9 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from principals import TESTER, as_user
 
-from app.core.authorization import UserPrincipal, get_user_principal
+from app.core.authorization import get_user_principal
 from app.core.permissions import Permission
 from app.main import create_app
 from app.quality.cost import calculations, estimator, legacy_import, records, service
@@ -392,10 +393,10 @@ def test_a_potential_record_needs_no_cost() -> None:
 
 
 def test_text_is_trimmed_and_blank_optional_text_is_not_entered() -> None:
-    values, _ = _validated(_fields(title="  Lot 12  ", product="  ", owner=" A. Smith "))
+    values, _ = _validated(_fields(title="  Lot 12  ", product="  "))
 
     assert values["title"] == "Lot 12"
-    assert values["product"] is None and values["owner"] == "A. Smith"
+    assert values["product"] is None and values["owner"] is None
 
 
 @pytest.mark.parametrize(
@@ -804,13 +805,19 @@ def test_edits_outside_the_imported_fields_do_not_block_a_rerun() -> None:
 
 
 class _Memory:
-    """In-memory stand-in for CostRepository (fixture records only)."""
+    """In-memory stand-in for CostRepository (fixture records only). It knows no
+    platform users, so only blank person fields can be saved through it."""
+
+    session = None
 
     def __init__(self) -> None:
         self.records: dict[int, CostRecord] = {}
         self.refs: dict[int, tuple[Any, ...]] = {}
         self.audits: list[Any] = []
         self.next_id = 1
+
+    def actor_names(self, actor_ids: Any) -> dict[str, str]:
+        return {}
 
     def areas(self) -> list[Option]:
         return [Option(1, "100", "100", True)]
@@ -906,9 +913,7 @@ def api(memory: _Memory) -> Iterator[Any]:
     def make(*permissions: Permission) -> TestClient:
         app = create_app()
         app.dependency_overrides[cost_router.cost_repository] = lambda: memory
-        app.dependency_overrides[get_user_principal] = lambda: UserPrincipal(
-            "tester", authenticated=True, granted=frozenset(permissions)
-        )
+        app.dependency_overrides[get_user_principal] = lambda: as_user(*permissions)
         return TestClient(app)
 
     yield make
@@ -925,27 +930,60 @@ NEW_RECORD: dict[str, Any] = {
     "materialCost": "0",
     "financialStatus": "confirmed",
     "status": "open",
-    "owner": "Fixture owner",
     "references": [{"type": "reference", "key": "QN-0001"}],
 }
+# Everything a Quality Cost editor may do.
+EDITOR = (
+    P.QUALITY_COST_VIEW,
+    P.QUALITY_COST_CREATE,
+    P.QUALITY_COST_EDIT,
+    P.QUALITY_COST_ASSIGN,
+    P.QUALITY_COST_CONFIRM_FINANCIAL,
+    P.QUALITY_COST_CLOSE,
+    P.QUALITY_DASHBOARD_VIEW,
+)
 
 
-@pytest.mark.parametrize("path", ["summary", "estimator", "records", "records/options"])
+@pytest.mark.parametrize("path", ["estimator", "records", "records/options"])
 def test_reading_requires_quality_cost_view(api: Any, path: str) -> None:
     url = f"/api/v1/quality/cost/{path}"
     assert api(P.QUALITY_COST_VIEW).get(url).status_code == 200
-    assert api(P.QUALITY_VIEW).get(url).status_code == 200
-    assert api(P.SAFETY_MANAGE).get(url).status_code == 403
+    assert api(P.QUALITY_VIEW, P.CAR_VIEW).get(url).status_code == 403
+    assert api(*[p for p in P if p.startswith("safety")]).get(url).status_code == 403
     assert api().get(url).status_code == 403
 
 
-def test_adding_requires_quality_cost_edit(api: Any) -> None:
+def test_summary_also_needs_the_dashboard_permission(api: Any) -> None:
+    url = "/api/v1/quality/cost/summary"
+    assert api(P.QUALITY_COST_VIEW).get(url).status_code == 403
+    assert api(P.QUALITY_COST_VIEW, P.QUALITY_DASHBOARD_VIEW).get(url).status_code == 200
+
+
+def test_adding_requires_quality_cost_create(api: Any) -> None:
     url = "/api/v1/quality/cost/records"
-    assert api(P.QUALITY_COST_VIEW).post(url, json=NEW_RECORD).status_code == 403
-    assert api(P.QUALITY_VIEW).post(url, json=NEW_RECORD).status_code == 403
-    assert api(P.QUALITY_COST_EDIT).post(url, json=NEW_RECORD).status_code == 201
-    assert api(P.QUALITY_EDIT).post(url, json=NEW_RECORD).status_code == 201
-    assert api(P.QUALITY_MANAGE).post(url, json=NEW_RECORD).status_code == 201
+    draft = {**NEW_RECORD, "financialStatus": "validating"}
+    assert api(P.QUALITY_COST_VIEW).post(url, json=draft).status_code == 403
+    assert api(P.QUALITY_COST_VIEW, P.QUALITY_COST_EDIT).post(url, json=draft).status_code == 403
+    assert api(P.QUALITY_COST_CREATE).post(url, json=draft).status_code == 201
+
+
+def test_record_rules_need_their_own_permissions(api: Any) -> None:
+    url = "/api/v1/quality/cost/records"
+    creator = api(P.QUALITY_COST_VIEW, P.QUALITY_COST_CREATE, P.QUALITY_COST_EDIT)
+    confirmed = creator.post(url, json=NEW_RECORD)
+    assert confirmed.status_code == 403
+    assert confirmed.json()["detail"]["error"] == "permission_denied"
+    closed = {**NEW_RECORD, "financialStatus": "validating", "status": "closed",
+              "dateClosed": "2026-03-05"}  # fmt: skip
+    assert creator.post(url, json=closed).status_code == 403
+
+
+def test_free_text_owners_are_refused(api: Any) -> None:
+    response = api(*EDITOR).post(
+        "/api/v1/quality/cost/records", json={**NEW_RECORD, "owner": "Somebody"}
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"]["error"] == "invalid_owner"
 
 
 def test_options_carry_the_central_classification(api: Any) -> None:
@@ -964,7 +1002,7 @@ def test_options_carry_the_central_classification(api: Any) -> None:
 
 
 def test_create_returns_derived_figures_and_audits(api: Any, memory: _Memory) -> None:
-    response = api(P.QUALITY_COST_EDIT).post("/api/v1/quality/cost/records", json=NEW_RECORD)
+    response = api(*EDITOR).post("/api/v1/quality/cost/records", json=NEW_RECORD)
 
     assert response.status_code == 201, response.text
     body = response.json()["record"]
@@ -973,7 +1011,7 @@ def test_create_returns_derived_figures_and_audits(api: Any, memory: _Memory) ->
     assert body["materialCost"] == "0" and body["freightCost"] is None
     assert body["qualityGroup"] == "poor" and body["costConfirmed"] is True
     assert body["categoryLabel"] == "Rework" and body["areaName"] == "100"
-    assert body["createdBy"] == "tester" and body["version"] == 1
+    assert body["createdBy"] == TESTER and body["version"] == 1
     assert body["references"] == [
         {"type": "reference", "typeLabel": "Reference / document number", "key": "QN-0001",
          "label": None}
@@ -989,7 +1027,7 @@ def test_create_returns_derived_figures_and_audits(api: Any, memory: _Memory) ->
 
 
 def test_rule_errors_name_the_field(api: Any) -> None:
-    response = api(P.QUALITY_COST_EDIT).post(
+    response = api(*EDITOR).post(
         "/api/v1/quality/cost/records", json={**NEW_RECORD, "status": "closed"}
     )
 
@@ -998,7 +1036,7 @@ def test_rule_errors_name_the_field(api: Any) -> None:
 
 
 def test_update_checks_the_version_and_audits_the_change(api: Any, memory: _Memory) -> None:
-    client = api(P.QUALITY_COST_EDIT)
+    client = api(*EDITOR)
     client.post("/api/v1/quality/cost/records", json=NEW_RECORD)
     changed = {
         **NEW_RECORD,
@@ -1025,7 +1063,7 @@ def test_update_checks_the_version_and_audits_the_change(api: Any, memory: _Memo
 
 
 def test_an_unchanged_update_writes_nothing(api: Any, memory: _Memory) -> None:
-    client = api(P.QUALITY_COST_EDIT)
+    client = api(*EDITOR)
     client.post("/api/v1/quality/cost/records", json=NEW_RECORD)
 
     response = client.put("/api/v1/quality/cost/records/1", json={**NEW_RECORD, "version": 1})
@@ -1035,7 +1073,7 @@ def test_an_unchanged_update_writes_nothing(api: Any, memory: _Memory) -> None:
 
 
 def test_records_search_by_number_and_open_filter(api: Any) -> None:
-    client = api(P.QUALITY_COST_EDIT)
+    client = api(*EDITOR)
     client.post("/api/v1/quality/cost/records", json=NEW_RECORD)
     client.post(
         "/api/v1/quality/cost/records",
@@ -1051,7 +1089,7 @@ def test_records_search_by_number_and_open_filter(api: Any) -> None:
 
 
 def test_summary_from_entered_records(api: Any) -> None:
-    client = api(P.QUALITY_COST_EDIT)
+    client = api(*EDITOR)
     client.post("/api/v1/quality/cost/records", json=NEW_RECORD)
     client.post(
         "/api/v1/quality/cost/records",
@@ -1078,7 +1116,7 @@ def test_summary_from_entered_records(api: Any) -> None:
 
 
 def test_summary_with_no_records(api: Any) -> None:
-    body = api(P.QUALITY_COST_VIEW).get("/api/v1/quality/cost/summary").json()
+    body = api(*EDITOR).get("/api/v1/quality/cost/summary").json()
 
     assert body["year"] is None and body["availableYears"] == []
     assert body["copq"]["figures"]["count"] == 0
@@ -1088,12 +1126,12 @@ def test_summary_with_no_records(api: Any) -> None:
     "query", ["year=1999", "from=0", "through=13", "year=abc", "coqClass=good", "areaId=0"]
 )
 def test_summary_validates_its_filters(api: Any, query: str) -> None:
-    assert api(P.QUALITY_COST_VIEW).get(f"/api/v1/quality/cost/summary?{query}").status_code == 422
+    assert api(*EDITOR).get(f"/api/v1/quality/cost/summary?{query}").status_code == 422
 
 
 @pytest.mark.parametrize("path", ["summary", "estimator", "records", "records/options"])
 def test_responses_carry_no_workbook_cell_coordinates(api: Any, path: str) -> None:
-    body = api(P.QUALITY_COST_VIEW).get(f"/api/v1/quality/cost/{path}").text
+    body = api(*EDITOR).get(f"/api/v1/quality/cost/{path}").text
 
     assert "sourceCell" not in body and "sourceReference" not in body and "!" not in body
     # R0 is the COPQ workbook's revision, not a cell.

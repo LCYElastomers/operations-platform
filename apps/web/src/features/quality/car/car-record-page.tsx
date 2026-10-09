@@ -44,6 +44,13 @@ const STEP_VIEWS: Record<string, (props: StepProps) => React.ReactNode> = {
   related: RelatedStep,
 };
 
+/**
+ * Steps with controls governed by their own permissions (completing your own
+ * action, recording your approval), which users without car.edit may have.
+ * Their report fields are disabled inside the step instead.
+ */
+const OWN_PERMISSION_STEPS = new Set(["correct", "close"]);
+
 /** A new CAR (id null) or an existing one, opened at its overview. */
 export function CarRecordPage({ id }: { id: number | null }) {
   const options = useCarOptions();
@@ -84,7 +91,8 @@ function CarWorkspace({ response, options }: { response: CarResponse | null; opt
   const id = useId();
   const router = useRouter();
   const car = response?.car ?? null;
-  const canEdit = response ? response.canEdit : options.canEdit;
+  const abilities = response?.abilities ?? options.abilities;
+  const canEdit = response ? response.canEdit : abilities.create;
   const canEditCost = response ? response.canEditCost : options.canEditCost;
   const [today] = useState(siteToday);
   // The saved CAR the draft was started from: its version is the one saved against.
@@ -175,10 +183,18 @@ function CarWorkspace({ response, options }: { response: CarResponse | null; opt
   const stepCodes = options.steps.map((s) => s.code);
   const position = stepCodes.indexOf(step);
   const StepView = STEP_VIEWS[step];
-  const stepProps: StepProps = { car, options, canEdit, canEditCost, dirty };
+  const stepProps: StepProps = {
+    car,
+    options,
+    canEdit,
+    canEditCost,
+    dirty,
+    abilities,
+    currentUserId: response?.currentUserId ?? null,
+  };
 
   return (
-    <DraftContext.Provider value={{ id, draft, update: updateDraft, problems, readOnly: !canEdit }}>
+    <DraftContext.Provider value={{ id, draft, baseline, update: updateDraft, problems, readOnly: !canEdit }}>
       <div className="space-y-5">
         <BackToRegister />
         <PageHeader
@@ -197,7 +213,9 @@ function CarWorkspace({ response, options }: { response: CarResponse | null; opt
         />
         {!canEdit && (
           <p className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-            You can view this CAR. Editing needs the quality.cars.edit permission.
+            {car
+              ? "You can view this CAR. Editing it needs the car.edit permission."
+              : "Recording a new CAR needs the car.create permission."}
           </p>
         )}
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-[13rem_1fr]">
@@ -244,7 +262,7 @@ function CarWorkspace({ response, options }: { response: CarResponse | null; opt
               <HistorySection car={car} />
             ) : (
               StepView && (
-                <fieldset disabled={!canEdit} className="min-w-0 space-y-4">
+                <fieldset disabled={!canEdit && !OWN_PERMISSION_STEPS.has(step)} className="min-w-0 space-y-4">
                   {stepState.get(step) && (
                     <div className="flex justify-end">
                       <StepStateBadge state={stepState.get(step)!} />

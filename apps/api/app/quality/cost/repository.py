@@ -2,7 +2,7 @@
 
 import datetime as dt
 import uuid
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.audit.models import AuditEvent
 from app.audit.recorder import AuditChange, record_changes
+from app.auth import people
 from app.quality.cost.models import CostMonthlyFact, CostRecord, CostRecordReference
 from app.safety.models import Area
 
@@ -64,6 +65,9 @@ def _escape_like(value: str) -> str:
 class CostRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
+
+    def actor_names(self, actor_ids: Iterable[str | None]) -> dict[str, str]:
+        return people.display_names(self.session, actor_ids)
 
     # Monthly inputs ------------------------------------------------------------
 

@@ -12,9 +12,19 @@ import { Field, fieldClasses, inputClasses } from "../cost/record-form";
 import { historyChanges } from "../cost/record-dialog";
 
 import { ActionsPanel } from "./actions-panel";
-import type { Car, CarOptions } from "./api";
+import { canWithdrawApproval, carSaveError, describeCarError, type Car, type CarAbilities, type CarOptions } from "./api";
 import { COST_LINES, costTotal, EMPTY_WHY, type WhyDraft } from "./car-draft";
-import { FieldGrid, SelectInput, StepSection, SubHeading, TextArea, TextInput, useDraft, YesNoInput } from "./car-fields";
+import {
+  FieldGrid,
+  PersonInput,
+  SelectInput,
+  StepSection,
+  SubHeading,
+  TextArea,
+  TextInput,
+  useDraft,
+  YesNoInput,
+} from "./car-fields";
 import {
   ActionProgressLabel,
   CarStatusBadge,
@@ -23,7 +33,7 @@ import {
   EffectivenessBadge,
 } from "./car-shared";
 import { QualityCostPanel } from "./quality-cost-panel";
-import { useCarHistory } from "./use-car";
+import { useCarHistory, useRecordApproval, useWithdrawApproval } from "./use-car";
 
 export type StepProps = {
   car: Car | null;
@@ -31,17 +41,24 @@ export type StepProps = {
   canEdit: boolean;
   canEditCost: boolean;
   dirty: boolean;
+  abilities: CarAbilities;
+  /** The signed-in user; null before the CAR is saved. */
+  currentUserId: string | null;
 };
 
-export function IdentifyStep({ options }: StepProps) {
+export function IdentifyStep({ options, abilities }: StepProps) {
   const { draft } = useDraft();
   return (
     <StepSection title="1 · Identify the nonconformity" description="What happened, where it came from and who owns the CAR.">
       <FieldGrid>
         <TextInput name="subject" label="Subject / issue" required className="sm:col-span-2" />
         <TextInput name="requestDate" label="Request date" type="date" required />
-        <TextInput name="requestedBy" label="Requested by" suggestions={options.people} />
-        <TextInput name="assignedTo" label="Assigned to" suggestions={options.people} />
+        <PersonInput name="requestedBy" label="Requested by" />
+        <PersonInput
+          name="assignedTo"
+          label="Assigned to"
+          hint={abilities.assign ? undefined : "Assigning a CAR needs the car.assign permission."}
+        />
         <TextInput name="dueDate" label="Due date" type="date" />
         <SelectInput name="sourceCode" label="Source" options={choiceOptions(options.sources, draft.sourceCode)} />
         <SelectInput
@@ -81,7 +98,7 @@ export function ContainStep({ options }: StepProps) {
     <StepSection title="2 · Immediate correction and containment" description="What was done straight away to contain the problem.">
       <FieldGrid>
         <TextArea name="immediateActions" label="Immediate actions taken" rows={4} className="xl:col-span-3" />
-        <TextInput name="containmentOwner" label="Containment owner" suggestions={options.people} />
+        <PersonInput name="containmentOwner" label="Containment owner" />
         <TextInput name="containmentCompletedOn" label="Containment completed on" type="date" />
       </FieldGrid>
       <fieldset className="space-y-2">
@@ -241,35 +258,57 @@ export function EvaluateStep() {
   );
 }
 
-export function CorrectStep({ car, options, canEdit }: StepProps) {
+export function CorrectStep({ car, options, abilities, currentUserId }: StepProps) {
   return (
     <StepSection
       title="5 · Corrective actions"
       description="Each action is tracked on its own. The CAR cannot be closed until every action is complete."
     >
-      <ActionsPanel car={car} canEdit={canEdit} options={options} />
-      <SubHeading>Corrective action plan</SubHeading>
-      <FieldGrid>
-        <TextArea name="proceduresRevised" label="Procedures revised" className="xl:col-span-3" />
-        <YesNoInput name="trainingCompleted" label="Training completed?" />
-        <TextInput name="planCompletedOn" label="Actual completion date" type="date" />
-        <TextArea name="supportingDocuments" label="Supporting documents" className="xl:col-span-3" />
-      </FieldGrid>
+      <ActionsPanel car={car} options={options} abilities={abilities} currentUserId={currentUserId} />
+      <ReportFields>
+        <SubHeading>Corrective action plan</SubHeading>
+        <FieldGrid>
+          <TextArea name="proceduresRevised" label="Procedures revised" className="xl:col-span-3" />
+          <YesNoInput name="trainingCompleted" label="Training completed?" />
+          <TextInput name="planCompletedOn" label="Actual completion date" type="date" />
+          <TextArea name="supportingDocuments" label="Supporting documents" className="xl:col-span-3" />
+        </FieldGrid>
+      </ReportFields>
     </StepSection>
   );
 }
 
-export function VerifyStep({ car, options }: StepProps) {
+/** Report fields inside a step whose other controls follow their own permissions. */
+function ReportFields({ children }: { children: React.ReactNode }) {
+  const { readOnly } = useDraft();
+  return (
+    <fieldset disabled={readOnly} className="min-w-0 space-y-4">
+      {children}
+    </fieldset>
+  );
+}
+
+export function VerifyStep({ car, options, abilities }: StepProps) {
   return (
     <StepSection
       title="6 · Verify effectiveness"
       description="Did the actions work? Recorded separately from completing the actions."
       actions={car ? <EffectivenessBadge car={car} /> : undefined}
     >
+      {!abilities.reviewEffectiveness && (
+        <p className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+          Recording the effectiveness review needs the car.reviewEffectiveness permission.
+        </p>
+      )}
       <FieldGrid>
         <TextArea name="successCriteria" label="Success criteria" className="xl:col-span-3" />
         <TextArea name="effectivenessEvidence" label="Evidence of effectiveness" rows={4} className="xl:col-span-3" />
-        <TextInput name="reviewer" label="Reviewer" suggestions={options.people} />
+        <RecordedBy
+          label="Reviewer"
+          name={car?.reviewer ?? null}
+          linked={car?.reviewerUserId != null}
+          empty="Recorded as you when you save the review"
+        />
         <TextInput name="reviewDate" label="Review date" type="date" />
         <SelectInput
           name="effectivenessResult"
@@ -287,7 +326,7 @@ export function VerifyStep({ car, options }: StepProps) {
   );
 }
 
-export function CostStep({ car, canEdit, canEditCost, dirty }: StepProps) {
+export function CostStep({ car, abilities, dirty }: StepProps) {
   const { draft } = useDraft();
   const total = costTotal(draft);
   const entered = COST_LINES.some(({ field }) => draft[field].trim());
@@ -304,103 +343,186 @@ export function CostStep({ car, canEdit, canEditCost, dirty }: StepProps) {
           {total !== null ? usd(String(total), 2) : entered ? "Check the amounts entered" : "Not entered"}
         </span>
       </p>
-      <QualityCostPanel car={car} canEdit={canEdit} canEditCost={canEditCost} dirty={dirty} />
+      <QualityCostPanel
+        car={car}
+        canEdit={abilities.linkQualityCost}
+        canEditCost={abilities.createQualityCost}
+        dirty={dirty}
+      />
     </StepSection>
   );
 }
 
-export function CloseStep({ car, options }: StepProps) {
-  const { id, draft, update, problems } = useDraft();
-  const saved = new Map(car?.approvals.map((a) => [a.functionCode, a]) ?? []);
+export function CloseStep({ car, options, abilities, currentUserId, dirty }: StepProps) {
+  const { draft } = useDraft();
   const statusOptions = options.carStatuses.map((s) => ({ value: s.code, label: s.label }));
+  const closing = draft.status === "closed" && car?.status !== "closed";
+  const reopening = car?.status === "closed" && draft.status !== "closed";
   const checks = car
     ? [
         { ok: car.actions.total > 0 && car.actions.outstanding === 0, label: car.actions.total === 0 ? "No corrective actions recorded" : `${car.actions.complete} of ${car.actions.total} actions complete` },
         { ok: draft.effectivenessResult !== "", label: "Effectiveness review result recorded" },
-        { ok: draft.closureApprovedBy.trim() !== "", label: "Closure approver entered" },
       ]
     : [];
   return (
-    <StepSection title="8 · Approval and closure" description="Approvals are names and dates recorded by the signed-in user, not digital signatures.">
+    <StepSection
+      title="8 · Approval and closure"
+      description="Approvals are recorded under the name of the signed-in user who records them, dated that day. They are not digital signatures."
+    >
+      {car ? (
+        <ApprovalsPanel car={car} options={options} abilities={abilities} currentUserId={currentUserId} dirty={dirty} />
+      ) : (
+        <p className="text-sm text-muted-foreground">Approvals can be recorded once the CAR is saved.</p>
+      )}
+      <ReportFields>
+        <SubHeading>Closure</SubHeading>
+        {checks.length > 0 && (
+          <ul className="space-y-1 text-sm" aria-label="Ready to close">
+            {checks.map((check) => (
+              <li key={check.label} className="flex items-center gap-2">
+                <StatusBadge tone={check.ok ? "success" : "warning"}>{check.ok ? "Done" : "Open"}</StatusBadge>
+                {check.label}
+              </li>
+            ))}
+          </ul>
+        )}
+        <FieldGrid>
+          <SelectInput
+            name="status"
+            label="CAR status"
+            required={car?.status !== null}
+            placeholder={draft.status === "" ? "Not recorded" : false}
+            options={statusOptions}
+          />
+          <TextInput name="dateClosed" label="Date closed" type="date" />
+          <RecordedBy
+            label="Closure approved by"
+            name={reopening ? null : (car?.closureApprovedBy ?? null)}
+            linked={car?.closureApprovedByUserId != null}
+            empty="Recorded as you when you close the CAR"
+          />
+        </FieldGrid>
+        {closing && !abilities.close && (
+          <p className="text-sm text-destructive">Closing a CAR needs the car.close permission.</p>
+        )}
+        {reopening && !abilities.reopen && (
+          <p className="text-sm text-destructive">Reopening a CAR needs the car.reopen permission.</p>
+        )}
+      </ReportFields>
+    </StepSection>
+  );
+}
+
+/** A person the API records from the signed-in user; shown, never typed. */
+function RecordedBy({ label, name, linked, empty }: { label: string; name: string | null; linked: boolean; empty: string }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1">
+      <span className="text-sm font-medium">{label}</span>
+      <p className="flex h-9 items-center rounded-md border border-dashed px-3 text-sm pointer-coarse:h-11">
+        {name ? (
+          <span className="truncate">
+            {name}
+            {!linked && <span className="text-muted-foreground"> (recorded before user accounts)</span>}
+          </span>
+        ) : (
+          <span className="truncate text-muted-foreground">{empty}</span>
+        )}
+      </p>
+    </div>
+  );
+}
+
+function ApprovalsPanel({
+  car,
+  options,
+  abilities,
+  currentUserId,
+  dirty,
+}: {
+  car: Car;
+  options: CarOptions;
+  abilities: CarAbilities;
+  currentUserId: string | null;
+  dirty: boolean;
+}) {
+  const record = useRecordApproval();
+  const withdraw = useWithdrawApproval();
+  const pending = record.isPending || withdraw.isPending;
+  const error = record.error ?? withdraw.error;
+  const saved = new Map(car.approvals.map((a) => [a.functionCode, a]));
+  const closed = car.status === "closed";
+  const response = { abilities, currentUserId };
+  const blocked = closed ? "Reopen the CAR to change approvals." : dirty ? "Save or discard your changes before recording approvals." : null;
+
+  return (
+    <div className="space-y-2">
+      {error && <p className="text-sm text-destructive">{carSaveError(error)?.message ?? describeCarError(error)}</p>}
+      {blocked && (abilities.approve || abilities.admin) && <p className="text-xs text-muted-foreground">{blocked}</p>}
       <div className="overflow-x-auto">
         <table className="w-full min-w-[640px] text-left text-sm">
           <caption className="sr-only">Approvals</caption>
           <thead className="border-b">
             <tr>
               <th scope="col" className="py-2 pr-3 text-xs font-medium text-muted-foreground">Function</th>
-              <th scope="col" className="py-2 pr-3 text-xs font-medium text-muted-foreground">Name</th>
+              <th scope="col" className="py-2 pr-3 text-xs font-medium text-muted-foreground">Approved by</th>
               <th scope="col" className="py-2 pr-3 text-xs font-medium text-muted-foreground">Date</th>
-              <th scope="col" className="py-2 text-xs font-medium text-muted-foreground">Recorded</th>
+              <th scope="col" className="py-2 text-xs font-medium text-muted-foreground">
+                <span className="sr-only">Actions</span>
+              </th>
             </tr>
           </thead>
           <tbody>
             {options.approvalFunctions.map((fn) => {
-              const value = draft.approvals[fn.code] ?? { name: "", approvedOn: "" };
-              const set = (patch: Partial<typeof value>) =>
-                update({ approvals: { ...draft.approvals, [fn.code]: { ...value, ...patch } } });
-              const error = problems[`approval.${fn.code}`];
-              const record = saved.get(fn.code);
+              const approval = saved.get(fn.code);
               return (
-                <tr key={fn.code} className="border-b border-border/60 align-top">
+                <tr key={fn.code} className="border-b border-border/60 align-middle">
                   <th scope="row" className="py-2 pr-3 font-medium">{fn.label}</th>
                   <td className="py-2 pr-3">
-                    <input
-                      aria-label={`${fn.label} approver`}
-                      maxLength={200}
-                      list={`${id}-people`}
-                      value={value.name}
-                      onChange={(event) => set({ name: event.target.value })}
-                      aria-invalid={error ? true : undefined}
-                      className={inputClasses}
-                    />
-                    {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
+                    {approval ? (
+                      <>
+                        {approval.name}
+                        {approval.userId === null && (
+                          <span className="block text-xs text-muted-foreground">
+                            From the CAR form · recorded by {approval.recordedByName}
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      <NotEntered label="Not approved" />
+                    )}
                   </td>
-                  <td className="py-2 pr-3">
-                    <input
-                      aria-label={`${fn.label} approval date`}
-                      type="date"
-                      value={value.approvedOn}
-                      onChange={(event) => set({ approvedOn: event.target.value })}
-                      className={inputClasses}
-                    />
+                  <td className="py-2 pr-3 whitespace-nowrap">
+                    {approval?.approvedOn ? formatDate(approval.approvedOn) : approval ? <NotEntered label="Not dated" /> : "—"}
                   </td>
-                  <td className="py-2 text-xs text-muted-foreground">
-                    {record ? `${record.recordedBy}, ${formatTimestamp(record.recordedAt)}` : "—"}
+                  <td className="py-2 text-right">
+                    {!approval && abilities.approve && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={pending || blocked !== null}
+                        onClick={() => record.mutate({ id: car.id, body: { version: car.version, functionCode: fn.code } })}
+                      >
+                        Approve as {fn.label}
+                      </Button>
+                    )}
+                    {approval && canWithdrawApproval(approval, response) && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={pending || blocked !== null}
+                        onClick={() => withdraw.mutate({ id: car.id, body: { version: car.version, functionCode: fn.code } })}
+                      >
+                        Withdraw
+                      </Button>
+                    )}
                   </td>
                 </tr>
               );
             })}
           </tbody>
         </table>
-        <datalist id={`${id}-people`}>
-          {options.people.map((name) => (
-            <option key={name} value={name} />
-          ))}
-        </datalist>
       </div>
-      <SubHeading>Closure</SubHeading>
-      {checks.length > 0 && (
-        <ul className="space-y-1 text-sm" aria-label="Ready to close">
-          {checks.map((check) => (
-            <li key={check.label} className="flex items-center gap-2">
-              <StatusBadge tone={check.ok ? "success" : "warning"}>{check.ok ? "Done" : "Open"}</StatusBadge>
-              {check.label}
-            </li>
-          ))}
-        </ul>
-      )}
-      <FieldGrid>
-        <SelectInput
-          name="status"
-          label="CAR status"
-          required={car?.status !== null}
-          placeholder={draft.status === "" ? "Not recorded" : false}
-          options={statusOptions}
-        />
-        <TextInput name="dateClosed" label="Date closed" type="date" />
-        <TextInput name="closureApprovedBy" label="Closure approved by" suggestions={options.people} />
-      </FieldGrid>
-    </StepSection>
+    </div>
   );
 }
 
@@ -580,6 +702,9 @@ export function OverviewSection({ car, onOpenStep }: { car: Car; onOpenStep: (co
           <Detail label="Requested">
             {formatDate(car.requestDate)}
             {car.requestedBy && ` by ${car.requestedBy}`}
+            {car.requestedBy && !car.requestedByUserId && (
+              <span className="text-muted-foreground"> (recorded before user accounts)</span>
+            )}
           </Detail>
           <Detail label="Assigned to">{car.assignedTo ?? <NotEntered label="Not assigned" />}</Detail>
           <Detail label="Description">{car.nonconformityDescription ?? <NotEntered />}</Detail>
@@ -599,8 +724,8 @@ export function OverviewSection({ car, onOpenStep }: { car: Car; onOpenStep: (co
           )}
           <Detail label="Record">
             {car.source === "legacy_import" ? "Imported from the CAR workbook" : "Entered in the platform"} · created{" "}
-            {formatTimestamp(car.createdAt)} by {car.createdBy} · last updated {formatTimestamp(car.updatedAt)} by{" "}
-            {car.updatedBy}
+            {formatTimestamp(car.createdAt)} by {car.createdByName} · last updated {formatTimestamp(car.updatedAt)} by{" "}
+            {car.updatedByName}
           </Detail>
         </dl>
       </StepSection>
@@ -654,7 +779,7 @@ export function HistorySection({ car }: { car: Car }) {
                     ? "CAR created"
                     : "CAR updated"}{" "}
                 <span className="font-normal text-muted-foreground">
-                  {formatTimestamp(event.occurredAt)} by {event.actorId}
+                  {formatTimestamp(event.occurredAt)} by {event.actorName}
                 </span>
               </p>
               <ul className="mt-1 space-y-0.5 text-xs text-muted-foreground">

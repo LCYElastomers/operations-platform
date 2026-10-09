@@ -16,7 +16,14 @@ import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { ApiError } from "@/lib/api-client";
 
 import { describeSafetyError } from "../api";
-import type { EventType, IncidentRecord, MonthReconciliation, RecordStatus } from "./api";
+import {
+  allowsType,
+  type EventType,
+  type IncidentRecord,
+  type MonthReconciliation,
+  type RecordPermissions,
+  type RecordStatus,
+} from "./api";
 import {
   describeReconciliation,
   EVENT_LABELS,
@@ -115,8 +122,7 @@ export function IncidentRegister({ year, through, today, initial }: RegisterProp
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        {permissions?.canEdit &&
-          EVENT_TYPES.map((type) => (
+        {EVENT_TYPES.filter((type) => allowsType(permissions, "creatableTypes", type)).map((type) => (
             <Button key={type} onClick={() => setPanel({ kind: "create", eventType: type })} className="pointer-coarse:h-11">
               <Plus />
               Add {EVENT_LABELS[type].one}
@@ -262,7 +268,7 @@ function MonthGroup({
   types: EventType[];
   records: IncidentRecord[];
   reconciliation: MonthReconciliation[];
-  permissions: { canEdit: boolean; canManage: boolean; canViewHistory: boolean } | undefined;
+  permissions: RecordPermissions | undefined;
   onPanel: (panel: RecordPanel) => void;
 }) {
   const headingId = useId();

@@ -12,6 +12,8 @@ const actionClasses = "h-11 min-w-24 px-4";
 type ObservationCardProps = {
   observation: Observation;
   canEdit: boolean;
+  /** Defaults to `canEdit`. */
+  canDelete?: boolean;
   /** Just saved on this device; marked so it is easy to find. */
   highlighted?: boolean;
   confirmingDelete?: boolean;
@@ -25,6 +27,7 @@ type ObservationCardProps = {
 export function ObservationCard({
   observation,
   canEdit,
+  canDelete = canEdit,
   highlighted = false,
   confirmingDelete = false,
   deleting = false,
@@ -81,21 +84,25 @@ export function ObservationCard({
             )}
           </p>
         </div>
-        {canEdit && !confirmingDelete && (
+        {(canEdit || canDelete) && !confirmingDelete && (
           <div className="flex gap-2">
-            <Button variant="outline" className={actionClasses} onClick={onEdit}>
-              <Pencil aria-hidden />
-              Edit
-            </Button>
-            <Button
-              ref={deleteRef}
-              variant="outline"
-              className={actionClasses}
-              onClick={onRequestDelete}
-            >
-              <Trash2 aria-hidden />
-              Delete
-            </Button>
+            {canEdit && (
+              <Button variant="outline" className={actionClasses} onClick={onEdit}>
+                <Pencil aria-hidden />
+                Edit
+              </Button>
+            )}
+            {canDelete && (
+              <Button
+                ref={deleteRef}
+                variant="outline"
+                className={actionClasses}
+                onClick={onRequestDelete}
+              >
+                <Trash2 aria-hidden />
+                Delete
+              </Button>
+            )}
           </div>
         )}
       </div>
@@ -117,7 +124,7 @@ export function ObservationCard({
         </dl>
       )}
 
-      {canEdit && confirmingDelete && (
+      {canDelete && confirmingDelete && (
         <div
           role="alertdialog"
           aria-label="Confirm delete"

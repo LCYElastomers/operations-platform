@@ -1,5 +1,7 @@
-from sqlalchemy import MetaData
-from sqlalchemy.orm import DeclarativeBase
+import uuid
+
+from sqlalchemy import ForeignKey, MetaData, Uuid
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 # Deterministic constraint names keep Alembic autogenerate diffs stable.
 NAMING_CONVENTION = {
@@ -22,3 +24,8 @@ ALEMBIC_VERSION_TABLE = "alembic_version"
 
 class Base(DeclarativeBase):
     metadata = MetaData(naming_convention=NAMING_CONVENTION)
+
+
+def user_link() -> Mapped[uuid.UUID | None]:
+    """An optional link to a platform user (core.users). Users are never deleted."""
+    return mapped_column(Uuid, ForeignKey("core.users.id", ondelete="RESTRICT"), index=True)

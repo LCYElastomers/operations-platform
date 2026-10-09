@@ -4,8 +4,9 @@ import Link from "next/link";
 import { PageHeader } from "@/components/common/page-header";
 import { StatusBadge, type StatusTone } from "@/components/common/status-badge";
 import { ApiStatusCard } from "@/components/system/api-status";
+import { Permitted } from "@/components/layout/permitted";
 import { moduleItems } from "@/config/navigation";
-import type { ModuleStatus, NavItem } from "@/lib/navigation";
+import { pageRequirements, type ModuleStatus, type NavItem } from "@/lib/navigation";
 
 const statusDisplay: Record<ModuleStatus, { label: string; tone: StatusTone }> = {
   available: { label: "Available", tone: "success" },
@@ -37,25 +38,27 @@ export default function OverviewPage() {
             const status = statusDisplay[item.status ?? "not-configured"];
             const Icon = item.icon;
             return (
-              <li key={item.id}>
-                <Link
-                  href={href ?? "/"}
-                  className="group flex h-full flex-col rounded-lg border bg-card p-4 shadow-xs transition-colors hover:border-ring/60 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="grid size-9 place-items-center rounded-md border bg-muted">
-                      {Icon && <Icon className="size-4 text-foreground/70" />}
+              <Permitted key={item.id} anyOf={pageRequirements(item)}>
+                <li>
+                  <Link
+                    href={href ?? "/"}
+                    className="group flex h-full flex-col rounded-lg border bg-card p-4 shadow-xs transition-colors hover:border-ring/60 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="grid size-9 place-items-center rounded-md border bg-muted">
+                        {Icon && <Icon className="size-4 text-foreground/70" />}
+                      </div>
+                      <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
                     </div>
-                    <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
-                  </div>
-                  <h3 className="mt-4 text-sm font-semibold">{item.label}</h3>
-                  <p className="mt-1 flex-1 text-sm text-muted-foreground">{item.description}</p>
-                  <span className="mt-4 inline-flex items-center gap-1 text-xs font-medium text-muted-foreground group-hover:text-foreground">
-                    Open module
-                    <ArrowRight className="size-3.5" />
-                  </span>
-                </Link>
-              </li>
+                    <h3 className="mt-4 text-sm font-semibold">{item.label}</h3>
+                    <p className="mt-1 flex-1 text-sm text-muted-foreground">{item.description}</p>
+                    <span className="mt-4 inline-flex items-center gap-1 text-xs font-medium text-muted-foreground group-hover:text-foreground">
+                      Open module
+                      <ArrowRight className="size-3.5" />
+                    </span>
+                  </Link>
+                </li>
+              </Permitted>
             );
           })}
         </ul>

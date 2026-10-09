@@ -254,7 +254,7 @@ def test_cost_records_migration_creates_records_and_references_only(upgrade_sql:
 
 
 def test_car_migration_creates_car_tables_only(upgrade_sql: str) -> None:
-    sql = _segment(upgrade_sql, "0011 -> 0012")
+    sql = _segment(upgrade_sql, "0011 -> 0012", "0012 -> 0013")
     for table in ("cars", "car_actions", "car_why_steps", "car_approvals", "car_references"):
         assert f"CREATE TABLE quality.{table} " in sql
     cars = sql.split("CREATE TABLE quality.cars ", 1)[1].split(";", 1)[0]
@@ -276,3 +276,29 @@ def test_car_migration_creates_car_tables_only(upgrade_sql: str) -> None:
     assert "INSERT" not in sql.replace("UPDATE core.alembic_version", "")
     assert "ALTER TABLE" not in sql
     assert "DROP" not in sql
+
+
+def test_users_migration_seeds_roles_and_links_without_rewriting_history(
+    upgrade_sql: str,
+) -> None:
+    sql = _segment(upgrade_sql, "0012 -> 0013")
+    for table in ("users", "roles", "permissions", "role_permissions", "user_roles", "sessions"):
+        assert f"CREATE TABLE core.{table} " in sql
+    assert "CREATE TABLE core.password_tokens " in sql
+    assert "CREATE UNIQUE INDEX uq_users_email ON core.users (email)" in sql
+    assert "email = lower(btrim(email))" in sql
+    # Seeds the catalog and roles only: no user, no session.
+    assert "INSERT INTO core.permissions" in sql
+    assert "INSERT INTO core.roles" in sql
+    assert "INSERT INTO core.users" not in sql
+    assert "INSERT INTO core.user_roles" not in sql
+    assert "INSERT INTO core.sessions" not in sql
+    # Existing records gain nullable links; nothing is updated, matched or dropped.
+    assert "UPDATE quality." not in sql
+    assert "UPDATE core.audit_events" not in sql
+    assert "DROP" not in sql
+    assert "ALTER TABLE core.audit_events ADD COLUMN actor_user_id UUID" in sql
+    assert "ALTER TABLE quality.cars ADD COLUMN assigned_to_user_id UUID" in sql
+    assert "ALTER TABLE quality.cost_records ADD COLUMN owner_user_id UUID" in sql
+    # Users are never deleted from under the records that name them.
+    assert "REFERENCES core.users (id) ON DELETE RESTRICT" in sql

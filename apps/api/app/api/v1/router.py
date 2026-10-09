@@ -1,6 +1,9 @@
 from fastapi import APIRouter
 
 from app.api.v1 import health
+from app.assignments import router as assignments
+from app.auth import admin_router
+from app.auth import router as auth
 from app.quality.car import router as quality_cars
 from app.quality.cost import router as quality_cost
 from app.quality.moisture import ingestion_router as moisture_ingestion
@@ -13,6 +16,10 @@ from app.safety.trir import router as safety_trir
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(health.router)
+api_router.include_router(auth.router)
+api_router.include_router(admin_router.router)
+api_router.include_router(admin_router.directory_router)
+api_router.include_router(assignments.router)
 api_router.include_router(moisture.router)
 api_router.include_router(moisture_ingestion.router)
 api_router.include_router(quality_cost.router)

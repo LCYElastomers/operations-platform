@@ -101,7 +101,7 @@ export function CarRegisterPage({
         eyebrow="Quality · Corrective Action Reports"
         title={title}
         description={description}
-        actions={options.data?.canEdit ? <NewCarLink /> : undefined}
+        actions={options.data?.abilities.create ? <NewCarLink /> : undefined}
       />
       <FilterBar
         actions={
@@ -176,7 +176,7 @@ export function CarRegisterPage({
       ) : cars.isPending ? (
         <p className="py-6 text-sm text-muted-foreground">Loading Corrective Action Reports…</p>
       ) : data && data.cars.length === 0 ? (
-        <NoCars filtered={filtered} action={filtered || !data.canEdit ? undefined : <NewCarLink />} />
+        <NoCars filtered={filtered} action={filtered || !data.abilities.create ? undefined : <NewCarLink />} />
       ) : (
         data && (
           <TableSection

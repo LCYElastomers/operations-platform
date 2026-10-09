@@ -15,6 +15,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from principals import as_user
 from test_safety_performance import (
     FIXTURES,
     InMemoryRepository,
@@ -23,7 +24,7 @@ from test_safety_performance import (
     load_legacy_counts,
 )
 
-from app.core.authorization import UserPrincipal, get_user_principal
+from app.core.authorization import get_user_principal
 from app.core.permissions import Permission
 from app.main import create_app
 from app.safety import rates
@@ -37,6 +38,7 @@ from app.safety.trir.schemas import TrirExperienceResponse
 API_ROOT = Path(__file__).resolve().parents[1]
 MAPPING = API_ROOT / "import_templates" / "safety_trir_experience_history_lcy_ehs.mapping.json"
 P = Permission
+TRIR = (P.SAFETY_RECORD_VIEW, P.SAFETY_DASHBOARD_VIEW)
 
 # The approved history: (recordables, man-hours, legacy displayed TRIR, benchmark).
 EXPECTED_HISTORY = {
@@ -381,20 +383,18 @@ def api(monkeypatch: pytest.MonkeyPatch, performance: InMemoryRepository) -> Ite
     def make(*permissions: Permission) -> TestClient:
         app = create_app()
         app.dependency_overrides[trir_router.trir_session] = _Session
-        app.dependency_overrides[get_user_principal] = lambda: UserPrincipal(
-            "tester", authenticated=True, granted=frozenset(permissions)
-        )
+        app.dependency_overrides[get_user_principal] = lambda: as_user(*permissions)
         return TestClient(app)
 
     yield make
 
 
-def test_trir_requires_its_own_view_permission(api: Any) -> None:
+def test_trir_needs_record_and_dashboard_view(api: Any) -> None:
     url = "/api/v1/safety/trir/experience"
-    assert api(P.SAFETY_TRIR_VIEW).get(url).status_code == 200
-    assert api(P.SAFETY_VIEW).get(url).status_code == 200
-    assert api(P.SAFETY_PERFORMANCE_VIEW).get(url).status_code == 403
-    assert api(P.SAFETY_INCIDENTS_EDIT).get(url).status_code == 403
+    assert api(*TRIR).get(url).status_code == 200
+    assert api(P.SAFETY_RECORD_VIEW).get(url).status_code == 403
+    assert api(P.SAFETY_DASHBOARD_VIEW).get(url).status_code == 403
+    assert api(P.QUALITY_DASHBOARD_VIEW, P.INCIDENT_VIEW).get(url).status_code == 403
     assert api().get(url).status_code == 403
 
 
@@ -404,7 +404,7 @@ def test_trir_requires_its_own_view_permission(api: Any) -> None:
      "reconciliation", "methodology"],
 )  # fmt: skip
 def test_responses_carry_no_workbook_cell_coordinates(api: Any, path: str) -> None:
-    response = api(P.SAFETY_TRIR_VIEW).get(f"/api/v1/safety/trir/{path}")
+    response = api(*TRIR).get(f"/api/v1/safety/trir/{path}")
     assert response.status_code == 200, response.text
     body = response.text
     assert "sourceCell" not in body and "sourceReference" not in body
@@ -415,7 +415,7 @@ def test_responses_carry_no_workbook_cell_coordinates(api: Any, path: str) -> No
 
 
 def test_experience_json_shape(api: Any) -> None:
-    body = api(P.SAFETY_TRIR_VIEW).get("/api/v1/safety/trir/experience").json()
+    body = api(*TRIR).get("/api/v1/safety/trir/experience").json()
 
     assert body["current"]["formula"] == "(1 × 200,000) ÷ 145,194"
     assert body["current"]["rate"].startswith("1.37746738845957")

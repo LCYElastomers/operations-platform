@@ -72,7 +72,7 @@ export function CarDashboardPage({ title, description }: { title: string; descri
         eyebrow="Quality · Corrective Action Reports"
         title={title}
         description={description}
-        actions={options.data?.canEdit ? <NewCarLink /> : undefined}
+        actions={options.data?.abilities.create ? <NewCarLink /> : undefined}
       />
       <FilterBar
         actions={
@@ -133,7 +133,7 @@ export function CarDashboardPage({ title, description }: { title: string; descri
       ) : !data ? (
         <Kpis data={undefined} filters={filters} />
       ) : data.kpis.total === 0 ? (
-        <NoCars filtered={filtered} action={filtered || !options.data?.canEdit ? undefined : <NewCarLink />} />
+        <NoCars filtered={filtered} action={filtered || !options.data?.abilities.create ? undefined : <NewCarLink />} />
       ) : (
         <>
           <Kpis data={data} filters={filters} />

@@ -13,12 +13,15 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 from postgres_support import TEST_DATABASE_URL, requires_postgres
+from principals import as_user
 from sqlalchemy import Engine, delete
 from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Session, sessionmaker
 from test_finishing_ingestion import URL, batch, row, window
 
+from app.core.authorization import get_user_principal
 from app.core.config import Settings, get_settings
+from app.core.permissions import Permission
 from app.ingestion.models import IngestionBatch
 from app.main import create_app
 from app.quality.moisture import repository as repository_module
@@ -48,6 +51,7 @@ def make_client(session_factory: Any, monkeypatch: pytest.MonkeyPatch) -> TestCl
     app = create_app()
     app.dependency_overrides[get_settings] = database_settings
     app.dependency_overrides[get_ingestion_session_factory] = lambda: session_factory
+    app.dependency_overrides[get_user_principal] = lambda: as_user(Permission.QUALITY_VIEW)
     # The read dependency itself is not overridden; only its session source is.
     monkeypatch.setattr(repository_module, "get_sessionmaker", lambda: session_factory)
     return TestClient(app)

@@ -2,6 +2,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 
+from app.core.authorization import require_permission
+from app.core.permissions import Permission
 from app.quality.moisture import service
 from app.quality.moisture.repository import MoistureRepository, get_moisture_repository
 from app.quality.moisture.schemas import (
@@ -13,7 +15,11 @@ from app.quality.moisture.schemas import (
     RecentMoistureResponse,
 )
 
-router = APIRouter(prefix="/quality/moisture", tags=["quality: moisture"])
+router = APIRouter(
+    prefix="/quality/moisture",
+    tags=["quality: moisture"],
+    dependencies=[Depends(require_permission(Permission.QUALITY_VIEW))],
+)
 
 Repository = Annotated[MoistureRepository, Depends(get_moisture_repository)]
 

@@ -87,7 +87,10 @@ export function ObservationsPage({ title, description, siteToday }: Observations
 
   const [editAttempted, setEditAttempted] = useState(false);
 
-  const canEdit = categories.data?.canEdit ?? list.data?.canEdit ?? false;
+  const abilities = categories.data ?? list.data;
+  const canEdit = abilities?.canEdit ?? false;
+  const canCreate = abilities?.canCreate ?? canEdit;
+  const canDelete = abilities?.canDelete ?? canEdit;
   const errors = useMemo(() => validateDraft(draft, today), [draft, today]);
   const editErrors = useMemo(
     () => (editing ? validateDraft(editing.draft, today) : {}),
@@ -196,7 +199,7 @@ export function ObservationsPage({ title, description, siteToday }: Observations
         />
       ) : (
         <div className="grid grid-cols-1 items-start gap-5 min-[1400px]:grid-cols-[minmax(0,34rem)_minmax(0,1fr)]">
-          {canEdit ? (
+          {canCreate ? (
             <section
               aria-labelledby="new-observation-heading"
               className="rounded-lg border bg-card p-4 sm:p-5"
@@ -328,7 +331,7 @@ export function ObservationsPage({ title, description, siteToday }: Observations
                 <EmptyState
                   icon={ClipboardList}
                   title={`No observations for ${periodLabel}`}
-                  description={canEdit ? "Observations you add for this month will appear here." : undefined}
+                  description={canCreate ? "Observations you add for this month will appear here." : undefined}
                 />
               ) : (
                 <ul className="space-y-3">
@@ -361,6 +364,7 @@ export function ObservationsPage({ title, description, siteToday }: Observations
                         <ObservationCard
                           observation={observation}
                           canEdit={canEdit}
+                          canDelete={canDelete}
                           highlighted={observation.id === lastAddedId}
                           confirmingDelete={confirmDeleteId === observation.id}
                           deleting={remove.isPending && remove.variables === observation.id}

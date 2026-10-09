@@ -68,6 +68,13 @@ class PerformanceRuleError(ValueError):
         self.message = message
 
 
+CLOSE_FORBIDDEN = "Closing, reopening, or changing a closed month needs safetyRecord.close."
+
+
+class PerformanceForbiddenError(PermissionError):
+    """The user may not make this change. Nothing was written."""
+
+
 class EditConflictError(RuntimeError):
     """The month changed since the client loaded it. Nothing was written."""
 
@@ -138,10 +145,13 @@ def save_month(
     *,
     actor_id: str,
     now: dt.datetime,
+    can_close: bool = True,
 ) -> HoursRecord:
     """Create or replace one month's hours and closed status (audited).
 
-    Raises PerformanceRuleError or EditConflictError; nothing is written then.
+    Closing, reopening, or changing a closed month needs ``can_close``.
+    Raises PerformanceRuleError, PerformanceForbiddenError or EditConflictError;
+    nothing is written then.
     """
     today = site_today(now)
     if not _month_started(year, month, today):
@@ -169,6 +179,9 @@ def save_month(
         if current is not None and current.values == values:
             repository.rollback()
             return current
+        was_closed = current is not None and current.values.month_closed
+        if (was_closed or values.month_closed) and not can_close:
+            raise PerformanceForbiddenError(CLOSE_FORBIDDEN)
 
         action: AuditAction
         if current is None:
@@ -216,13 +229,17 @@ def clear_month(
     expected_updated_at: dt.datetime,
     actor_id: str,
     now: dt.datetime,
+    can_close: bool = True,
 ) -> None:
-    """Remove a month's hours, returning it to Not Reported (audited)."""
+    """Remove a month's hours, returning it to Not Reported (audited). A closed
+    month can be cleared only with ``can_close``."""
     try:
         repository.lock_month(year, month)
         current = repository.get_hours(year, month)
         if current is None or current.updated_at != expected_updated_at:
             raise EditConflictError(current)
+        if current.values.month_closed and not can_close:
+            raise PerformanceForbiddenError(CLOSE_FORBIDDEN)
         repository.delete_hours(year, month)
         change_set = uuid.uuid4()
         repository.record_audit(

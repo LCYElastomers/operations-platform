@@ -5,6 +5,7 @@ import { useId, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { siteToday } from "@/features/safety/site-calendar";
+import { PersonSelect, type Person } from "@/features/users/person-select";
 import { cn } from "@/lib/utils";
 
 import {
@@ -37,7 +38,7 @@ export type CostDraft = {
   process: string;
   equipment: string;
   counterparty: string;
-  owner: string;
+  owner: Person;
   notes: string;
   financialStatus: FinancialStatus;
   status: OperationalStatus;
@@ -57,7 +58,6 @@ const OPTIONAL_TEXT = [
   "process",
   "equipment",
   "counterparty",
-  "owner",
   "notes",
   "resolutionNotes",
 ] as const;
@@ -80,7 +80,7 @@ export function emptyDraft(today: string, coqClass: CoqClass | "" = ""): CostDra
     process: "",
     equipment: "",
     counterparty: "",
-    owner: "",
+    owner: { userId: null, name: null },
     notes: "",
     financialStatus: "potential",
     status: "open",
@@ -107,6 +107,7 @@ export function draftOf(record: CostRecord): CostDraft {
       (typeof OPTIONAL_TEXT)[number],
       string
     >),
+    owner: { userId: record.ownerUserId, name: record.owner },
     financialStatus: record.financialStatus,
     status: record.status,
     dueDate: text(record.dueDate),
@@ -135,6 +136,9 @@ export function fieldsOf(draft: CostDraft, record: CostRecord | null = null): Co
       (typeof OPTIONAL_TEXT)[number],
       string | null
     >),
+    // A chosen user is sent by ID; otherwise only the unchanged recorded name.
+    ownerUserId: draft.owner.userId,
+    owner: draft.owner.userId ? null : draft.owner.name,
     financialStatus: draft.financialStatus,
     status: draft.status,
     dueDate: draft.dueDate || null,
@@ -303,7 +307,7 @@ export function CostRecordForm({
       return rest;
     });
   };
-  const input = (key: keyof CostDraft) => ({
+  const input = (key: Exclude<keyof CostDraft, "owner">) => ({
     id: `${id}-${key}`,
     value: draft[key],
     onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
@@ -525,13 +529,17 @@ export function CostRecordForm({
               ))}
             </select>
           </Field>
-          <Field id={`${id}-owner`} label="Owner" error={problems.owner}>
-            <input maxLength={200} list={`${id}-owners`} autoComplete="off" className={inputClasses} {...input("owner")} />
-            <datalist id={`${id}-owners`}>
-              {options.owners.map((value) => (
-                <option key={value} value={value} />
-              ))}
-            </datalist>
+          <Field id={`${id}-owner`} label="Owner" error={problems.owner ?? problems.ownerUserId}>
+            <PersonSelect
+              id={`${id}-owner`}
+              value={draft.owner}
+              recorded={record ? { userId: record.ownerUserId, name: record.owner } : { userId: null, name: null }}
+              onChange={(person) => set("owner", person)}
+              placeholder="Not assigned"
+              aria-invalid={problems.owner || problems.ownerUserId ? true : undefined}
+              aria-describedby={problems.owner || problems.ownerUserId ? `${id}-owner-error` : undefined}
+              className={inputClasses}
+            />
           </Field>
           <Field id={`${id}-dueDate`} label="Due date" error={problems.dueDate}>
             <input type="date" className={inputClasses} {...input("dueDate")} />

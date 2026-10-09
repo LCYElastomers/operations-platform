@@ -6,9 +6,11 @@ export type Kind = "act" | "condition";
 
 export type ObservationCategory = { id: number; code: string; name: string };
 
-export type ObservationCategoriesResponse = {
+/** What the signed-in user may do; the server enforces the same rules. */
+export type ObservationAbilities = { canEdit: boolean; canCreate?: boolean; canDelete?: boolean };
+
+export type ObservationCategoriesResponse = ObservationAbilities & {
   categories: ObservationCategory[];
-  canEdit: boolean;
 };
 
 export type ObservationInput = {
@@ -32,10 +34,9 @@ export type Observation = ObservationInput & {
   updatedBy: string;
 };
 
-export type ObservationListResponse = {
+export type ObservationListResponse = ObservationAbilities & {
   observations: Observation[];
   totalMatching: number;
-  canEdit: boolean;
 };
 
 export type ObservationCounts = {
@@ -126,7 +127,7 @@ export function describeObservationError(error: unknown): string {
   if (!(error instanceof ApiError)) return "The API could not be reached.";
   switch (error.status) {
     case 401:
-      return "Sign-in is required to view Safety data. User authentication is not enabled on this server yet.";
+      return "Your session has ended. Sign in again to continue.";
     case 403:
       return "You do not have permission for this Safety function.";
     case 404:

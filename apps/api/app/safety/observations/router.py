@@ -1,4 +1,5 @@
-"""Safety Observations endpoints (``safety.observations.view`` / ``.edit``)."""
+"""Safety Observations endpoints (``safetyObservation.view`` / ``.create`` /
+``.edit`` / ``.delete``; the dashboard also needs ``safetyDashboard.view``)."""
 
 import datetime as dt
 from collections.abc import Iterator
@@ -7,7 +8,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.core.authorization import UserPrincipal, require_permission
+from app.core.authorization import UserPrincipal, require_all_permissions, require_permission
 from app.core.permissions import Permission
 from app.db.session import DatabaseNotConfiguredError, get_sessionmaker
 from app.safety.models import MAX_REPORTING_YEAR, MIN_REPORTING_YEAR
@@ -44,7 +45,7 @@ MAX_PAGE_SIZE = 500
 
 WRITE_RESPONSES: dict[int | str, dict[str, Any]] = {
     401: {"description": "Not signed in"},
-    403: {"description": "Missing safety.observations.edit"},
+    403: {"description": "Missing permission"},
     422: {"description": "Invalid observation or unknown category; nothing saved"},
     503: {"description": "Database unavailable; nothing saved"},
 }
@@ -87,14 +88,32 @@ def observation_repository() -> Iterator[ObservationRepository]:
 
 
 Repository = Annotated[ObservationRepository, Depends(observation_repository)]
-Viewer = Annotated[UserPrincipal, Depends(require_permission(Permission.SAFETY_OBSERVATIONS_VIEW))]
-Editor = Annotated[UserPrincipal, Depends(require_permission(Permission.SAFETY_OBSERVATIONS_EDIT))]
+Viewer = Annotated[UserPrincipal, Depends(require_permission(Permission.SAFETY_OBSERVATION_VIEW))]
+Creator = Annotated[
+    UserPrincipal, Depends(require_permission(Permission.SAFETY_OBSERVATION_CREATE))
+]
+Editor = Annotated[UserPrincipal, Depends(require_permission(Permission.SAFETY_OBSERVATION_EDIT))]
+Deleter = Annotated[
+    UserPrincipal, Depends(require_permission(Permission.SAFETY_OBSERVATION_DELETE))
+]
+DashboardViewer = Annotated[
+    UserPrincipal,
+    Depends(
+        require_all_permissions(
+            Permission.SAFETY_OBSERVATION_VIEW, Permission.SAFETY_DASHBOARD_VIEW
+        )
+    ),
+]
 Year = Annotated[int, Query(ge=MIN_REPORTING_YEAR, le=MAX_REPORTING_YEAR)]
 Month = Annotated[int | None, Query(ge=1, le=12)]
 
 
-def _can_edit(principal: UserPrincipal) -> bool:
-    return principal.has(Permission.SAFETY_OBSERVATIONS_EDIT)
+def _abilities(principal: UserPrincipal) -> dict[str, bool]:
+    return {
+        "can_edit": principal.has(Permission.SAFETY_OBSERVATION_EDIT),
+        "can_create": principal.has(Permission.SAFETY_OBSERVATION_CREATE),
+        "can_delete": principal.has(Permission.SAFETY_OBSERVATION_DELETE),
+    }
 
 
 def _now() -> dt.datetime:
@@ -112,7 +131,7 @@ def observation_categories(
         raise _database_unavailable() from None
     return ObservationCategoriesResponse(
         categories=[ObservationCategoryOut(id=c.id, code=c.code, name=c.name) for c in categories],
-        can_edit=_can_edit(principal),
+        **_abilities(principal),
     )
 
 
@@ -160,7 +179,7 @@ def list_observations(
     return ObservationListResponse(
         observations=[service.to_out(record) for record in records],
         total_matching=total,
-        can_edit=_can_edit(principal),
+        **_abilities(principal),
     )
 
 
@@ -171,13 +190,12 @@ def list_observations(
     responses=WRITE_RESPONSES,
 )
 def create_observation(
-    principal: Editor, repository: Repository, request: ObservationInput
+    principal: Creator, repository: Repository, request: ObservationInput
 ) -> ObservationOut:
     """Record one observation (audited)."""
-    assert principal.user_id is not None  # noqa: S101 - require_permission admits users only
     try:
         record = service.create_observation(
-            repository, request, actor_id=principal.user_id, now=_now()
+            repository, request, actor_id=principal.actor_id, now=_now()
         )
     except (UnknownCategoryError, ObservedOnInFutureError) as error:
         raise _validation_error(error) from None
@@ -203,10 +221,9 @@ def update_observation(
     request: ObservationUpdate,
 ) -> ObservationOut:
     """Replace an observation's fields (audited). Unchanged observations are not written."""
-    assert principal.user_id is not None  # noqa: S101 - require_permission admits users only
     try:
         record = service.update_observation(
-            repository, observation_id, request, actor_id=principal.user_id, now=_now()
+            repository, observation_id, request, actor_id=principal.actor_id, now=_now()
         )
     except (UnknownCategoryError, ObservedOnInFutureError) as error:
         raise _validation_error(error) from None
@@ -230,12 +247,11 @@ def update_observation(
     status_code=status.HTTP_204_NO_CONTENT,
     responses={**WRITE_RESPONSES, 404: {"description": "No such observation"}},
 )
-def delete_observation(principal: Editor, repository: Repository, observation_id: int) -> Response:
+def delete_observation(principal: Deleter, repository: Repository, observation_id: int) -> Response:
     """Delete an observation. Its last values remain in the audit trail."""
-    assert principal.user_id is not None  # noqa: S101 - require_permission admits users only
     try:
         service.delete_observation(
-            repository, observation_id, actor_id=principal.user_id, now=_now()
+            repository, observation_id, actor_id=principal.actor_id, now=_now()
         )
     except ObservationNotFoundError:
         raise _not_found() from None
@@ -258,7 +274,7 @@ def observation_summary(
 
 @router.get("/dashboard", response_model=ObservationDashboardResponse)
 def observation_dashboard(
-    principal: Viewer, repository: Repository, year: Year
+    principal: DashboardViewer, repository: Repository, year: Year
 ) -> ObservationDashboardResponse:
     """Year totals, monthly counts, and per-category counts derived from observation records."""
     try:

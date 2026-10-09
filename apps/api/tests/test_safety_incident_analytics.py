@@ -13,6 +13,7 @@ from typing import Any, NoReturn
 
 import pytest
 from fastapi.testclient import TestClient
+from principals import as_user
 from sqlalchemy.exc import OperationalError
 
 from app.core.authorization import UserPrincipal, get_user_principal
@@ -527,8 +528,8 @@ def test_available_years_start_in_2026_and_include_the_site_year() -> None:
 # API -----------------------------------------------------------------------------
 
 
-def principal(*permissions: Permission) -> UserPrincipal:
-    return UserPrincipal("tester", authenticated=True, granted=frozenset(permissions))
+principal = as_user
+DASHBOARD = (Permission.SAFETY_RECORD_VIEW, Permission.SAFETY_DASHBOARD_VIEW)
 
 
 class NoBehavior:
@@ -558,9 +559,7 @@ def fixed_now(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def viewer() -> Iterator[TestClient]:
-    yield from make_client(
-        ReadOnlyRepository(approved_2026()), principal(Permission.SAFETY_INCIDENTS_VIEW)
-    )
+    yield from make_client(ReadOnlyRepository(approved_2026()), principal(*DASHBOARD))
 
 
 def test_get_returns_typed_analytics(viewer: TestClient) -> None:
@@ -688,10 +687,10 @@ def test_view_permission_is_required() -> None:
     repository = ReadOnlyRepository(approved_2026())
     for client in make_client(repository, None):
         assert client.get(URL, params={"year": 2026}).status_code == 401
-    for client in make_client(repository, principal(Permission.SAFETY_PERFORMANCE_VIEW)):
+    for client in make_client(repository, principal(Permission.SAFETY_RECORD_VIEW)):
         response = client.get(URL, params={"year": 2026})
         assert response.status_code == 403
-        assert response.json()["detail"]["permission"] == "safety.incidents.view"
+        assert response.json()["detail"]["error"] == "permission_denied"
 
 
 def test_the_get_writes_and_audits_nothing(viewer: TestClient) -> None:
@@ -704,7 +703,7 @@ def test_database_errors_are_reported_as_unavailable() -> None:
         def sections(self, metric_set: str) -> list[SectionDefinition]:
             raise OperationalError("SELECT", {}, Exception("down"))
 
-    for client in make_client(Unavailable(), principal(Permission.SAFETY_INCIDENTS_VIEW)):
+    for client in make_client(Unavailable(), principal(*DASHBOARD)):
         response = client.get(URL, params={"year": 2026})
         assert response.status_code == 503
         assert response.json()["detail"]["error"] == "database_unavailable"

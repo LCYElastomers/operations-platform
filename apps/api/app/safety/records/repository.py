@@ -2,7 +2,7 @@
 
 import datetime as dt
 import uuid
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, aliased
 
 from app.audit.models import AuditEvent
 from app.audit.recorder import AuditChange, record_changes
+from app.auth import people
 from app.safety.models import Area, MetricCategory, MetricSection, MonthlyMetricValue
 from app.safety.records.models import NUMBER_INDEX, IncidentRecord
 
@@ -91,6 +92,9 @@ class RecordRepository:
     @staticmethod
     def _row(row: Any) -> RecordRow:
         return RecordRow(row[0], row[1], row[2], row[3], row[4], row[5])
+
+    def actor_names(self, actor_ids: Iterable[str | None]) -> dict[str, str]:
+        return people.display_names(self._session, actor_ids)
 
     def get(self, record_id: int) -> RecordRow | None:
         row = self._session.execute(self._select().where(IncidentRecord.id == record_id)).first()

@@ -7,7 +7,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.core.authorization import UserPrincipal, require_permission
+from app.core.authorization import UserPrincipal, require_all_permissions, require_permission
 from app.core.permissions import Permission
 from app.db.session import DatabaseNotConfiguredError, get_sessionmaker
 from app.safety import analytics, service
@@ -71,10 +71,16 @@ def behavior_repository() -> Iterator[BehaviorRepository]:
 Repository = Annotated[SafetyMetricsRepository, Depends(safety_repository)]
 Behavior = Annotated[BehaviorRepository, Depends(behavior_repository)]
 IncidentViewer = Annotated[
-    UserPrincipal, Depends(require_permission(Permission.SAFETY_INCIDENTS_VIEW))
+    UserPrincipal, Depends(require_permission(Permission.SAFETY_RECORD_VIEW))
 ]
 IncidentEditor = Annotated[
-    UserPrincipal, Depends(require_permission(Permission.SAFETY_INCIDENTS_EDIT))
+    UserPrincipal, Depends(require_permission(Permission.SAFETY_RECORD_EDIT))
+]
+DashboardViewer = Annotated[
+    UserPrincipal,
+    Depends(
+        require_all_permissions(Permission.SAFETY_RECORD_VIEW, Permission.SAFETY_DASHBOARD_VIEW)
+    ),
 ]
 
 
@@ -90,7 +96,7 @@ def incident_metrics(
             repository,
             metric_set=INCIDENTS_METRIC_SET,
             year=year,
-            can_edit=principal.has(Permission.SAFETY_INCIDENTS_EDIT),
+            can_edit=principal.has(Permission.SAFETY_RECORD_EDIT),
         )
     except SQLAlchemyError:
         raise _database_unavailable() from None
@@ -105,13 +111,13 @@ def _now() -> dt.datetime:
     response_model=IncidentAnalyticsResponse,
     responses={
         401: {"description": "Not signed in"},
-        403: {"description": "Missing safety.incidents.view"},
+        403: {"description": "Missing safetyRecord.view or safetyDashboard.view"},
         422: {"description": "Invalid year, or a through month that has not started"},
         503: {"description": "Database unavailable"},
     },
 )
 def incident_analytics(
-    principal: IncidentViewer,
+    principal: DashboardViewer,
     repository: Repository,
     behavior: Behavior,
     year: Annotated[int, Query(ge=MIN_REPORTING_YEAR, le=MAX_REPORTING_YEAR)],
@@ -139,7 +145,7 @@ def incident_analytics(
     response_model=SaveMonthlyMetricsResponse,
     responses={
         401: {"description": "Not signed in"},
-        403: {"description": "Missing safety.incidents.edit"},
+        403: {"description": "Missing safetyRecord.edit"},
         409: {"description": "Stored values changed since they were loaded; nothing saved"},
         422: {"description": "Invalid request or unknown category; nothing saved"},
         503: {"description": "Database unavailable; nothing saved"},
@@ -151,14 +157,13 @@ def save_incident_metrics(
     request: SaveMonthlyMetricsRequest,
 ) -> SaveMonthlyMetricsResponse:
     """Set or clear monthly cells. All changes are applied together or not at all."""
-    assert principal.user_id is not None  # noqa: S101 - require_permission admits users only
     try:
         outcome = service.save_changes(
             repository,
             metric_set=INCIDENTS_METRIC_SET,
             year=request.year,
             changes=request.changes,
-            actor_id=principal.user_id,
+            actor_id=principal.actor_id,
             now=dt.datetime.now(dt.UTC),
         )
         metrics = service.load_metrics(
@@ -193,7 +198,7 @@ def incident_behavior(
     """Annual Behavior tag counts for one reporting year."""
     try:
         return behavior_service.load_counts(
-            behavior, year=year, can_edit=principal.has(Permission.SAFETY_INCIDENTS_EDIT)
+            behavior, year=year, can_edit=principal.has(Permission.SAFETY_RECORD_EDIT)
         )
     except SQLAlchemyError:
         raise _database_unavailable() from None
@@ -204,7 +209,7 @@ def incident_behavior(
     response_model=SaveBehaviorCountsResponse,
     responses={
         401: {"description": "Not signed in"},
-        403: {"description": "Missing safety.incidents.edit"},
+        403: {"description": "Missing safetyRecord.edit"},
         409: {"description": "Stored counts changed since they were loaded; nothing saved"},
         422: {"description": "Invalid request or unknown category; nothing saved"},
         503: {"description": "Database unavailable; nothing saved"},
@@ -216,13 +221,12 @@ def save_incident_behavior(
     request: SaveBehaviorCountsRequest,
 ) -> SaveBehaviorCountsResponse:
     """Set or clear annual Behavior counts. All changes are applied together or not at all."""
-    assert principal.user_id is not None  # noqa: S101 - require_permission admits users only
     try:
         outcome = behavior_service.save_counts(
             behavior,
             year=request.year,
             changes=request.changes,
-            actor_id=principal.user_id,
+            actor_id=principal.actor_id,
             now=_now(),
         )
         counts = behavior_service.load_counts(behavior, year=request.year, can_edit=True)

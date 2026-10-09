@@ -8,6 +8,7 @@ import { getNavItem, moduleItems } from "@/config/navigation";
 
 import {
   COST_FIELDS,
+  type CostAbilities,
   type CostMonth,
   type CostRecord,
   type CostRecordOptions,
@@ -33,6 +34,9 @@ declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
 }
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+
+/** Test fixture: a user who may do everything. */
+const ALL_ABILITIES: CostAbilities = { create: true, edit: true, assign: true, confirmFinancial: true, close: true };
 
 /** Test fixture, not production data. */
 const OPTIONS: CostRecordOptions = {
@@ -64,6 +68,7 @@ const OPTIONS: CostRecordOptions = {
   products: ["FX-PRODUCT"],
   owners: ["Fixture Owner"],
   canEdit: true,
+  abilities: ALL_ABILITIES,
 };
 
 /** Test fixture, not production data. */
@@ -88,6 +93,7 @@ const record = (overrides: Partial<CostRecord> = {}): CostRecord => ({
   equipment: null,
   counterparty: null,
   owner: "Fixture Owner",
+  ownerUserId: "user-owner",
   notes: null,
   financialStatus: "confirmed",
   financialStatusLabel: "Confirmed",
@@ -112,6 +118,8 @@ const record = (overrides: Partial<CostRecord> = {}): CostRecord => ({
   createdBy: "fixture-user",
   updatedAt: "2003-02-10T12:00:00Z",
   updatedBy: "fixture-user",
+  createdByName: "Fixture Owner",
+  updatedByName: "Fixture Owner",
   ...overrides,
 });
 
@@ -234,11 +242,21 @@ beforeEach(() => {
   responses = {
     [`GET ${BASE}/summary`]: { status: 200, body: SUMMARY },
     [`GET ${BASE}/records/options`]: { status: 200, body: OPTIONS },
-    [`GET ${BASE}/records`]: { status: 200, body: { records: [record()], total: 1, canEdit: true } },
-    [`GET ${BASE}/records/7`]: { status: 200, body: { record: record(), canEdit: true } },
+    [`GET ${BASE}/records`]: { status: 200, body: { records: [record()], total: 1, canEdit: true, abilities: ALL_ABILITIES } },
+    [`GET ${BASE}/records/7`]: { status: 200, body: { record: record(), canEdit: true, abilities: ALL_ABILITIES } },
     [`GET ${BASE}/records/7/history`]: { status: 200, body: { recordId: 7, events: [] } },
-    [`POST ${BASE}/records`]: { status: 201, body: { record: record({ id: 8, recordNumber: "QC-00008" }), canEdit: true } },
-    [`GET ${BASE}/records/8`]: { status: 200, body: { record: record({ id: 8, recordNumber: "QC-00008" }), canEdit: true } },
+    [`POST ${BASE}/records`]: {
+      status: 201,
+      body: { record: record({ id: 8, recordNumber: "QC-00008" }), canEdit: true, abilities: ALL_ABILITIES },
+    },
+    [`GET ${BASE}/records/8`]: {
+      status: 200,
+      body: { record: record({ id: 8, recordNumber: "QC-00008" }), canEdit: true, abilities: ALL_ABILITIES },
+    },
+    ["GET /api/v1/users/directory"]: {
+      status: 200,
+      body: { users: [{ id: "user-owner", name: "Fixture Owner", active: true }] },
+    },
     [`GET ${BASE}/estimator`]: { status: 200, body: REFERENCE },
     [`POST ${BASE}/estimate`]: { status: 200, body: ESTIMATE },
   };
@@ -411,15 +429,18 @@ describe("Quality Cost Register", () => {
   });
 
   it("shows an empty state, not zeros, when there are no records", async () => {
-    responses[`GET ${BASE}/records`] = { status: 200, body: { records: [], total: 0, canEdit: true } };
+    responses[`GET ${BASE}/records`] = { status: 200, body: { records: [], total: 0, canEdit: true, abilities: ALL_ABILITIES } };
     await render(<CostRegisterPage title="Quality Cost Register" />);
 
     expect(container.textContent).toContain("No quality cost items yet");
     expect(container.querySelector("table")).toBeNull();
   });
 
-  it("hides the add button from users who cannot edit", async () => {
-    responses[`GET ${BASE}/records/options`] = { status: 200, body: { ...OPTIONS, canEdit: false } };
+  it("hides the add button from users who cannot create records", async () => {
+    responses[`GET ${BASE}/records/options`] = {
+      status: 200,
+      body: { ...OPTIONS, abilities: { ...ALL_ABILITIES, create: false } },
+    };
     await render(<CostRegisterPage title="Quality Cost Register" />);
 
     expect(container.textContent).not.toContain("Add Quality Cost Item");
@@ -457,7 +478,10 @@ describe("Quality Cost Register", () => {
       testingCost: null,
       financialStatus: "potential",
       status: "open",
+      ownerUserId: null,
+      owner: null,
     });
+    expect(body).not.toHaveProperty("createdBy");
     expect(container.textContent).toContain("Added QC-00008.");
     expect(container.querySelector("dialog[open] h2")!.textContent).toBe("Quality cost item");
   });
@@ -490,7 +514,7 @@ describe("Quality Cost Register", () => {
     for (const section of ["Identification", "Classification", "Cost breakdown", "Recovery and avoidance", "Related records and notes", "Audit"]) {
       expect(dialog.textContent).toContain(section);
     }
-    expect(dialog.textContent).toContain("by fixture-user");
+    expect(dialog.textContent).toContain("by Fixture Owner");
     expect(paths(`${BASE}/records/7`)).toContain(`${BASE}/records/7`);
 
     await click(button("Edit", dialog));

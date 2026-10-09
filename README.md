@@ -177,8 +177,16 @@ from Docker build contexts. Never commit real credentials.
 | `MOISTURE_DATA_SOURCE` | api | `fixture` | `fixture` or `database`; `database` requires `DATABASE_URL`. Production must use `database` (`fixture` is refused when `ENVIRONMENT=production`) |
 | `INGESTION_AUTH_MODE` | api | `disabled` | `disabled`, `connector`, or `development-unauthenticated` (refused in production); see Ingestion API |
 | `INGESTION_CONNECTORS` | api | _(empty)_ | JSON connector registry holding secret **digests** only; see Ingestion API |
-| `USER_AUTH_MODE` | api | `disabled` | `disabled` or `development-unauthenticated` (refused in production); see Authorization |
-| `DEVELOPMENT_USER_PERMISSIONS` | api | `["safety.view","safety.edit"]` | JSON list of permissions held by the development user |
+| `SESSION_IDLE_MINUTES` | api | `480` | A session ends after this long without a request (5–1440) |
+| `SESSION_ABSOLUTE_HOURS` | api | `16` | ...and in any case this long after sign-in (1–168) |
+| `SESSION_COOKIE_SECURE` | api | `true` | HTTPS-only session cookie. `false` only for local `http://localhost`; refused in production |
+| `PASSWORD_LINK_HOURS` | api | `72` | Lifetime of one-time password setup/reset links (1–168) |
+| `LOGIN_MAX_FAILURES` | api | `5` | Failed sign-ins before an account is locked (3–20) |
+| `LOGIN_LOCK_MINUTES` | api | `15` | How long a locked account stays locked (1–1440) |
+
+Users, roles, role assignments and permissions are never configured here;
+see Authorization. `USER_AUTH_MODE` and `DEVELOPMENT_USER_PERMISSIONS` are
+retired and ignored.
 | `CAR_DUE_SOON_DAYS` | api | `14` | Window (0–365 days) for "due soon" on Corrective Action Reports |
 
 ## Database migrations
@@ -927,16 +935,183 @@ docker compose run --rm -v "$PWD/apps/api/import_templates:/app/import_templates
 
 ## Authorization
 
-There is no login yet. Interactive endpoints are protected by
-`require_permission(...)` (`app/core/authorization.py`), which resolves the
-user through `get_user_principal`. Adding authentication later replaces only
-`get_user_principal`; endpoints and permission checks stay unchanged.
+Users sign in with platform accounts (email and password). Users, roles,
+role assignments and permissions live in the database and are managed in
+**Administration**; none of them are configured in `.env`. Quality, Safety and
+every later module share this one sign-in and permission model.
 
-Permissions are defined once in `app/core/permissions.py` as
-`<module>[.<function>].<action>`. A grant covers its scope and every function
-under it. Actions are `view` < `edit` < `manage`, each implying the ones
-before it; `manage` (void, reclassify, administrative imports) is never
-implied by `edit`:
+### Sign-in and sessions (`app/auth/`)
+
+- **Accounts** (`core.users`): id, name, email (stored normalized to lower
+  case, unique), optional https image URL, status `active`/`inactive`,
+  `last_login_at`, created/updated timestamps. Users are never deleted, so
+  their names stay on the records and history they touched. An inactive user
+  cannot sign in, and their sessions end at once.
+- **Passwords** are hashed with Argon2id (`argon2-cffi`); at least 12
+  characters. Passwords and hashes are never logged, returned by the API,
+  written to audit records or kept in settings. After `LOGIN_MAX_FAILURES`
+  failed sign-ins an account is locked for `LOGIN_LOCK_MINUTES`; the API
+  answers a locked account exactly like a wrong password (`401
+  sign_in_failed`), so it never reveals whether an email has an account.
+- **Password links.** Nobody chooses a password for someone else. An
+  administrator creates the account and gives the user a one-time setup link
+  (or later a reset link); the user sets their own password. Links expire
+  after `PASSWORD_LINK_HOURS`, work once, and issuing a new one cancels the
+  previous one. Only a SHA-256 digest of the link token is stored. The token
+  travels in the URL fragment (`/setup-password#token=...`), which browsers
+  do not send to servers or logs, and the page removes it from the address bar.
+- **Sessions** (`core.sessions`) are opaque random tokens, stored only as
+  SHA-256 digests, in an HttpOnly, SameSite=Lax cookie (`__Host-op_session`;
+  `op_session` when `SESSION_COOKIE_SECURE=false`). A session ends after
+  `SESSION_IDLE_MINUTES` without a request and `SESSION_ABSOLUTE_HOURS` after
+  sign-in; signing out deletes it. The browser never sees the token.
+- **Cross-site requests.** Every write must carry `X-Requested-With:
+  operations-platform`, which browsers do not allow other sites to add; the
+  web client sends it automatically.
+- **HTTPS.** Production is reached by hostname over HTTPS (Nginx). The
+  session cookie is `Secure`; `SESSION_COOKIE_SECURE=false` is refused when
+  `ENVIRONMENT=production` and is meant only for local `http://localhost`.
+
+| Endpoint | Purpose |
+| -------- | ------- |
+| `POST /api/v1/auth/sign-in` | `{email, password}` → `204` and the session cookie; `401 sign_in_failed` otherwise |
+| `POST /api/v1/auth/sign-out` | Ends the session |
+| `GET /api/v1/auth/me` | The signed-in user (id, name, email, image, status), role names and effective permissions |
+| `POST /api/v1/auth/password-link/check` | `{token}` → the name and email the link is for; `400 link_invalid` if expired or used |
+| `POST /api/v1/auth/password-link` | `{token, password}` sets the password; `422 weak_password` |
+| `POST /api/v1/auth/password` | `{currentPassword, newPassword}`, signed in; other sessions of the user end |
+
+### First administrator and recovery
+
+There is no built-in account, default password or email allowlist. On a new
+installation, with shell access to the server, create the first
+administrator once:
+
+```bash
+docker compose exec api python -m app.auth.cli bootstrap-admin \
+  --email first.admin@example.com --name "First Admin" \
+  --base-url https://operations.example.com
+```
+
+It prints a one-time setup link to the terminal (not to any log); send it to
+that person. The command refuses to run once any active user holds
+`users.manage` and `roles.manage`, so it cannot be used to add administrators
+later; do that in Administration → Users.
+
+If every administrator is locked out, an operator with server access can issue
+a new link for an existing active user:
+
+```bash
+docker compose exec api python -m app.auth.cli password-link \
+  --email first.admin@example.com --base-url https://operations.example.com
+```
+
+Both commands are audited as `operator-cli`.
+
+### Roles and permissions
+
+`User → UserRole → Role → RolePermission → Permission`. A user may hold
+several roles; their effective permissions are the union of the permissions
+of their **active** roles (an inactive role grants nothing). There are no
+combination roles. Permissions are defined once in `app/core/permissions.py`
+(`<group>.<action>`, e.g. `car.close`); the web copy in
+`apps/web/src/lib/permissions.ts` is kept identical by a test. Nothing is
+implied by a name: `qualityCost.edit` does not include `qualityCost.view`
+unless a role grants both.
+
+Migration 0013 seeds the standard roles (`app/auth/roles.py`):
+
+| Role | Grants |
+| ---- | ------ |
+| `ADMIN` | Every permission. The only standard role with `users.manage` and `roles.manage`. |
+| `QUALITY_ADMIN` | All of Quality (Quality Cost, CARs, approval, closure, reopening), all assignments |
+| `QUALITY_USER` | Quality viewing, entering Quality Cost records and CARs, working CAR actions; no approval or closure |
+| `SAFETY_ADMIN` | All of Safety (records, incidents, near misses, observations), all assignments |
+| `SAFETY_USER` | Safety viewing and entering records and observations; no approval or closure |
+| `CONTRIBUTOR` | Their own assignments only |
+| `VIEWER` | Read-only Quality and Safety |
+
+Administrators may change a role's permissions afterwards. Rules enforced by
+the API (`app/auth/admin.py`):
+
+- Only permissions in the catalog can be granted, and only known roles assigned.
+- No escalation: without `users.manage` you may only assign roles whose
+  permissions you hold; without `roles.manage` you may only grant permissions
+  you hold.
+- `ADMIN` always holds every permission and cannot be deactivated. Standard
+  roles keep their names and cannot be deleted. A role held by any user cannot
+  be deleted.
+- There is always at least one active user holding `users.manage` and
+  `roles.manage`: deactivating them, removing their roles or changing roles in
+  a way that would leave none is refused (`422 last_administrator`). You
+  cannot deactivate yourself.
+- Every change to users, roles, role assignments, role permissions and
+  password links is audited (no secrets in the audit record).
+
+Administration endpoints (`/api/v1/admin/...`): `GET/POST users`, `GET/PUT
+users/{id}`, `POST users/{id}/activate|deactivate`, `PUT users/{id}/roles`,
+`POST users/{id}/password-link` (`users.edit`), `GET/POST roles`, `PUT
+roles/{code}`, `PUT roles/{code}/permissions`, `DELETE roles/{code}`, `GET
+permissions`, `GET audit`. Each needs its own permission (`users.view`,
+`users.create`, `users.edit`, `users.activate`, `users.deactivate`,
+`users.assignRoles`, `roles.view`, `roles.create`, `roles.edit`,
+`roles.assignPermissions`, `roles.delete`, `audit.view`).
+`GET /api/v1/users/directory` (`app.view`) lists names for person pickers.
+
+### Enforcement
+
+Every protected request resolves the session user, checks the account is
+active, loads their active roles, computes their permissions, checks the
+endpoint's permission (`require_permission`, `require_all_permissions`,
+`require_any_permission` in `app/core/authorization.py`), applies the
+record's own rules, makes the change, and audits it with the signed-in user.
+Code checks permissions, never role names. Hidden buttons and filtered
+navigation in the web app are a convenience only.
+
+- `401 authentication_required`: not signed in or session ended (the web app
+  returns to the sign-in page and then to the page you were on).
+- `403 permission_denied`: signed in without the permission. The message
+  never says who could do it. Denials are logged as `event=authorization
+  result=denied`.
+
+The browser is never trusted for who is acting: the acting user, roles,
+permissions, `createdBy`/`updatedBy`, approver, closer, completer and
+reviewer are all taken from the session. Record-level rules include:
+
+- **CARs**: completing a corrective action needs `car.completeAction` and
+  being its owner (or `car.admin`); an approval is recorded as the signed-in
+  user for one function (`car.approve`) and may be withdrawn only by that
+  user (or `car.admin`); changing the assignee needs `car.assign`; recording
+  the effectiveness review needs `car.reviewEffectiveness`; closing needs
+  `car.close` and reopening `car.reopen`. The reviewer and closure approver
+  are the signed-in user.
+- **Quality Cost**: changing the owner needs `qualityCost.assign`, confirming
+  costs `qualityCost.confirmFinancial`, closing `qualityCost.close`.
+- **Safety**: incidents and near misses each have their own
+  `view/create/edit/delete` permissions; reclassifying needs
+  `incident.classify`; closing or changing a closed performance month needs
+  `safetyRecord.close`. Dashboards also need `qualityDashboard.view` or
+  `safetyDashboard.view`.
+
+**People on records.** CAR requester, assignee, containment owner and action
+owners, and the Quality Cost owner, are user IDs chosen from active users;
+the API stores the name alongside. Names on records from before user
+accounts (imported workbooks) are kept exactly as written and shown as
+"recorded before user accounts"; they were linked to a user only where the
+match was unambiguous, never guessed. **My Assignments** (`GET
+/api/v1/assignments/mine`, `assignments.viewOwn`) lists open CARs, CAR
+actions and Quality Cost items assigned to the signed-in user's ID.
+
+### Retired settings
+
+`USER_AUTH_MODE` and `DEVELOPMENT_USER_PERMISSIONS` (the pre-sign-in
+development user) are gone. The API ignores them and logs
+`event=retired_setting` if they are still set; remove them from `.env`.
+The old `safety.*.edit`/`quality.*.edit` style permission names were
+replaced by the catalog above.
+
+<details>
+<summary>Former permission names (before migration 0013)</summary>
 
 | Granted                    | Satisfies                                                         |
 | -------------------------- | ----------------------------------------------------------------- |
@@ -967,23 +1142,7 @@ implied by `edit`:
 Cost record from a CAR needs `quality.cars.edit` **and** `quality.cost.edit`;
 linking an existing one needs `quality.cars.edit` and `quality.cost.view`.
 
-The default `DEVELOPMENT_USER_PERMISSIONS` are `safety.view`, `safety.edit`
-and `quality.view`. Moisture Analysis endpoints are not permission-checked yet.
-
-The `safety.contacts.*` permissions were removed with Supervisor Safety
-Contacts (see "Retired: Supervisor Safety Contacts").
-
-Endpoints always require the most specific permission (for example
-`safety.incidents.view` or `safety.observations.edit`), so grants can be
-narrowed to one function without changing endpoints.
-
-| `USER_AUTH_MODE`              | Behaviour                                                       |
-| ----------------------------- | --------------------------------------------------------------- |
-| `disabled` (default)          | Requests are anonymous; protected endpoints return `401 authentication_required` |
-| `development-unauthenticated` | Local development only (refused in production). Requests act as `development-user` with `DEVELOPMENT_USER_PERMISSIONS` |
-
-A user lacking a permission receives `403 permission_denied`. Denials are
-logged as `event=authorization result=denied`.
+</details>
 
 ## Audit trail
 
@@ -991,9 +1150,15 @@ logged as `event=authorization result=denied`.
 row per changed entity records `actor_id`, `occurred_at`, `action`
 (`create`/`update`/`delete`), `entity_type`, `entity_key`, `old_value` and
 `new_value` (JSONB), and a `change_set_id` grouping all rows of one save.
-Audit rows are written in the same transaction as the change. Write them with
-`app.audit.recorder.record_changes`. The Audit Log page does not display them
-yet.
+When the actor is a platform user, `actor_user_id` links to `core.users` and
+`actor_name` keeps their name as it was at the time, so history still reads
+correctly after a rename or deactivation. System actors (`legacy-import`,
+`operator-cli`) have only `actor_id`. Audit rows are written in the same
+transaction as the change; write them with
+`app.audit.recorder.record_changes`. User and role administration is audited
+here too (`core.user`, `core.role`). Values never contain passwords, hashes or
+tokens. The Audit Log page (`/system/audit`, `audit.view`) lists events
+newest first, filterable by record type.
 
 ## Safety > Incident & Near Miss
 

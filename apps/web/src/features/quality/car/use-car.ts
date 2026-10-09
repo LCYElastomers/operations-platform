@@ -18,9 +18,12 @@ import {
   fetchCars,
   fetchLinkedCars,
   linkQualityCost,
+  recordApproval,
   updateAction,
   updateCar,
+  withdrawApproval,
   type ActionFields,
+  type ApprovalFunction,
   type CarDashboardQuery,
   type CarFields,
   type CarQuery,
@@ -126,6 +129,16 @@ export function useCompleteAction() {
     ({ carId, actionId, body }: { carId: number; actionId: number; body: { version: number; completedOn: string } }) =>
       completeAction(carId, actionId, body),
   );
+}
+
+type ApprovalArgs = { id: number; body: { version: number; functionCode: ApprovalFunction } };
+
+export function useRecordApproval() {
+  return useCarMutation(({ id, body }: ApprovalArgs) => recordApproval(id, body));
+}
+
+export function useWithdrawApproval() {
+  return useCarMutation(({ id, body }: ApprovalArgs) => withdrawApproval(id, body));
 }
 
 export function useCreateQualityCost() {

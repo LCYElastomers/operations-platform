@@ -6,6 +6,7 @@ file location or workbook cell.
 """
 
 import datetime as dt
+import uuid
 from typing import Annotated, Literal
 
 from pydantic import ConfigDict, Field
@@ -42,10 +43,11 @@ class WhyStepIn(_Input):
     target_date: dt.date | None = None
 
 
-class ApprovalIn(_Input):
+class ApprovalRecord(_Input):
+    """Record your own approval for a function. Who and when come from the session."""
+
+    version: Annotated[int, Field(ge=1)]
     function_code: ApprovalFunction
-    name: ShortText
-    approved_on: dt.date | None = None
 
 
 class CarReferenceIn(_Input):
@@ -57,11 +59,19 @@ class CarReferenceIn(_Input):
 class CarFields(_Input):
     """Everything on the report except its corrective actions, which have their
     own endpoints. Only the subject and request date are required, so a report
-    can be saved incomplete."""
+    can be saved incomplete.
+
+    People are platform users chosen by ``*_user_id``; the server records their
+    names. A name field may only repeat a name recorded before users existed.
+    The effectiveness reviewer and the closure approver are not fields: they
+    are the signed-in user who records the review or closes the report.
+    Approvals have their own endpoint."""
 
     subject: ShortText
+    requested_by_user_id: uuid.UUID | None = None
     requested_by: ShortText | None = None
     request_date: dt.date
+    assigned_to_user_id: uuid.UUID | None = None
     assigned_to: ShortText | None = None
     due_date: dt.date | None = None
     # 1 Nonconformity identification
@@ -77,6 +87,7 @@ class CarFields(_Input):
     objective_evidence: LongText | None = None
     # 2 Immediate correction and containment
     immediate_actions: LongText | None = None
+    containment_owner_user_id: uuid.UUID | None = None
     containment_owner: ShortText | None = None
     containment_completed_on: dt.date | None = None
     disposition_codes: Annotated[list[Code], Field(max_length=10)] = []
@@ -113,7 +124,6 @@ class CarFields(_Input):
     # 6 Effectiveness review
     success_criteria: LongText | None = None
     effectiveness_evidence: LongText | None = None
-    reviewer: ShortText | None = None
     review_date: dt.date | None = None
     effectiveness_result: EffectivenessResult | None = None
     follow_up_reference: ShortText | None = None
@@ -121,12 +131,9 @@ class CarFields(_Input):
     material_loss: Money | None = None
     production_time_loss: Money | None = None
     other_costs: Money | None = None
-    # 8 Approval and closure. Status is null only on imported reports that
-    # recorded none.
-    approvals: Annotated[list[ApprovalIn], Field(max_length=6)] = []
+    # 8 Closure. Status is null only on imported reports that recorded none.
     status: CarStatus | None = "open"
     date_closed: dt.date | None = None
-    closure_approved_by: ShortText | None = None
     # Related production data and records
     product: ShortText | None = None
     campaign: ShortText | None = None
@@ -146,6 +153,7 @@ class CarUpdate(CarFields):
 
 class ActionFields(_Input):
     action: LongText
+    owner_user_id: uuid.UUID | None = None
     owner: ShortText | None = None
     target_date: dt.date | None = None
     status: ActionStatus = "open"
@@ -214,6 +222,8 @@ class CarActionOut(CamelModel):
     position: int
     action: str
     owner: str | None
+    # Null for a name recorded before users existed.
+    owner_user_id: uuid.UUID | None
     target_date: dt.date | None
     # Null when an imported action recorded no status.
     status: ActionStatus | None
@@ -227,8 +237,10 @@ class CarActionOut(CamelModel):
     version: int
     created_at: dt.datetime
     created_by: str
+    created_by_name: str
     updated_at: dt.datetime
     updated_by: str
+    updated_by_name: str
 
 
 class WhyStepOut(CamelModel):
@@ -245,9 +257,12 @@ class ApprovalOut(CamelModel):
     function_code: ApprovalFunction
     function_label: str
     name: str
+    # The approving user; null on imported approvals.
+    user_id: uuid.UUID | None
     approved_on: dt.date | None
     # The platform user who recorded the approval (not a signature).
     recorded_by: str
+    recorded_by_name: str
     recorded_at: dt.datetime
 
 
@@ -287,8 +302,10 @@ class CarSummaryFields(CamelModel):
     car_number: str
     subject: str
     requested_by: str | None
+    requested_by_user_id: uuid.UUID | None
     request_date: dt.date
     assigned_to: str | None
+    assigned_to_user_id: uuid.UUID | None
     due_date: dt.date | None
     status: CarStatus | None
     status_label: str
@@ -327,6 +344,7 @@ class CarOut(CarSummaryFields):
     objective_evidence: str | None
     immediate_actions: str | None
     containment_owner: str | None
+    containment_owner_user_id: uuid.UUID | None
     containment_completed_on: dt.date | None
     disposition_codes: list[str]
     disposition_labels: list[str]
@@ -359,6 +377,7 @@ class CarOut(CarSummaryFields):
     success_criteria: str | None
     effectiveness_evidence: str | None
     reviewer: str | None
+    reviewer_user_id: uuid.UUID | None
     review_date: dt.date | None
     follow_up_reference: str | None
     material_loss: DecimalStr | None
@@ -366,6 +385,7 @@ class CarOut(CarSummaryFields):
     other_costs: DecimalStr | None
     quality_cost: LinkedCostOut | None
     closure_approved_by: str | None
+    closure_approved_by_user_id: uuid.UUID | None
     approvals: list[ApprovalOut]
     product: str | None
     campaign: str | None
@@ -380,21 +400,46 @@ class CarOut(CarSummaryFields):
     version: int
     created_at: dt.datetime
     created_by: str
+    created_by_name: str
     updated_at: dt.datetime
     updated_by: str
+    updated_by_name: str
+
+
+class CarAbilitiesOut(CamelModel):
+    """What the signed-in user may do (for the interface; the server enforces it,
+    including the record rules such as "only the owner completes an action")."""
+
+    create: bool
+    edit: bool
+    assign: bool
+    manage_actions: bool
+    complete_action: bool
+    review_effectiveness: bool
+    approve: bool
+    close: bool
+    reopen: bool
+    admin: bool
+    # car.edit with qualityCost.create / qualityCost.view.
+    create_quality_cost: bool
+    link_quality_cost: bool
 
 
 class CarListResponse(CamelModel):
     cars: list[CarListItemOut]
     total: int
     can_edit: bool
+    abilities: CarAbilitiesOut
 
 
 class CarResponse(CamelModel):
     car: CarOut
     can_edit: bool
-    # Creating a Quality Cost record from the report also needs quality.cost.edit.
+    # Creating a Quality Cost record from the report also needs qualityCost.create.
     can_edit_cost: bool
+    abilities: CarAbilitiesOut
+    # The signed-in user, so the form can tell which actions are theirs.
+    current_user_id: uuid.UUID | None
 
 
 class CarOptionsResponse(CamelModel):
@@ -414,6 +459,7 @@ class CarOptionsResponse(CamelModel):
     due_soon_days: int
     can_edit: bool
     can_edit_cost: bool
+    abilities: CarAbilitiesOut
 
 
 class CarHistoryEventOut(HistoryEventOut):

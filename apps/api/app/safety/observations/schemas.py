@@ -56,6 +56,8 @@ class ObservationCategoriesResponse(CamelModel):
 
     categories: list[ObservationCategoryOut]
     can_edit: bool
+    can_create: bool = False
+    can_delete: bool = False
 
 
 class ObservationInput(CamelModel):
@@ -102,6 +104,8 @@ class ObservationListResponse(CamelModel):
     observations: list[ObservationOut]
     total_matching: int
     can_edit: bool
+    can_create: bool = False
+    can_delete: bool = False
 
 
 class ObservationCounts(CamelModel):
