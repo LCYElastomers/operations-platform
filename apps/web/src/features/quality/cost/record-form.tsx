@@ -62,7 +62,8 @@ const OPTIONAL_TEXT = [
   "resolutionNotes",
 ] as const;
 
-const MONEY = /^\d{1,14}(\.\d{1,4})?$/;
+export const MONEY = /^\d{1,14}(\.\d{1,4})?$/;
+export const MONEY_MESSAGE = "Enter an amount such as 1250 or 1250.75 (no negatives).";
 
 export function emptyDraft(today: string, coqClass: CoqClass | "" = ""): CostDraft {
   return {
@@ -180,7 +181,7 @@ export function draftProblems(draft: CostDraft, today: string, requireArea: bool
   if (!draft.description.trim()) problems.description = "Describe what happened.";
   for (const field of [...COST_FIELDS, "recoveredCost", "avoidedCost"] as const) {
     const value = draft[field].trim();
-    if (value && !MONEY.test(value)) problems[field] = "Enter an amount such as 1250 or 1250.75 (no negatives).";
+    if (value && !MONEY.test(value)) problems[field] = MONEY_MESSAGE;
   }
   if (draft.dueDate && draft.recordDate && draft.dueDate < draft.recordDate)
     problems.dueDate = "The due date cannot be before the date.";
@@ -193,14 +194,14 @@ export function draftProblems(draft: CostDraft, today: string, requireArea: bool
   return problems;
 }
 
-const fieldClasses = cn(
+export const fieldClasses = cn(
   "w-full rounded-md border border-input bg-background px-3 text-sm shadow-xs outline-none",
   "focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-60",
   "aria-invalid:border-destructive pointer-coarse:text-base",
 );
-const inputClasses = cn(fieldClasses, "h-9 pointer-coarse:h-11");
+export const inputClasses = cn(fieldClasses, "h-9 pointer-coarse:h-11");
 
-function Field({
+export function Field({
   id,
   label,
   required,

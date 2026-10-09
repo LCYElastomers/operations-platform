@@ -54,6 +54,10 @@ P = Permission
         (P.QUALITY_VIEW, P.QUALITY_COST_VIEW, True),
         (P.QUALITY_VIEW, P.QUALITY_COST_EDIT, False),
         (P.QUALITY_VIEW, P.QUALITY_COST_MANAGE, False),
+        (P.QUALITY_VIEW, P.QUALITY_CARS_VIEW, True),
+        (P.QUALITY_VIEW, P.QUALITY_CARS_EDIT, False),
+        (P.QUALITY_CARS_EDIT, P.QUALITY_CARS_VIEW, True),
+        (P.QUALITY_CARS_EDIT, P.QUALITY_COST_EDIT, False),
         (P.QUALITY_EDIT, P.QUALITY_COST_EDIT, True),
         (P.QUALITY_EDIT, P.QUALITY_COST_MANAGE, False),
         (P.QUALITY_COST_EDIT, P.QUALITY_COST_VIEW, True),
@@ -84,7 +88,11 @@ def test_effective_permissions_expand_module_grants() -> None:
     manage_only = {P.SAFETY_MANAGE, P.SAFETY_INCIDENT_RECORDS_MANAGE, P.SAFETY_TRIR_MANAGE}
     assert effective_permissions([P.SAFETY_EDIT]) == safety - manage_only
     assert effective_permissions([P.SAFETY_MANAGE]) == safety
-    assert effective_permissions([P.QUALITY_VIEW]) == {P.QUALITY_VIEW, P.QUALITY_COST_VIEW}
+    assert effective_permissions([P.QUALITY_VIEW]) == {
+        P.QUALITY_VIEW,
+        P.QUALITY_COST_VIEW,
+        P.QUALITY_CARS_VIEW,
+    }
     assert effective_permissions([P.QUALITY_MANAGE]) == {
         p for p in Permission if p.startswith("quality.")
     }

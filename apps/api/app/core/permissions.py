@@ -27,6 +27,12 @@ class Permission(StrEnum):
     QUALITY_COST_EDIT = "quality.cost.edit"
     # Cost of Quality imports (operator command; no endpoint writes them).
     QUALITY_COST_MANAGE = "quality.cost.manage"
+    # Corrective Action Reports: register, dashboard, report detail and history.
+    QUALITY_CARS_VIEW = "quality.cars.view"
+    # Create and edit reports, their actions, approvals and Quality Cost link.
+    QUALITY_CARS_EDIT = "quality.cars.edit"
+    # CAR workbook imports (operator command; no endpoint writes them).
+    QUALITY_CARS_MANAGE = "quality.cars.manage"
     SAFETY_VIEW = "safety.view"
     SAFETY_EDIT = "safety.edit"
     SAFETY_MANAGE = "safety.manage"

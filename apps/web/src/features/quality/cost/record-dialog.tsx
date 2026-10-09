@@ -1,6 +1,7 @@
 "use client";
 
 import { AlertTriangle, History, Pencil, Plus } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 
 import { EmptyState } from "@/components/common/empty-state";
@@ -13,6 +14,8 @@ import { describeCostError, type CoqClass, type CostHistoryEvent, type CostRecor
 import { CostRecordForm } from "./record-form";
 import { COQ_CLASS_COLORS, FINANCIAL_TONES, formatDate, formatTimestamp, usd } from "./format";
 import { useCostRecord, useCostRecordHistory, useCostRecordOptions } from "./use-cost";
+import { carHref } from "../car/api";
+import { useLinkedCars } from "../car/use-car";
 
 export type CostDialogTarget = { kind: "create"; coqClass?: CoqClass } | { kind: "view"; id: number };
 
@@ -164,6 +167,25 @@ function DetailSection({ title, children }: { title: string; children: React.Rea
 
 const NOT_ENTERED = <span className="text-muted-foreground">Not entered</span>;
 
+/** The CAR this item records the cost of. Nothing is shown to users who cannot view CARs. */
+function LinkedCar({ recordId }: { recordId: number }) {
+  const linked = useLinkedCars(recordId);
+  if (!Array.isArray(linked.data) || linked.data.length === 0) return null;
+  return (
+    <Item label="Corrective Action Report" wide>
+      {linked.data.map((car) => (
+        <Link
+          key={car.id}
+          href={carHref(car.id)}
+          className="font-medium text-primary underline-offset-2 hover:underline"
+        >
+          {car.carNumber}: {car.subject}
+        </Link>
+      ))}
+    </Item>
+  );
+}
+
 function text(value: string | null) {
   return value ?? NOT_ENTERED;
 }
@@ -292,6 +314,7 @@ function RecordDetail({
             ? NOT_ENTERED
             : record.references.map((ref) => `${ref.typeLabel}: ${ref.key}${ref.label ? ` (${ref.label})` : ""}`).join("\n")}
         </Item>
+        <LinkedCar recordId={record.id} />
         <Item label="Notes" wide>
           {text(record.notes)}
         </Item>
@@ -333,7 +356,7 @@ function shown(value: unknown): string {
   return String(value);
 }
 
-function changes(event: CostHistoryEvent): { field: string; from: string; to: string }[] {
+export function historyChanges(event: CostHistoryEvent): { field: string; from: string; to: string }[] {
   const before = event.oldValue ?? {};
   const after = event.newValue ?? {};
   return Object.keys(after)
@@ -359,7 +382,7 @@ function HistoryList({ record }: { record: CostRecord }) {
                 {event.action === "create" ? "Created" : "Updated"} {formatTimestamp(event.occurredAt)} by {event.actorId}
               </p>
               <ul className="mt-1 space-y-0.5 text-xs text-muted-foreground">
-                {changes(event).map((change) => (
+                {historyChanges(event).map((change) => (
                   <li key={change.field}>
                     <span className="font-medium text-foreground">{change.field}:</span>{" "}
                     {event.action === "create" ? change.to : `${change.from} → ${change.to}`}

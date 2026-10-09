@@ -229,7 +229,7 @@ def test_cost_migration_creates_monthly_inputs_only(upgrade_sql: str) -> None:
 
 
 def test_cost_records_migration_creates_records_and_references_only(upgrade_sql: str) -> None:
-    sql = _segment(upgrade_sql, "0010 -> 0011")
+    sql = _segment(upgrade_sql, "0010 -> 0011", "0011 -> 0012")
     assert "CREATE TABLE quality.cost_records" in sql
     assert "CREATE TABLE quality.cost_record_references" in sql
     table = sql.split("CREATE TABLE quality.cost_records", 1)[1].split(";", 1)[0]
@@ -251,3 +251,28 @@ def test_cost_records_migration_creates_records_and_references_only(upgrade_sql:
     assert "ALTER TABLE" not in sql
     assert "DROP" not in sql
     assert "cost_monthly_facts" not in sql
+
+
+def test_car_migration_creates_car_tables_only(upgrade_sql: str) -> None:
+    sql = _segment(upgrade_sql, "0011 -> 0012")
+    for table in ("cars", "car_actions", "car_why_steps", "car_approvals", "car_references"):
+        assert f"CREATE TABLE quality.{table} " in sql
+    cars = sql.split("CREATE TABLE quality.cars ", 1)[1].split(";", 1)[0]
+    # Days open, past due, cost total and progress are derived, never stored.
+    for derived in ("days_open", "past_due", "total_cost", "due_soon", "progress"):
+        assert derived not in cars
+    assert "UNIQUE (car_number)" in cars
+    assert "REFERENCES quality.cost_records (id) ON DELETE RESTRICT" in cars
+    assert "status IS NOT NULL OR source = 'legacy_import'" in cars
+    assert "material_loss NUMERIC," in cars
+    assert (
+        "CREATE UNIQUE INDEX uq_cars_quality_cost_record_id ON quality.cars "
+        "(quality_cost_record_id) WHERE quality_cost_record_id IS NOT NULL"
+    ) in sql
+    actions = sql.split("CREATE TABLE quality.car_actions ", 1)[1].split(";", 1)[0]
+    assert "REFERENCES quality.cars (id) ON DELETE RESTRICT" in actions
+    assert "completed_on IS NULL OR status = 'complete'" in actions
+    # Schema only: nothing seeded, nothing existing altered or dropped.
+    assert "INSERT" not in sql.replace("UPDATE core.alembic_version", "")
+    assert "ALTER TABLE" not in sql
+    assert "DROP" not in sql

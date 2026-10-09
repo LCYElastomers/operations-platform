@@ -49,6 +49,10 @@ class Settings(BaseSettings):
     # versions from quality.finishing_measurements.
     moisture_data_source: Literal["fixture", "database"] = "fixture"
 
+    # A Corrective Action Report not closed whose due date is within this many
+    # days (today included) is "due soon".
+    car_due_soon_days: Annotated[int, Field(ge=0, le=365)] = 14
+
     # Machine ingestion endpoints:
     #   disabled                     every request is refused (default)
     #   connector                    connector ID + secret, verified against

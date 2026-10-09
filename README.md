@@ -179,6 +179,7 @@ from Docker build contexts. Never commit real credentials.
 | `INGESTION_CONNECTORS` | api | _(empty)_ | JSON connector registry holding secret **digests** only; see Ingestion API |
 | `USER_AUTH_MODE` | api | `disabled` | `disabled` or `development-unauthenticated` (refused in production); see Authorization |
 | `DEVELOPMENT_USER_PERMISSIONS` | api | `["safety.view","safety.edit"]` | JSON list of permissions held by the development user |
+| `CAR_DUE_SOON_DAYS` | api | `14` | Window (0–365 days) for "due soon" on Corrective Action Reports |
 
 ## Database migrations
 
@@ -210,7 +211,8 @@ ingestion, `0003` audit events and Incident & Near Miss,
 kept), `0006` Safety Performance, `0007` incident dimensions, `0008`
 Behavior, `0009` incident records and TRIR history, `0010` Cost of
 Quality monthly inputs (`app.quality.cost.legacy_import`), `0011` Quality
-Cost records and their related-record references. Migrations seed
+Cost records and their related-record references, `0012` Corrective Action
+Reports (`app.quality.car.legacy_import`). Migrations seed
 reference data only; legacy values are loaded afterwards with the import
 CLIs, in this order: incident totals (`app.safety.legacy_import`), Safety
 Performance hours, Behavior, TRIR history, then reviewed incident
@@ -218,7 +220,7 @@ narratives. Each has `check`, `plan` and `apply`; `apply` is audited and
 idempotent.
 
 **Back up before upgrading production.** Downgrades are not a rollback for
-data: `0002`–`0011` each refuse to downgrade while their tables hold data,
+data: `0002`–`0012` each refuse to downgrade while their tables hold data,
 so restoring the backup is the rollback once anything was imported.
 The release runbook and data-quality report for 0009 are in
 [`docs/safety-release-0009/`](docs/safety-release-0009/).
@@ -818,6 +820,111 @@ no-op; a database that already holds the 0010 months gets only the records.
 Imported records may be edited (area, product, owner, actions) in the
 Register. See `docs/quality-cost-0010/data-quality-report.md`.
 
+## Quality > Corrective Action Reports
+
+Corrective Action Reports (CARs, migration 0012) live under Quality next to
+Cost of Quality and reuse its patterns (audited saves with a `version`,
+controlled lists served by `/options`, null never shown as zero).
+
+- **Dashboard** (`/quality/cars`): Open, Past due, Due soon, Awaiting
+  effectiveness and Closed YTD; CARs by status, department, source and root
+  cause; opened vs closed per month; aging of open CARs; effectiveness results;
+  repeat CARs; cost impact by department; a past-due list. Filters: request
+  date range, department, source, assigned to. Empty states, no placeholder
+  figures.
+- **CAR Register** (`/quality/cars/register`): CAR number, request date,
+  subject, department, source, assigned to, due date, status, effectiveness,
+  days open, cost impact and action progress. Filters (kept in the URL):
+  search, date range, status, department, source, assigned to, root cause,
+  effectiveness, past due, previous/repeat. A row opens the CAR at
+  `/quality/cars/register/{id}`.
+- **+ New CAR** (`/quality/cars/new`): only the subject and request date are
+  needed to save; the CAR number (`Q-YYYY-NNN`) is assigned on save, one after
+  the highest used that year (gaps are left).
+
+A CAR is worked through eight steps: Identify, Contain, Investigate (Why-Why
+analysis), Evaluate (systemic review), Correct (actions and plan), Verify
+(effectiveness), Cost, Close (approvals and closure). Each step can be saved
+incomplete. The record page also shows an overview, evidence and related
+records, imported legacy fields, and the full history. Controlled lists
+(sources, departments, root causes, dispositions, statuses, approval
+functions) are defined once in `app/quality/car/reference.py`; values used
+only by older forms stay readable and are marked "(older form)".
+
+### Rules (`calculations.py`, `service.py`)
+
+- Corrective actions are separate records (`quality.car_actions`) with their
+  own owner, target date, status and completion date; adding, editing and
+  completing one does not change the CAR's status. The register shows
+  "x/y complete" and overdue actions.
+- A CAR can be closed only when every action is complete, an effectiveness
+  result is recorded (a follow-up is required when Not Effective), a date
+  closed (not in the future, not before the request) and a closure approver
+  are entered. Completing actions never records effectiveness.
+- Past due = not closed and the due date has passed; due soon = not closed
+  and due within `CAR_DUE_SOON_DAYS`. Neither is stored.
+- Yes/No questions and every other field distinguish "not recorded" from
+  "No"; blank cost lines are not entered, never $0. Total cost impact is the
+  sum of the entered lines (material, production time, other).
+- Approvals are names and dates recorded by the signed-in user, stored per
+  function with who recorded them. They are not digital signatures.
+- Evidence and attachments are references (document names, locations); no
+  files are stored and no links are generated.
+- A CAR can create a Quality Cost record from its cost impact (area, COQ
+  class, category and financial status chosen by the user) or link an
+  existing one (`quality.cars.quality_cost_record_id`, one CAR per record).
+  The record then counts in COPQ and the COQ Matrix like any other; its
+  dialog links back to the CAR.
+
+### API
+
+| Endpoint | Description |
+| -------- | ----------- |
+| `GET /api/v1/quality/cars` | Register list. Filters: `from`, `to`, `status`, `department`, `source`, `rootCause`, `effectiveness` (each repeatable, `not_recorded` allowed), `assignedTo`, `pastDue`, `repeat`, `search`, `limit`, `offset` |
+| `GET /api/v1/quality/cars/options` | Controlled lists, known names, due-soon window and edit rights |
+| `GET /api/v1/quality/cars/dashboard` | Dashboard figures. `from`, `to`, `department`, `source`, `assignedTo` |
+| `GET /api/v1/quality/cars/linked?costRecordId=` | The CAR linked to a Quality Cost record |
+| `GET /api/v1/quality/cars/{id}` / `.../history` | One CAR with its actions / its audit history |
+| `POST /api/v1/quality/cars` | Create (`quality.cars.edit`) |
+| `PUT /api/v1/quality/cars/{id}` | Edit with `version` (`quality.cars.edit`); a stale edit answers 409 |
+| `POST /api/v1/quality/cars/{id}/actions` | Add an action |
+| `PUT /api/v1/quality/cars/{id}/actions/{actionId}` | Edit an action |
+| `POST /api/v1/quality/cars/{id}/actions/{actionId}/complete` | Complete an action |
+| `POST /api/v1/quality/cars/{id}/quality-cost` | Create and link a Quality Cost record (also `quality.cost.edit`) |
+| `PUT /api/v1/quality/cars/{id}/quality-cost` | Link (`recordId`) or unlink (null) a Quality Cost record (also `quality.cost.view`) |
+
+Rule failures answer 422 with `{error, message, field}`. Responses carry no
+workbook cell references.
+
+### Importing historical CAR workbooks
+
+The CAR workbooks in `docs/cars` are source records: they are opened
+read-only and never modified, moved or renamed. A workbook with no CAR
+number (the blank QMS-006-1 template) is skipped. On a development machine,
+`extract` reads them and writes the reviewed mapping file and the migration
+report (`docs/quality-car-0012/migration-report.md`); blanks stay not
+recorded and older-form answers without a current field are kept verbatim
+as legacy fields. The server only needs the mapping file:
+
+```powershell
+cd apps/api
+uv run python -m app.quality.car.legacy_import check import_templates/quality_cars_2026.mapping.json
+uv run python -m app.quality.car.legacy_import plan  import_templates/quality_cars_2026.mapping.json
+uv run python -m app.quality.car.legacy_import apply import_templates/quality_cars_2026.mapping.json
+```
+
+`apply` writes in one audited transaction (`quality.car`, `quality.car_action`,
+actor `legacy-import`), keyed `car-workbook/<CAR number>`. CAR numbers are
+kept as in the workbooks; a stored import that differs from the file blocks
+it, and re-running is a no-op.
+
+In the deployed stack, mount the mapping read-only into a one-off container:
+
+```bash
+docker compose run --rm -v "$PWD/apps/api/import_templates:/app/import_templates:ro" \
+  api python -m app.quality.car.legacy_import plan import_templates/quality_cars_2026.mapping.json
+```
+
 ## Authorization
 
 There is no login yet. Interactive endpoints are protected by
@@ -846,12 +953,19 @@ implied by `edit`:
 | `safety.performance.edit`  | `safety.performance.view`, `safety.performance.edit`              |
 | `safety.trir.view`         | TRIR Experience                                                   |
 | `safety.trir.manage`       | TRIR history imports (operator CLI; no endpoint writes TRIR facts) |
-| `quality.view`             | every Quality `view` permission, including `quality.cost.view`    |
-| `quality.edit`             | everything above plus every Quality `edit` permission, including `quality.cost.edit` |
-| `quality.manage`           | everything above plus `quality.cost.manage`                        |
+| `quality.view`             | every Quality `view` permission, including `quality.cost.view` and `quality.cars.view` |
+| `quality.edit`             | everything above plus every Quality `edit` permission, including `quality.cost.edit` and `quality.cars.edit` |
+| `quality.manage`           | everything above plus `quality.cost.manage` and `quality.cars.manage` |
 | `quality.cost.view`        | Quality Cost Register, Cost of Poor Quality, COQ Matrix and the incident cost estimator |
 | `quality.cost.edit`        | the above plus adding and editing Quality Cost records            |
 | `quality.cost.manage`      | the above plus Cost of Quality imports (operator CLI)             |
+| `quality.cars.view`        | CAR dashboard, CAR Register, CAR records and their history        |
+| `quality.cars.edit`        | the above plus creating and editing CARs and their actions        |
+| `quality.cars.manage`      | the above plus CAR workbook imports (operator CLI)                |
+
+`quality.cars.*` and `quality.cost.*` are independent: creating a Quality
+Cost record from a CAR needs `quality.cars.edit` **and** `quality.cost.edit`;
+linking an existing one needs `quality.cars.edit` and `quality.cost.view`.
 
 The default `DEVELOPMENT_USER_PERMISSIONS` are `safety.view`, `safety.edit`
 and `quality.view`. Moisture Analysis endpoints are not permission-checked yet.

@@ -2,10 +2,12 @@ import {
   Activity,
   ChartColumn,
   CircleDollarSign,
+  ClipboardCheck,
   ClipboardList,
   Clock,
   Database,
   Droplets,
+  FilePlus2,
   FlaskConical,
   Grid2x2,
   HardHat,
@@ -84,6 +86,40 @@ export const navigation: NavSection[] = [
                 status: "in-development",
                 description:
                   "Prevention, appraisal, internal and external failure costs from the Quality Cost Register, and the cost of quality mix.",
+              },
+            ],
+          },
+          {
+            id: "quality-cars",
+            label: "Corrective Action Reports",
+            children: [
+              {
+                id: "quality-cars-dashboard",
+                label: "Dashboard",
+                href: "/quality/cars",
+                exact: true,
+                icon: ChartColumn,
+                status: "in-development",
+                description:
+                  "Open, past-due and due-soon CARs, effectiveness reviews waiting, trends, aging and cost impact.",
+              },
+              {
+                id: "quality-cars-register",
+                label: "CAR Register",
+                href: "/quality/cars/register",
+                icon: ClipboardCheck,
+                status: "in-development",
+                description:
+                  "Every Corrective Action Report with its status, actions, effectiveness and cost impact. Select a CAR to open, edit and progress it.",
+              },
+              {
+                id: "quality-cars-new",
+                label: "+ New CAR",
+                href: "/quality/cars/new",
+                icon: FilePlus2,
+                status: "in-development",
+                description:
+                  "Record a new Corrective Action Report. Only the subject and request date are needed to save; the other steps can be completed later.",
               },
             ],
           },

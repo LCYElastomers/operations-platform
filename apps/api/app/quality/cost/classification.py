@@ -58,6 +58,8 @@ COMPONENT_FIELDS: tuple[str, ...] = tuple(field for field, _ in COST_COMPONENTS)
 # a Corrective Action Report) so links can be made to its records.
 REFERENCE_TYPES: dict[str, str] = {
     "reference": "Reference / document number",
+    # Key: the CAR number (Q-2026-006).
+    "car": "Corrective Action Report",
 }
 
 

@@ -1,0 +1,737 @@
+{
+  "source": "CAR workbooks in docs/cars",
+  "notes": [
+    "Generated from the workbooks by app.quality.car.workbook; review before applying."
+  ],
+  "cars": [
+    {
+      "sourceFile": "Q-2026-001 CAR Form.xlsx",
+      "sha256": "dc636dda27b9f173107fb3a70c599beb9db7408b1efd103607fdb058b0911ffd",
+      "layout": "legacy",
+      "car": {
+        "subject": "Bleach Inventory Depletion Resulting in Stockout on 6/19/2026",
+        "requestedBy": "Jennifer Willingham",
+        "requestDate": "2026-06-23",
+        "assignedTo": "Cathi Eden; Tracy Andrus",
+        "dueDate": "2026-07-23",
+        "sourceCode": null,
+        "departmentCode": null,
+        "startedOn": "2026-06-19",
+        "startedTime": null,
+        "endedOn": "2026-06-19",
+        "endedTime": null,
+        "previousOccurrence": false,
+        "previousCar": null,
+        "nonconformityDescription": "Bleach Tote level low",
+        "objectiveEvidence": null,
+        "immediateActions": null,
+        "containmentOwner": null,
+        "containmentCompletedOn": null,
+        "dispositionCodes": [
+          "not_applicable"
+        ],
+        "dispositionOther": null,
+        "safetyHazard": false,
+        "environmentalHazard": false,
+        "customerImpact": null,
+        "incidentType": null,
+        "rootCauseCode": null,
+        "equipmentInvolved": null,
+        "workOrderNumber": null,
+        "investigationSummary": null,
+        "trueRootCause": "Tote inventory level dropped below reorder point without being identified. Current process relies on ops personal noting low inventory levels in order to initiate reorder.",
+        "whySteps": [],
+        "complaintNumber": null,
+        "dateReported": null,
+        "drNumber": null,
+        "materialName": null,
+        "poNumber": null,
+        "supplier": null,
+        "dateDelivered": null,
+        "productionLot": null,
+        "quantityAffected": null,
+        "similarNonconformities": null,
+        "similarIssueFound": null,
+        "additionalActionRequired": null,
+        "proceduresRevised": null,
+        "trainingCompleted": null,
+        "supportingDocuments": null,
+        "planCompletedOn": null,
+        "successCriteria": null,
+        "effectivenessEvidence": null,
+        "reviewer": null,
+        "reviewDate": null,
+        "effectivenessResult": null,
+        "followUpReference": null,
+        "materialLoss": "0",
+        "productionTimeLoss": "0",
+        "otherCosts": null,
+        "approvals": [],
+        "status": null,
+        "dateClosed": null,
+        "closureApprovedBy": null,
+        "product": null,
+        "campaign": null,
+        "lot": null,
+        "location": null,
+        "counterparty": null,
+        "references": [],
+        "carNumber": "Q-2026-001"
+      },
+      "actions": [
+        {
+          "action": "Establish a system that alerts when inventory reaches reorder point. (Tracy Andrus)                       Implement weekly bleach totes audits. (Tracy Andrus)                                                                                                                        Review the Univar mini-bulk system, which is managed through telemetry. The system is monitored by Univar and automatically generates a reorder when inventory reaches 30% capacity, helping prevent product shortages due to unexpected operational demand. (Tracy Andrus)",
+          "owner": null,
+          "targetDate": null,
+          "status": null,
+          "completedOn": null,
+          "cells": [
+            "CAR!A52"
+          ]
+        }
+      ],
+      "legacyFields": [
+        {
+          "label": "Were there any equipment problems?",
+          "value": "Yes"
+        },
+        {
+          "label": "Has the equipment been defective in the past?",
+          "value": "Yes"
+        },
+        {
+          "label": "Describe the equipment failure",
+          "value": "Clarifier bleach tank is out of service, we are currently using bleach totes"
+        }
+      ],
+      "cells": {
+        "car_number": "CAR!B2",
+        "subject": "CAR!D2",
+        "assigned_to": "CAR!B3",
+        "requested_by": "CAR!B4",
+        "request_date": "CAR!F3",
+        "due_date": "CAR!F4",
+        "previous_occurrence": "CAR!E9",
+        "started_on": "CAR!E11",
+        "ended_on": "CAR!E12",
+        "material_loss": "CAR!E17",
+        "production_time_loss": "CAR!E18",
+        "disposition_codes": "CAR!E24",
+        "safety_hazard": "CAR!E31",
+        "environmental_hazard": "CAR!E32",
+        "nonconformity_description": "CAR!A41",
+        "true_root_cause": "CAR!A47"
+      },
+      "warnings": [],
+      "notes": [
+        "The corrective action text is imported verbatim as one action; the older form records no owner, target date or status for it.",
+        "The older form records no CAR status or effectiveness result; both are left not recorded."
+      ]
+    },
+    {
+      "sourceFile": "Q-2026-002 CAR Form.xlsx",
+      "sha256": "e61c699ac86c290dc57655f803b858f074902ab5a44c00b4ffdf62c300ef2afe",
+      "layout": "legacy",
+      "car": {
+        "subject": "3411P ink labels on paper bags are missing the P (22 pallets)",
+        "requestedBy": "Jennifer Willingham",
+        "requestDate": "2026-07-23",
+        "assignedTo": "Silvie Varghese",
+        "dueDate": "2026-08-23",
+        "sourceCode": null,
+        "departmentCode": "quality",
+        "startedOn": "2026-07-15",
+        "startedTime": null,
+        "endedOn": "2026-07-15",
+        "endedTime": null,
+        "previousOccurrence": false,
+        "previousCar": null,
+        "nonconformityDescription": "Employee did not Enter correct pick list grade into printer.",
+        "objectiveEvidence": null,
+        "immediateActions": null,
+        "containmentOwner": null,
+        "containmentCompletedOn": null,
+        "dispositionCodes": [
+          "rework"
+        ],
+        "dispositionOther": null,
+        "safetyHazard": false,
+        "environmentalHazard": false,
+        "customerImpact": null,
+        "incidentType": "Quality",
+        "rootCauseCode": null,
+        "equipmentInvolved": null,
+        "workOrderNumber": null,
+        "investigationSummary": null,
+        "trueRootCause": "Employee did not verify Stencil Printing on bags with pick list form.",
+        "whySteps": [],
+        "complaintNumber": null,
+        "dateReported": null,
+        "drNumber": null,
+        "materialName": null,
+        "poNumber": null,
+        "supplier": null,
+        "dateDelivered": null,
+        "productionLot": null,
+        "quantityAffected": null,
+        "similarNonconformities": null,
+        "similarIssueFound": null,
+        "additionalActionRequired": null,
+        "proceduresRevised": null,
+        "trainingCompleted": true,
+        "supportingDocuments": null,
+        "planCompletedOn": null,
+        "successCriteria": null,
+        "effectivenessEvidence": "Mundy Management has been field verifying that leads are signing off on papework.",
+        "reviewer": null,
+        "reviewDate": "2026-07-27",
+        "effectivenessResult": null,
+        "followUpReference": null,
+        "materialLoss": null,
+        "productionTimeLoss": null,
+        "otherCosts": null,
+        "approvals": [],
+        "status": null,
+        "dateClosed": null,
+        "closureApprovedBy": null,
+        "product": null,
+        "campaign": null,
+        "lot": null,
+        "location": null,
+        "counterparty": null,
+        "references": [],
+        "carNumber": "Q-2026-002"
+      },
+      "actions": [
+        {
+          "action": "Grinder paperwork has been consolidated in 2 forms. Requiring second set of eyes Verification from Shift Lead.",
+          "owner": null,
+          "targetDate": null,
+          "status": null,
+          "completedOn": null,
+          "cells": [
+            "CAR!A52"
+          ]
+        }
+      ],
+      "legacyFields": [
+        {
+          "label": "Were there any equipment problems?",
+          "value": "No"
+        },
+        {
+          "label": "Has the equipment been defective in the past?",
+          "value": "No"
+        },
+        {
+          "label": "Describe the equipment failure",
+          "value": "Equipment did not fail"
+        }
+      ],
+      "cells": {
+        "car_number": "CAR!B2",
+        "subject": "CAR!D2",
+        "assigned_to": "CAR!B3",
+        "requested_by": "CAR!B4",
+        "request_date": "CAR!F3",
+        "due_date": "CAR!F4",
+        "incident_type": "CAR!E8",
+        "previous_occurrence": "CAR!E9",
+        "started_on": "CAR!E11",
+        "ended_on": "CAR!E12",
+        "department_code": "CAR!E13",
+        "disposition_codes": "CAR!E24",
+        "safety_hazard": "CAR!E31",
+        "environmental_hazard": "CAR!E32",
+        "nonconformity_description": "CAR!A41",
+        "true_root_cause": "CAR!A47",
+        "effectiveness_evidence": "CAR!A66",
+        "review_date": "CAR!E69",
+        "training_completed": "CAR!E70"
+      },
+      "warnings": [],
+      "notes": [
+        "The corrective action text is imported verbatim as one action; the older form records no owner, target date or status for it.",
+        "The older form records no CAR status or effectiveness result; both are left not recorded."
+      ]
+    },
+    {
+      "sourceFile": "Q-2026-003 CAR - 3522 Repack Labels.xlsx",
+      "sha256": "0f0962baee94dcb2dcc3b2285ac2851110024b3049b585936eb0e19f80962755",
+      "layout": "legacy",
+      "car": {
+        "subject": "3522 repack lot #’s do not match original lot #’s.",
+        "requestedBy": "Jennifer Willingham",
+        "requestDate": "2026-07-23",
+        "assignedTo": "Silvie Varghese",
+        "dueDate": "2026-08-23",
+        "sourceCode": null,
+        "departmentCode": "ca_operation",
+        "startedOn": "2026-07-14",
+        "startedTime": null,
+        "endedOn": "2026-07-16",
+        "endedTime": null,
+        "previousOccurrence": false,
+        "previousCar": null,
+        "nonconformityDescription": "During warehouse inspection, it was identified that the ink lot number printed directly on each bag was correct. However, the four (4) labels applied to the exterior stretch wrap was mislabelled with the incorrect lot number.",
+        "objectiveEvidence": null,
+        "immediateActions": null,
+        "containmentOwner": null,
+        "containmentCompletedOn": null,
+        "dispositionCodes": [
+          "not_applicable"
+        ],
+        "dispositionOther": null,
+        "safetyHazard": false,
+        "environmentalHazard": false,
+        "customerImpact": null,
+        "incidentType": "Quality",
+        "rootCauseCode": null,
+        "equipmentInvolved": null,
+        "workOrderNumber": null,
+        "investigationSummary": null,
+        "trueRootCause": "The incorrect exterior stretch wrap labels resulted from insufficient staffing during a campaign change and non-routine repacks. Operators were required to manage multiple concurrent operational tasks, reducing the level of oversight available for label verification. The staffing plan did not account for the additional workload associated with repack activities during campaign changeovers, allowing the labeling error to occur.",
+        "whySteps": [],
+        "complaintNumber": null,
+        "dateReported": null,
+        "drNumber": null,
+        "materialName": null,
+        "poNumber": null,
+        "supplier": null,
+        "dateDelivered": null,
+        "productionLot": null,
+        "quantityAffected": null,
+        "similarNonconformities": null,
+        "similarIssueFound": null,
+        "additionalActionRequired": null,
+        "proceduresRevised": null,
+        "trainingCompleted": null,
+        "supportingDocuments": null,
+        "planCompletedOn": null,
+        "successCriteria": null,
+        "effectivenessEvidence": null,
+        "reviewer": null,
+        "reviewDate": null,
+        "effectivenessResult": null,
+        "followUpReference": null,
+        "materialLoss": null,
+        "productionTimeLoss": null,
+        "otherCosts": null,
+        "approvals": [],
+        "status": null,
+        "dateClosed": null,
+        "closureApprovedBy": null,
+        "product": null,
+        "campaign": null,
+        "lot": null,
+        "location": null,
+        "counterparty": null,
+        "references": [],
+        "carNumber": "Q-2026-003"
+      },
+      "actions": [
+        {
+          "action": "1. Establish a minimum staffing requirement for all repack activities performed during campaign changeovers. - COMPLETE\n\n2. Assign a minimum of two (2) LCY operators and two (2) Mundy operators whenever repacks are conducted during campaign changes to ensure adequate coverage for all operational and verification activities. - COMPLETE/ON-GOING\n\n3. Reinforce label verification requirements with operations personnel to ensure all exterior stretch-wrap labels are verified against the approved lot number prior to product release. - COMPLETE\n\n5. Monitor implementation of the revised staffing plan during future campaign changeovers to confirm effectiveness and prevent recurrence. - COMPLETE",
+          "owner": null,
+          "targetDate": null,
+          "status": null,
+          "completedOn": null,
+          "cells": [
+            "CAR!A52"
+          ]
+        }
+      ],
+      "legacyFields": [
+        {
+          "label": "Time and date the problem began",
+          "value": "7/14/2026 \n(Repacks during campaign change)"
+        },
+        {
+          "label": "Time and date the problem ended",
+          "value": "7/16/2026 (Pallets relabelled and corrected)"
+        },
+        {
+          "label": "Were there any equipment problems?",
+          "value": "No"
+        },
+        {
+          "label": "Has the equipment been defective in the past?",
+          "value": "No"
+        }
+      ],
+      "cells": {
+        "car_number": "CAR!B2",
+        "subject": "CAR!D2",
+        "assigned_to": "CAR!B3",
+        "requested_by": "CAR!B4",
+        "request_date": "CAR!F3",
+        "due_date": "CAR!F4",
+        "incident_type": "CAR!E8",
+        "previous_occurrence": "CAR!E9",
+        "started_on": "CAR!E11",
+        "ended_on": "CAR!E12",
+        "department_code": "CAR!E13",
+        "disposition_codes": "CAR!E24",
+        "safety_hazard": "CAR!E31",
+        "environmental_hazard": "CAR!E32",
+        "nonconformity_description": "CAR!A41",
+        "true_root_cause": "CAR!A47"
+      },
+      "warnings": [],
+      "notes": [
+        "Time and date the problem began: the date 07/14/2026 was taken from the text '7/14/2026 \n(Repacks during campaign change)', which is kept as written",
+        "Time and date the problem ended: the date 07/16/2026 was taken from the text '7/16/2026 (Pallets relabelled and corrected)', which is kept as written",
+        "The corrective action text is imported verbatim as one action; the older form records no owner, target date or status for it.",
+        "The older form records no CAR status or effectiveness result; both are left not recorded."
+      ]
+    },
+    {
+      "sourceFile": "Q-2026-005 CAR Form.xlsx",
+      "sha256": "fa9f8aacc4cb092ded8b54ae9ecf5e6e1351a1c41323a7e931a11eb10391b3a1",
+      "layout": "legacy",
+      "car": {
+        "subject": "3411P Grinder operator “reprinted” labels already used for General Polymers",
+        "requestedBy": "Jennifer Willingham",
+        "requestDate": "2026-07-23",
+        "assignedTo": "Silvie Varghese",
+        "dueDate": "2026-08-23",
+        "sourceCode": null,
+        "departmentCode": "quality",
+        "startedOn": "2026-07-20",
+        "startedTime": null,
+        "endedOn": "2026-07-20",
+        "endedTime": null,
+        "previousOccurrence": false,
+        "previousCar": null,
+        "nonconformityDescription": "Employee used reprinted production labels",
+        "objectiveEvidence": null,
+        "immediateActions": null,
+        "containmentOwner": null,
+        "containmentCompletedOn": null,
+        "dispositionCodes": [
+          "rework"
+        ],
+        "dispositionOther": null,
+        "safetyHazard": false,
+        "environmentalHazard": false,
+        "customerImpact": null,
+        "incidentType": "Quality",
+        "rootCauseCode": null,
+        "equipmentInvolved": null,
+        "workOrderNumber": null,
+        "investigationSummary": null,
+        "trueRootCause": "Employee Reprinted misplaced labels. Then later on used the original labels that were misplaced.",
+        "whySteps": [],
+        "complaintNumber": null,
+        "dateReported": null,
+        "drNumber": null,
+        "materialName": null,
+        "poNumber": null,
+        "supplier": null,
+        "dateDelivered": null,
+        "productionLot": null,
+        "quantityAffected": null,
+        "similarNonconformities": null,
+        "similarIssueFound": null,
+        "additionalActionRequired": null,
+        "proceduresRevised": null,
+        "trainingCompleted": true,
+        "supportingDocuments": null,
+        "planCompletedOn": null,
+        "successCriteria": null,
+        "effectivenessEvidence": "Management has verified only 5 labels are in the grinder bin per shift.",
+        "reviewer": null,
+        "reviewDate": "2026-07-27",
+        "effectivenessResult": null,
+        "followUpReference": null,
+        "materialLoss": null,
+        "productionTimeLoss": null,
+        "otherCosts": null,
+        "approvals": [],
+        "status": null,
+        "dateClosed": null,
+        "closureApprovedBy": null,
+        "product": null,
+        "campaign": null,
+        "lot": null,
+        "location": null,
+        "counterparty": null,
+        "references": [],
+        "carNumber": "Q-2026-005"
+      },
+      "actions": [
+        {
+          "action": "Grinder operators are only allowed to print 5 labels for the current shift at a time.",
+          "owner": null,
+          "targetDate": null,
+          "status": null,
+          "completedOn": null,
+          "cells": [
+            "CAR!A52"
+          ]
+        }
+      ],
+      "legacyFields": [
+        {
+          "label": "Were there any equipment problems?",
+          "value": "No"
+        },
+        {
+          "label": "Has the equipment been defective in the past?",
+          "value": "No"
+        },
+        {
+          "label": "Describe the equipment failure",
+          "value": "No Equipment Failure"
+        },
+        {
+          "label": "Root cause category",
+          "value": "quality"
+        }
+      ],
+      "cells": {
+        "car_number": "CAR!B2",
+        "subject": "CAR!D2",
+        "assigned_to": "CAR!B3",
+        "requested_by": "CAR!B4",
+        "request_date": "CAR!F3",
+        "due_date": "CAR!F4",
+        "incident_type": "CAR!E8",
+        "previous_occurrence": "CAR!E9",
+        "started_on": "CAR!E11",
+        "ended_on": "CAR!E12",
+        "department_code": "CAR!E13",
+        "disposition_codes": "CAR!E24",
+        "safety_hazard": "CAR!E31",
+        "environmental_hazard": "CAR!E32",
+        "nonconformity_description": "CAR!A41",
+        "true_root_cause": "CAR!A47",
+        "effectiveness_evidence": "CAR!A66",
+        "review_date": "CAR!E69",
+        "training_completed": "CAR!E70"
+      },
+      "warnings": [
+        "Root cause category: 'quality' is not on the current list; kept as written"
+      ],
+      "notes": [
+        "The corrective action text is imported verbatim as one action; the older form records no owner, target date or status for it.",
+        "The older form records no CAR status or effectiveness result; both are left not recorded."
+      ]
+    },
+    {
+      "sourceFile": "Q-2026-006 CAR Form.xlsx",
+      "sha256": "714e5142ee01a606fb4382b42b9abbf7abf5d076f9f3b88db61595166f6c9097",
+      "layout": "rev2",
+      "car": {
+        "subject": "C-Grade Lot Blending 3411U and 3412 Lot 0",
+        "requestedBy": "Gabrielle Vita",
+        "requestDate": "2026-08-21",
+        "assignedTo": "Jennifer Willingham",
+        "dueDate": "2026-09-21",
+        "sourceCode": "other",
+        "departmentCode": "other",
+        "startedOn": null,
+        "startedTime": null,
+        "endedOn": null,
+        "endedTime": null,
+        "previousOccurrence": null,
+        "previousCar": null,
+        "nonconformityDescription": "Two C Grade products were blended together rather than an A grade product with 20-25% C grade.",
+        "objectiveEvidence": "Analytical results were C grade.",
+        "immediateActions": "Product was graded as C grade and returned to the grind list for controlled blending at 20% into A-grade product.",
+        "containmentOwner": "Jennifer Willingham",
+        "containmentCompletedOn": "2026-09-21",
+        "dispositionCodes": [
+          "rework"
+        ],
+        "dispositionOther": null,
+        "safetyHazard": false,
+        "environmentalHazard": false,
+        "customerImpact": false,
+        "incidentType": "Process deviation — incorrect grade/lot blending",
+        "rootCauseCode": "method",
+        "equipmentInvolved": "Not identified in available information",
+        "workOrderNumber": "N/A / pending confirmation",
+        "investigationSummary": "Based on the CAR information available, lots 3411U and 3412 Lot 0 were both C grade and were blended together. The required method was to blend A-grade product with only 20–25% C-grade material. The resulting blend tested C grade. The affected product was regraded as C grade and returned to the grind list for controlled 20% use. Batch records, operator instructions, lot-selection/authorization records, and equipment/work-order information still require review.",
+        "trueRootCause": "Preliminary systemic cause — pending record and interview verification: the blend selection and release controls did not require documented verification that one component was A grade and that C-grade content remained within the approved 20–25% range before blending.",
+        "whySteps": [
+          {
+            "what": "Two C-grade lots were blended together instead of blending A grade with 20–25% C grade.",
+            "why": "Both selected lots were C grade.",
+            "rootCause": null,
+            "countermeasure": "Review recent blend records and contain any similar mixed-grade combinations.",
+            "who": "Quality",
+            "targetDate": "2026-10-16"
+          },
+          {
+            "what": null,
+            "why": "The material grade and approved blend ratio were not verified before the blend was charged.",
+            "rootCause": null,
+            "countermeasure": "Revise the blend/grind instruction and batch record to require verification.",
+            "who": "Process Manager",
+            "targetDate": "2026-10-23"
+          },
+          {
+            "what": null,
+            "why": "The current blend selection/release process did not require documented independent verification.",
+            "rootCause": null,
+            "countermeasure": "Add independent pre-charge signoff for C-grade additions.",
+            "who": "Operations Supervisor",
+            "targetDate": "2026-10-23"
+          },
+          {
+            "what": null,
+            "why": "The work instruction and batch record lacked a mandatory control for grade, lot, and ratio confirmation before blending.",
+            "rootCause": "Preliminary root cause: inadequate documented method control for pre-blend grade/lot/ratio verification; confirm through record review and interviews.",
+            "countermeasure": "Train operators and retain competency records.",
+            "who": "Operations Supervisor",
+            "targetDate": "2026-10-30"
+          }
+        ],
+        "complaintNumber": "Q-2026-006",
+        "dateReported": "2026-08-21",
+        "drNumber": null,
+        "materialName": "C-grade blend / regrind material",
+        "poNumber": null,
+        "supplier": null,
+        "dateDelivered": null,
+        "productionLot": "Lots 3411U and 3412 Lot 0",
+        "quantityAffected": null,
+        "similarNonconformities": "The same failure mode could occur in other blend or regrind activities where material grade, lot identity, and blend ratio are selected without a documented pre-charge verification. Review recent applicable blend records and current instructions to determine whether any similar combinations occurred and whether controls are consistently applied.",
+        "similarIssueFound": null,
+        "additionalActionRequired": true,
+        "proceduresRevised": "Required — blend/grind work instruction and batch record",
+        "trainingCompleted": true,
+        "supportingDocuments": "Revised instruction, controlled batch record/signoff, training records, and blend-record review log",
+        "planCompletedOn": "2026-09-21",
+        "successCriteria": "Effectiveness will be demonstrated when 100% of the next 10 applicable blends, monitored for at least 30 days, show correct grade and lot selection, C-grade content within the approved 20–25% range, and completed independent verification, with zero recurrence of unintended C-grade output attributable to blending.",
+        "effectivenessEvidence": "Pending implementation and monitoring. Review the next 10 applicable batch records, blend test results, verification signoffs, training records, and the 30-day recurrence trend before determining effectiveness.",
+        "reviewer": null,
+        "reviewDate": null,
+        "effectivenessResult": null,
+        "followUpReference": null,
+        "materialLoss": null,
+        "productionTimeLoss": null,
+        "otherCosts": null,
+        "approvals": [],
+        "status": "open",
+        "dateClosed": null,
+        "closureApprovedBy": null,
+        "product": null,
+        "campaign": null,
+        "lot": null,
+        "location": null,
+        "counterparty": null,
+        "references": [],
+        "carNumber": "Q-2026-006"
+      },
+      "actions": [
+        {
+          "action": "Review recent applicable blend records; identify and contain any other mixed-grade combinations.",
+          "owner": "Quality",
+          "targetDate": "2026-09-21",
+          "status": "complete",
+          "completedOn": null,
+          "cells": [
+            "CAR!A53",
+            "CAR!D53",
+            "CAR!E53",
+            "CAR!F53"
+          ]
+        },
+        {
+          "action": "Revise the blend/grind instruction and batch record to require grade, lot, and approved ratio verification before charging material.",
+          "owner": "Process Manager",
+          "targetDate": "2026-09-22",
+          "status": "complete",
+          "completedOn": null,
+          "cells": [
+            "CAR!A54",
+            "CAR!D54",
+            "CAR!E54",
+            "CAR!F54"
+          ]
+        },
+        {
+          "action": "Add independent verification and signoff before any C-grade material is added to an A-grade blend.",
+          "owner": "Operations Supervisor",
+          "targetDate": "2026-09-23",
+          "status": "complete",
+          "completedOn": null,
+          "cells": [
+            "CAR!A55",
+            "CAR!D55",
+            "CAR!E55",
+            "CAR!F55"
+          ]
+        },
+        {
+          "action": "Train affected operators on the revised controls and retain attendance and competency records.",
+          "owner": "Operations Supervisor",
+          "targetDate": "2026-09-24",
+          "status": "complete",
+          "completedOn": null,
+          "cells": [
+            "CAR!A56",
+            "CAR!D56",
+            "CAR!E56",
+            "CAR!F56"
+          ]
+        }
+      ],
+      "legacyFields": [],
+      "cells": {
+        "car_number": "CAR!C4",
+        "subject": "CAR!C4",
+        "requested_by": "CAR!C5",
+        "request_date": "CAR!F5",
+        "assigned_to": "CAR!C6",
+        "due_date": "CAR!F6",
+        "source_code": "CAR!C9",
+        "department_code": "CAR!F9",
+        "nonconformity_description": "CAR!A13",
+        "objective_evidence": "CAR!A17",
+        "immediate_actions": "CAR!A22",
+        "containment_owner": "CAR!C25",
+        "containment_completed_on": "CAR!F25",
+        "disposition_codes": "CAR!C26",
+        "safety_hazard": "CAR!C27",
+        "environmental_hazard": "CAR!C27",
+        "customer_impact": "CAR!C27",
+        "incident_type": "CAR!C31",
+        "root_cause_code": "CAR!F31",
+        "equipment_involved": "CAR!C32",
+        "work_order_number": "CAR!F32",
+        "investigation_summary": "CAR!A34",
+        "true_root_cause": "CAR!A39",
+        "similar_nonconformities": "CAR!A46",
+        "additional_action_required": "CAR!F49",
+        "procedures_revised": "CAR!C57",
+        "training_completed": "CAR!F57",
+        "supporting_documents": "CAR!C58",
+        "plan_completed_on": "CAR!F58",
+        "success_criteria": "CAR!A63",
+        "effectiveness_evidence": "CAR!A67",
+        "status": "CAR!C82",
+        "complaint_number": "Why Why Worksheet!B4",
+        "date_reported": "Why Why Worksheet!C7",
+        "material_name": "Why Why Worksheet!C8",
+        "production_lot": "Why Why Worksheet!C10"
+      },
+      "warnings": [
+        "The Why-Why worksheet dates differ from the corrective action target dates; both are imported as written"
+      ],
+      "notes": [
+        "The subject is the text after the CAR number in the CAR NUMBER cell.",
+        "Actions marked Complete on the form have no completion date of their own; the completion date is left not recorded."
+      ]
+    }
+  ],
+  "skipped": [
+    {
+      "sourceFile": "QMS-006-1 NEW Corrective Action Report Template.xlsx",
+      "sha256": "74a526496ddb569cdd16f157788881e8f2673475531dd8f0989107e0d19b008a",
+      "reason": "No CAR number (blank template)"
+    }
+  ]
+}
