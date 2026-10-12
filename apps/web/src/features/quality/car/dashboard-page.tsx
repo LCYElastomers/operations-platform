@@ -2,21 +2,28 @@
 
 import { AlarmClock, CalendarCheck, ClipboardList, Hourglass, SearchCheck } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
 
 import { BarChart } from "@/components/common/bar-chart";
-import { FilterBar, FilterInput, FilterSelect } from "@/components/common/filter-bar";
+import { DashboardToolbar } from "@/components/common/dashboard-toolbar";
+import { ExportMenu } from "@/components/common/export-menu";
+import { FilterSelect } from "@/components/common/filter-bar";
 import { MetricCard } from "@/components/common/metric-card";
 import { PageHeader } from "@/components/common/page-header";
+import { PeriodFilter } from "@/components/common/period-filter";
 import { StatusBadge } from "@/components/common/status-badge";
 import { Button } from "@/components/ui/button";
+import { siteToday } from "@/features/safety/site-calendar";
+import { useSiteToday } from "@/features/safety/use-site-calendar";
+import { useUrlState } from "@/lib/use-url-state";
 
 import { TableSection } from "../cost/cost-shared";
 import { MONTH_LABELS, toNumber, usd } from "../cost/format";
 
 import {
+  carDashboardFromParams,
   carHref,
   carQueryParams,
+  EMPTY_CAR_DASHBOARD,
   EMPTY_CAR_QUERY,
   type CarDashboard,
   type CarDashboardQuery,
@@ -24,10 +31,8 @@ import {
   type Count,
 } from "./api";
 import { CarError, filterOptions, NoCars } from "./car-shared";
-import { CarTable, NewCarLink } from "./register-page";
+import { CarTable, carPeriodConfig, NewCarLink } from "./register-page";
 import { useCarDashboard, useCarOptions, useCars } from "./use-car";
-
-const NO_FILTERS: CarDashboardQuery = { from: "", to: "", department: "", source: "", assignedTo: "" };
 
 const COLORS = {
   open: "#2563eb",
@@ -54,17 +59,32 @@ function present(counts: Count[]) {
     .sort((a, b) => (a.code === null ? 1 : b.code === null ? -1 : b.count - a.count));
 }
 
+const writeFilters = (params: URLSearchParams, value: CarDashboardQuery) => {
+  for (const key of [...params.keys()]) params.delete(key);
+  carQueryParams(value).forEach((v, k) => params.set(k, v));
+};
+const readFilters = (params: URLSearchParams) => carDashboardFromParams(Object.fromEntries(params));
+
 /**
  * CAR status at a glance: open and overdue work, effectiveness reviews waiting,
  * trends and cost. Every figure is calculated by the API from the CAR records.
  */
-export function CarDashboardPage({ title, description }: { title: string; description?: string }) {
+export function CarDashboardPage({
+  title,
+  description,
+  initial = EMPTY_CAR_DASHBOARD,
+}: {
+  title: string;
+  description?: string;
+  initial?: CarDashboardQuery;
+}) {
+  const today = useSiteToday(siteToday());
   const options = useCarOptions();
-  const [filters, setFilters] = useState<CarDashboardQuery>(NO_FILTERS);
-  const dashboard = useCarDashboard(filters);
-  const pastDue = useCars({ ...EMPTY_CAR_QUERY, ...filters, pastDue: true });
+  const [filters, setFilters] = useUrlState<CarDashboardQuery>(initial, readFilters, writeFilters);
+  const dashboard = useCarDashboard(filters, today);
+  const pastDue = useCars({ ...EMPTY_CAR_QUERY, ...filters, pastDue: true }, today, { paged: false });
   const data = dashboard.data;
-  const filtered = JSON.stringify(filters) !== JSON.stringify(NO_FILTERS);
+  const filtered = JSON.stringify(filters) !== JSON.stringify(EMPTY_CAR_DASHBOARD);
 
   return (
     <div className="space-y-5">
@@ -74,7 +94,17 @@ export function CarDashboardPage({ title, description }: { title: string; descri
         description={description}
         actions={options.data?.abilities.create ? <NewCarLink /> : undefined}
       />
-      <FilterBar
+      <DashboardToolbar
+        period={
+          <PeriodFilter
+            label="Request date"
+            hint="by request date"
+            value={filters.period}
+            onChange={(period) => setFilters({ ...filters, period })}
+            today={today}
+            config={carPeriodConfig(today)}
+          />
+        }
         actions={
           <>
             {dashboard.isFetching && !dashboard.isPending && (
@@ -83,29 +113,29 @@ export function CarDashboardPage({ title, description }: { title: string; descri
               </StatusBadge>
             )}
             {filtered && (
-              <Button variant="ghost" size="sm" onClick={() => setFilters(NO_FILTERS)}>
+              <Button variant="ghost" size="sm" onClick={() => setFilters(EMPTY_CAR_DASHBOARD)}>
                 Clear filters
               </Button>
             )}
           </>
         }
+        exportMenu={
+          <ExportMenu
+            reportKey="car-dashboard"
+            title="CAR Dashboard"
+            requires={["car.view", "qualityDashboard.view", "car.export"]}
+            disabled={!data}
+            context={() => ({
+              period: filters.period,
+              filters: {
+                department: filters.department ? [filters.department] : [],
+                source: filters.source ? [filters.source] : [],
+                assignedTo: filters.assignedTo || null,
+              },
+            })}
+          />
+        }
       >
-        <FilterInput
-          label="Requested from"
-          type="date"
-          value={filters.from}
-          max={filters.to || undefined}
-          onChange={(event) => setFilters({ ...filters, from: event.target.value })}
-          className="pointer-coarse:h-11"
-        />
-        <FilterInput
-          label="Requested to"
-          type="date"
-          value={filters.to}
-          min={filters.from || undefined}
-          onChange={(event) => setFilters({ ...filters, to: event.target.value })}
-          className="pointer-coarse:h-11"
-        />
         <FilterSelect
           label="Department"
           options={filterOptions(options.data?.departments)}
@@ -127,7 +157,7 @@ export function CarDashboardPage({ title, description }: { title: string; descri
           onChange={(event) => setFilters({ ...filters, assignedTo: event.target.value })}
           className="pointer-coarse:h-11"
         />
-      </FilterBar>
+      </DashboardToolbar>
       {dashboard.isError ? (
         <CarError error={dashboard.error} onRetry={() => void dashboard.refetch()} />
       ) : !data ? (

@@ -25,8 +25,10 @@ import {
   visibleRows,
   type DisplayPreferences,
 } from "@/components/common/display-controls";
+import { DashboardToolbar } from "@/components/common/dashboard-toolbar";
 import { EmptyState } from "@/components/common/empty-state";
-import { FilterBar, FilterSelect } from "@/components/common/filter-bar";
+import { ExportMenu } from "@/components/common/export-menu";
+import { FilterSelect } from "@/components/common/filter-bar";
 import { HeatmapTable } from "@/components/common/heatmap-table";
 import { MetricCard } from "@/components/common/metric-card";
 import { PageHeader } from "@/components/common/page-header";
@@ -219,13 +221,22 @@ export function IncidentDashboard({
         shown as not reported, never as zero. No targets, ratings or scores are applied.
       </p>
 
-      <FilterBar
+      <DashboardToolbar
         actions={
           analytics.isFetching && !analytics.isPending ? (
             <StatusBadge tone="pending" pulse>
               Updating
             </StatusBadge>
           ) : undefined
+        }
+        exportMenu={
+          <ExportMenu
+            reportKey="safety-incidents"
+            title="Incident & Near Miss Dashboard"
+            requires={["safetyRecord.view", "safetyDashboard.view", "safetyRecord.export"]}
+            disabled={!data || shownThrough === null}
+            context={() => ({ period: { mode: "year", year }, filters: { through: throughChoice.isAutomatic ? null : through } })}
+          />
         }
       >
         <div className="w-full sm:w-44">
@@ -254,7 +265,7 @@ export function IncidentDashboard({
             className="pointer-coarse:h-11"
           />
         </div>
-      </FilterBar>
+      </DashboardToolbar>
 
       {nothingReported && (
         <p role="status" className="rounded-lg border border-dashed bg-card px-4 py-3 text-sm text-muted-foreground">

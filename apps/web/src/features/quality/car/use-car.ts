@@ -11,6 +11,7 @@ import {
   completeAction,
   createCar,
   createQualityCost,
+  fetchAllCars,
   fetchCar,
   fetchCarDashboard,
   fetchCarHistory,
@@ -31,19 +32,20 @@ import {
   type QualityCostCreate,
 } from "./api";
 
-export function useCars(query: CarQuery) {
+/** One register page of CARs; `paged: false` asks for every match the API allows. */
+export function useCars(query: CarQuery, today: string, { paged = true }: { paged?: boolean } = {}) {
   return useQuery({
-    queryKey: carKeys.list(query),
-    queryFn: ({ signal }) => fetchCars(query, signal),
+    queryKey: [...carKeys.list(query), today, paged],
+    queryFn: ({ signal }) => (paged ? fetchCars(query, today, signal) : fetchAllCars(query, today, signal)),
     retry: shouldRetry,
     placeholderData: keepPreviousData,
   });
 }
 
-export function useCarDashboard(query: CarDashboardQuery) {
+export function useCarDashboard(query: CarDashboardQuery, today: string) {
   return useQuery({
-    queryKey: carKeys.dashboard(query),
-    queryFn: ({ signal }) => fetchCarDashboard(query, signal),
+    queryKey: [...carKeys.dashboard(query), today],
+    queryFn: ({ signal }) => fetchCarDashboard(query, today, signal),
     retry: shouldRetry,
     placeholderData: keepPreviousData,
   });

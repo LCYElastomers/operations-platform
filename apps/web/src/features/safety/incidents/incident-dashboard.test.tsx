@@ -19,6 +19,9 @@ import { IncidentDashboard } from "./incident-dashboard";
 import { siteIsoDate } from "../site-calendar";
 
 // ECharts needs a canvas; the stand-in shows what each chart is given.
+// The export menu's permission check; these tests count the dashboard's own requests.
+vi.mock("@/features/auth/use-session", () => ({ usePermissions: () => ({ has: () => false }) }));
+
 vi.mock("@/components/common/bar-chart", async (original) => ({
   ...(await original<object>()),
   BarChart: ({

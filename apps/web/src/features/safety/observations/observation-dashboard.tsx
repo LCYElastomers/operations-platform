@@ -5,8 +5,10 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import { BarChart } from "@/components/common/bar-chart";
+import { DashboardToolbar } from "@/components/common/dashboard-toolbar";
 import { EmptyState } from "@/components/common/empty-state";
-import { FilterBar, FilterSelect } from "@/components/common/filter-bar";
+import { ExportMenu } from "@/components/common/export-menu";
+import { FilterSelect } from "@/components/common/filter-bar";
 import { MetricCard } from "@/components/common/metric-card";
 import { PageHeader } from "@/components/common/page-header";
 import { StatusBadge } from "@/components/common/status-badge";
@@ -110,13 +112,22 @@ export function ObservationDashboard({ title, description, siteToday }: Observat
         }
       />
 
-      <FilterBar
+      <DashboardToolbar
         actions={
           dashboard.isFetching && !dashboard.isPending ? (
             <StatusBadge tone="pending" pulse>
               Updating
             </StatusBadge>
           ) : undefined
+        }
+        exportMenu={
+          <ExportMenu
+            reportKey="safety-observations"
+            title="Safety Observations"
+            requires={["safetyObservation.view", "safetyDashboard.view", "safetyObservation.export"]}
+            disabled={!data}
+            context={() => ({ period: { mode: "year", year }, filters: {} })}
+          />
         }
       >
         <div className="w-full sm:w-44">
@@ -128,7 +139,7 @@ export function ObservationDashboard({ title, description, siteToday }: Observat
             yearsWithData={data?.yearsWithData}
           />
         </div>
-      </FilterBar>
+      </DashboardToolbar>
 
       <section aria-label="Year to date" className="space-y-2">
         <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">

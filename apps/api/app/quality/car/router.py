@@ -15,7 +15,7 @@ of the same reports with the same filters.
 
 import datetime as dt
 from collections.abc import Iterator
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from sqlalchemy.exc import SQLAlchemyError
@@ -226,7 +226,7 @@ def _clean(values: list[str] | None) -> tuple[str, ...]:
     return tuple(v.strip() for v in values or () if v.strip())
 
 
-def _filter(
+def car_filter(
     *,
     date_from: dt.date | None,
     date_to: dt.date | None,
@@ -236,10 +236,15 @@ def _filter(
     root_cause: list[str] | None = None,
     effectiveness: list[str] | None = None,
     assigned_to: str | None,
+    mine_of: UserPrincipal | None = None,
     past_due: bool = False,
+    due_soon: bool = False,
     repeat: bool | None = None,
     search: str | None = None,
 ) -> CarFilter:
+    """The Register, dashboard and export criteria. ``mine_of`` keeps reports
+    assigned to that signed-in user (by user ID, never by name)."""
+    today = _today()
     return CarFilter(
         date_from=date_from,
         date_to=date_to,
@@ -249,7 +254,9 @@ def _filter(
         root_causes=_clean(root_cause),
         effectiveness=_clean(effectiveness),
         assigned_to=(assigned_to or "").strip() or None,
-        past_due_on=_today() if past_due else None,
+        assigned_to_user_id=mine_of.user_id if mine_of is not None else None,
+        past_due_on=today if past_due else None,
+        due_between=(today, today + dt.timedelta(days=_due_soon_days())) if due_soon else None,
         repeat=repeat,
         search=(search or "").strip() or None,
     )
@@ -258,6 +265,7 @@ def _filter(
 From = Annotated[dt.date | None, Query(alias="from")]
 To = Annotated[dt.date | None, Query(alias="to")]
 AssignedTo = Annotated[str | None, Query(alias="assignedTo", max_length=200)]
+CarSort = Literal["newest", "oldest"]
 
 
 @router.get("", response_model=CarListResponse, responses=READ_RESPONSES)
@@ -272,18 +280,24 @@ def list_cars(
     root_cause: Annotated[list[str] | None, Query(alias="rootCause", max_length=20)] = None,
     effectiveness: Annotated[list[str] | None, Query(max_length=5)] = None,
     assigned_to: AssignedTo = None,
+    mine: bool = False,
     past_due: Annotated[bool, Query(alias="pastDue")] = False,
+    due_soon: Annotated[bool, Query(alias="dueSoon")] = False,
     repeat: bool | None = None,
     search: Text = None,
+    sort: CarSort = "newest",
     limit: Annotated[int, Query(ge=1, le=MAX_PAGE)] = MAX_PAGE,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> CarListResponse:
-    """Reports, newest request first. Status, department, source, root cause and
-    effectiveness accept ``not_recorded``. ``search`` matches the CAR number,
-    subject, people, description, incident type, root cause, product, lot and
-    work order. ``pastDue`` keeps reports not closed whose due date has passed;
-    ``repeat`` keeps reports marked (or not marked) as a previous occurrence."""
-    criteria = _filter(
+    """Reports by request date, newest first (``sort=oldest`` reverses it).
+    Status, department, source, root cause and effectiveness accept
+    ``not_recorded``. ``search`` matches the CAR number, subject, people,
+    description, incident type, root cause, product, lot and work order.
+    ``mine`` keeps reports assigned to the signed-in user; ``pastDue`` reports
+    not closed whose due date has passed; ``dueSoon`` reports not closed due
+    within the due-soon window; ``repeat`` reports marked (or not marked) as a
+    previous occurrence."""
+    criteria = car_filter(
         date_from=date_from,
         date_to=date_to,
         car_status=car_status,
@@ -292,12 +306,16 @@ def list_cars(
         root_cause=root_cause,
         effectiveness=effectiveness,
         assigned_to=assigned_to,
+        mine_of=principal if mine else None,
         past_due=past_due,
+        due_soon=due_soon,
         repeat=repeat,
         search=search,
     )
     try:
-        rows, total = repository.search(criteria, limit=limit, offset=offset)
+        rows, total = repository.search(
+            criteria, limit=limit, offset=offset, oldest_first=sort == "oldest"
+        )
     except SQLAlchemyError:
         raise _database_unavailable() from None
     today, days = _today(), _due_soon_days()
@@ -359,7 +377,7 @@ def car_dashboard(
     assigned_to: AssignedTo = None,
 ) -> CarDashboardResponse:
     """Dashboard figures of the reports requested in the date range (default: all)."""
-    criteria = _filter(
+    criteria = car_filter(
         date_from=date_from,
         date_to=date_to,
         department=department,

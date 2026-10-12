@@ -35,7 +35,7 @@ export function NoCars({ filtered, action }: { filtered: boolean; action?: React
   return (
     <EmptyState
       icon={ClipboardCheck}
-      title={filtered ? "No CARs match these filters" : "No Corrective Action Reports yet"}
+      title={filtered ? "No CARs match these filters." : "No Corrective Action Reports yet"}
       description={
         filtered
           ? "Change or clear the filters to see more CARs."

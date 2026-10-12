@@ -6,9 +6,11 @@ import { useState } from "react";
 import { BarChart } from "@/components/common/bar-chart";
 import { MetricCard } from "@/components/common/metric-card";
 import { PageHeader } from "@/components/common/page-header";
+import { siteToday } from "@/features/safety/site-calendar";
+import { useSiteToday } from "@/features/safety/use-site-calendar";
 import { cn } from "@/lib/utils";
 
-import type { CoqClass, CoqClassSummary, CostSummary, CostSummaryQuery } from "./api";
+import type { CoqClass, CoqClassSummary, CostSummary } from "./api";
 import {
   CostError,
   CostFilters,
@@ -22,8 +24,9 @@ import {
   TableSection,
   TD,
   TH,
-  useCostSummaryQuery,
+  useCostDashboardQuery,
 } from "./cost-shared";
+import { summaryQueryOf, type CostDashboardQuery } from "./cost-query";
 import { COQ_CLASS_COLORS, MONTH_LABELS, percent, periodLabel, POTENTIAL_COLOR, recordsLabel, toNumber, usd } from "./format";
 import { AddCostRecordButton } from "./record-dialog";
 import { useCostRecords, useCostSummary } from "./use-cost";
@@ -37,12 +40,21 @@ const QUADRANT_TEXT: Record<CoqClass, string> = {
   external_failure: "Defects found by customers: complaints, returns, credits.",
 };
 
-export function CoqMatrixPage({ title, description }: { title: string; description?: string }) {
-  const [query, setQuery] = useCostSummaryQuery(false);
+export function CoqMatrixPage({
+  title,
+  description,
+  initial,
+}: {
+  title: string;
+  description?: string;
+  initial?: CostDashboardQuery;
+}) {
+  const today = useSiteToday(siteToday());
+  const [query, setQuery] = useCostDashboardQuery(initial);
   const [selected, setSelected] = useState<CoqClass | null>(null);
-  const summary = useCostSummary(query);
+  const summary = useCostSummary(summaryQueryOf(query, today, false));
   const data = summary.data;
-  const filtered = isFiltered(query) || query.year !== null || query.from !== null || query.through !== null;
+  const filtered = isFiltered(query) || query.period !== null;
   const total = data ? data.classes.reduce((sum, item) => sum + item.figures.count, 0) : 0;
   return (
     <div className="space-y-5">
@@ -57,7 +69,14 @@ export function CoqMatrixPage({ title, description }: { title: string; descripti
         from every item in the Quality Cost Register. Figures are confirmed cost; potential exposure is shown beside them,
         never added in. A class with no confirmed cost is shown as not recorded, not as $0.
       </p>
-      <CostFilters query={query} onChange={setQuery} data={data} fetching={summary.isFetching && !summary.isPending} />
+      <CostFilters
+        query={query}
+        onChange={setQuery}
+        data={data}
+        fetching={summary.isFetching && !summary.isPending}
+        today={today}
+        report={{ key: "coq-matrix", title: "COQ Matrix" }}
+      />
       {summary.isError ? (
         <CostError error={summary.error} onRetry={() => void summary.refetch()} />
       ) : data && (data.year === null || total === 0) ? (
@@ -321,7 +340,7 @@ function CategoryTable({ data }: { data: CostSummary }) {
   );
 }
 
-function ClassItems({ data, query, selected }: { data: CostSummary; query: CostSummaryQuery; selected: CoqClass | null }) {
+function ClassItems({ data, query, selected }: { data: CostSummary; query: CostDashboardQuery; selected: CoqClass | null }) {
   const base = periodRecordQuery(data, query);
   const coqClass = query.coqClass ?? selected;
   const records = useCostRecords({ ...base, coqClass, category: coqClass === query.coqClass ? base.category : "" });

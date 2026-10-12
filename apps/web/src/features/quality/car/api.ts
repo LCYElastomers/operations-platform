@@ -1,4 +1,5 @@
 import { ApiError, apiGet, apiSend } from "@/lib/api-client";
+import { periodFromParams, periodToParams, resolvePeriod, type PeriodValue } from "@/lib/period";
 
 import type { CoqClass, CostHistoryEvent, FinancialStatus } from "../cost/api";
 
@@ -300,36 +301,57 @@ export type CarDashboard = {
   };
 };
 
+export type CarSort = "newest" | "oldest";
+
 export type CarQuery = {
-  from: string;
-  to: string;
+  /** Request-date period (never derived from the CAR number). */
+  period: PeriodValue;
   status: string;
   department: string;
   source: string;
   assignedTo: string;
   rootCause: string;
   effectiveness: string;
+  /** Assigned to the signed-in user (matched by user ID on the server). */
+  mine: boolean;
   pastDue: boolean;
+  dueSoon: boolean;
   /** "" any, "yes" repeat only, "no" not a repeat. */
   repeat: "" | "yes" | "no";
   search: string;
+  sort: CarSort;
+  /** 1-based register page. */
+  page: number;
 };
 
+export const ALL_DATES: PeriodValue = { mode: "all" };
+export const CAR_PAGE_SIZE = 50;
+
 export const EMPTY_CAR_QUERY: CarQuery = {
-  from: "",
-  to: "",
+  period: ALL_DATES,
   status: "",
   department: "",
   source: "",
   assignedTo: "",
   rootCause: "",
   effectiveness: "",
+  mine: false,
   pastDue: false,
+  dueSoon: false,
   repeat: "",
   search: "",
+  sort: "newest",
+  page: 1,
 };
 
-export type CarDashboardQuery = Pick<CarQuery, "from" | "to" | "department" | "source" | "assignedTo">;
+export type CarDashboardQuery = Pick<CarQuery, "period" | "department" | "source" | "assignedTo">;
+
+export const EMPTY_CAR_DASHBOARD: CarDashboardQuery = {
+  period: ALL_DATES,
+  department: "",
+  source: "",
+  assignedTo: "",
+};
 
 export const carKeys = {
   all: ["quality", "cars"] as const,
@@ -353,24 +375,64 @@ function withParams(path: string, params: URLSearchParams) {
   return query ? `${path}?${query}` : path;
 }
 
-/** Query string of the filters, shared by the API request and the register's URL. */
-export function carQueryParams(query: Partial<CarQuery>): URLSearchParams {
-  const params = new URLSearchParams();
-  if (query.from) params.set("from", query.from);
-  if (query.to) params.set("to", query.to);
+/** The filters (not period, sort or page) as query parameters, shared by the URL and the API. */
+function filterParams(params: URLSearchParams, query: Partial<CarQuery>) {
   if (query.status) params.set("status", query.status);
   if (query.department) params.set("department", query.department);
   if (query.source) params.set("source", query.source);
   if (query.rootCause) params.set("rootCause", query.rootCause);
   if (query.effectiveness) params.set("effectiveness", query.effectiveness);
   if (query.assignedTo?.trim()) params.set("assignedTo", query.assignedTo.trim());
+  if (query.mine) params.set("mine", "true");
   if (query.pastDue) params.set("pastDue", "true");
+  if (query.dueSoon) params.set("dueSoon", "true");
   if (query.repeat) params.set("repeat", query.repeat === "yes" ? "true" : "false");
   if (query.search?.trim()) params.set("search", query.search.trim());
+}
+
+/** The register / dashboard page URL: `?period=ytd&status=open&sort=oldest&page=2`. */
+export function carQueryParams(query: Partial<CarQuery>): URLSearchParams {
+  const params = new URLSearchParams();
+  if (query.period) periodToParams(params, query.period, ALL_DATES);
+  filterParams(params, query);
+  if (query.sort === "oldest") params.set("sort", "oldest");
+  if (query.page && query.page > 1) params.set("page", String(query.page));
   return params;
 }
 
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+/** The API request: the period resolved to request dates on the site calendar. */
+export function carApiParams(query: Partial<CarQuery>, today: string, paged = false): URLSearchParams {
+  const params = new URLSearchParams();
+  const period = query.period ? resolvePeriod(query.period, today) : null;
+  if (period?.startDate) params.set("from", period.startDate);
+  if (period?.endDate) params.set("to", period.endDate);
+  filterParams(params, query);
+  if (query.sort === "oldest") params.set("sort", "oldest");
+  if (paged) {
+    params.set("limit", String(CAR_PAGE_SIZE));
+    params.set("offset", String(((query.page ?? 1) - 1) * CAR_PAGE_SIZE));
+  }
+  return params;
+}
+
+/** The same criteria for the export API (`CarRegisterFilters` / `CarDashboardFilters`). */
+export function carExportFilters(query: Partial<CarQuery>): Record<string, unknown> {
+  const list = (value: string | undefined) => (value ? [value] : []);
+  return {
+    status: list(query.status),
+    department: list(query.department),
+    source: list(query.source),
+    rootCause: list(query.rootCause),
+    effectiveness: list(query.effectiveness),
+    assignedTo: query.assignedTo?.trim() || null,
+    mine: query.mine || undefined,
+    pastDue: query.pastDue || undefined,
+    dueSoon: query.dueSoon || undefined,
+    repeat: query.repeat === "" || query.repeat === undefined ? null : query.repeat === "yes",
+    search: query.search?.trim() || null,
+    sort: query.sort === "oldest" ? "oldest" : undefined,
+  };
+}
 
 /** Register filters from a URL query (e.g. a dashboard link); unknown values are dropped. */
 export function carQueryFromParams(params: Record<string, string | string[] | undefined>): CarQuery {
@@ -379,29 +441,44 @@ export function carQueryFromParams(params: Record<string, string | string[] | un
     return (Array.isArray(value) ? value[0] : value)?.slice(0, 200) ?? "";
   };
   const code = (key: string) => (/^[a-z_]{1,50}$/.test(one(key)) ? one(key) : "");
-  const date = (key: string) => (ISO_DATE.test(one(key)) ? one(key) : "");
   const repeat = one("repeat");
+  const page = Number(one("page"));
+  const search = new URLSearchParams();
+  for (const key of ["period", "year", "month", "from", "to"]) if (one(key)) search.set(key, one(key));
   return {
-    from: date("from"),
-    to: date("to"),
+    period: periodFromParams(search, ALL_DATES),
     status: code("status"),
     department: code("department"),
     source: code("source"),
     assignedTo: one("assignedTo"),
     rootCause: code("rootCause"),
     effectiveness: code("effectiveness"),
+    mine: one("mine") === "true",
     pastDue: one("pastDue") === "true",
+    dueSoon: one("dueSoon") === "true",
     repeat: repeat === "true" ? "yes" : repeat === "false" ? "no" : "",
     search: one("search"),
+    sort: one("sort") === "oldest" ? "oldest" : "newest",
+    page: Number.isInteger(page) && page >= 1 && page <= 10_000 ? page : 1,
   };
 }
 
-export function fetchCars(query: CarQuery, signal?: AbortSignal) {
-  return apiGet<CarList>(withParams(BASE, carQueryParams(query)), { signal });
+export function carDashboardFromParams(params: Record<string, string | string[] | undefined>): CarDashboardQuery {
+  const { period, department, source, assignedTo } = carQueryFromParams(params);
+  return { period, department, source, assignedTo };
 }
 
-export function fetchCarDashboard(query: CarDashboardQuery, signal?: AbortSignal) {
-  return apiGet<CarDashboard>(withParams(`${BASE}/dashboard`, carQueryParams(query)), { signal });
+export function fetchCars(query: CarQuery, today: string, signal?: AbortSignal) {
+  return apiGet<CarList>(withParams(BASE, carApiParams(query, today, true)), { signal });
+}
+
+/** Every CAR matching the filters, up to the API's page limit (e.g. the dashboard's past-due list). */
+export function fetchAllCars(query: CarQuery, today: string, signal?: AbortSignal) {
+  return apiGet<CarList>(withParams(BASE, carApiParams(query, today)), { signal });
+}
+
+export function fetchCarDashboard(query: CarDashboardQuery, today: string, signal?: AbortSignal) {
+  return apiGet<CarDashboard>(withParams(`${BASE}/dashboard`, carApiParams(query, today)), { signal });
 }
 
 export function fetchCarOptions(signal?: AbortSignal) {

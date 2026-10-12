@@ -888,7 +888,7 @@ only by older forms stay readable and are marked "(older form)".
 
 | Endpoint | Description |
 | -------- | ----------- |
-| `GET /api/v1/quality/cars` | Register list. Filters: `from`, `to`, `status`, `department`, `source`, `rootCause`, `effectiveness` (each repeatable, `not_recorded` allowed), `assignedTo`, `pastDue`, `repeat`, `search`, `limit`, `offset` |
+| `GET /api/v1/quality/cars` | Register list. Filters: `from`, `to` (request date), `status`, `department`, `source`, `rootCause`, `effectiveness` (each repeatable, `not_recorded` allowed), `assignedTo`, `mine` (assigned to the signed-in user, by user ID), `pastDue`, `dueSoon`, `repeat`, `search`; `sort=newest\|oldest` (request date); `limit`, `offset` |
 | `GET /api/v1/quality/cars/options` | Controlled lists, known names, due-soon window and edit rights |
 | `GET /api/v1/quality/cars/dashboard` | Dashboard figures. `from`, `to`, `department`, `source`, `assignedTo` |
 | `GET /api/v1/quality/cars/linked?costRecordId=` | The CAR linked to a Quality Cost record |
@@ -1159,6 +1159,104 @@ transaction as the change; write them with
 here too (`core.user`, `core.role`). Values never contain passwords, hashes or
 tokens. The Audit Log page (`/system/audit`, `audit.view`) lists events
 newest first, filterable by record type.
+
+## Reporting periods and filters
+
+Every dashboard and register picks its dates with one shared model, so the
+screen, its API requests and its exports cover the same days.
+
+- **Model.** `apps/web/src/lib/period.ts` and `apps/api/app/reports/period.py`
+  resolve the same modes with the same rules and labels: `all`, `this-month`,
+  `last-month`, `ytd`, `last-3-months`, `last-6-months`, `this-year`, `year`,
+  `month` (year + month) and `custom` (from / to, inclusive). "Today" is the
+  Baytown site date (see [Safety site calendar](#safety-site-calendar)), so
+  month and year boundaries never follow the device or server time zone.
+- **URL.** `?period=ytd`, `?year=2026&month=8`, `?year=2026` or
+  `?from=2026-01-05&to=2026-02-01`; the page's default period leaves the URL
+  clean. `useUrlState` (`lib/use-url-state.ts`) keeps a page's filters in the
+  query string: discrete choices add a history entry, typing replaces it, and
+  Back / Forward restore the filters. Server pages read the initial filters
+  from `searchParams`.
+- **Components.** `PeriodFilter` (`components/common/period-filter.tsx`) is a
+  compact trigger with the chosen period and its dates always shown beneath it;
+  its panel (a popover on desktop, a bottom sheet on small screens) has Quick
+  select, Browse (year, or year and month) and Custom range. A page passes a
+  `PeriodConfig` with only the choices its data supports.
+  `DashboardToolbar` lays out `[Period] [filters…] … [Export]`;
+  `ActiveFilters` shows removable chips with **Clear all**.
+
+| Page | Period | Notes |
+| ---- | ------ | ----- |
+| CAR Register | Request date; all presets, year / month, custom; default All dates | Quick views All / Open / Past Due / Due Soon / Mine / This Month / Closed (each starts from clean filters), chips, server-side sort by request date (newest first by default, `aria-sort` on the heading) and 50-per-page paging (`?sort=oldest&page=2`) |
+| CAR Dashboard | Request date, as the register | KPI links open the register with the same period |
+| Quality Cost Register | Item date; as the CAR Register | |
+| COPQ, COQ Matrix | Whole months of one year: This Month, Last Month, YTD, This Year, a year or a month | Default: the latest year with records, through its latest month with records |
+| Safety dashboards | Reporting year and through month (unchanged) | Exports send period `year` plus the through month |
+
+To adopt the period filter on another page: build the API query from
+`resolvePeriod(value, siteToday)` (never from record numbers or other
+derived dates), keep the value in the URL with `periodToParams` /
+`periodFromParams`, and send the same value to the export.
+
+## Exports (PDF and Excel)
+
+One export system serves every dashboard and register
+(`apps/api/app/reports/`). A page shows an **Export ▾** menu
+(`components/common/export-menu.tsx`) with **PDF report** and/or **Excel
+workbook**; the API builds the file from the same service calls and filters as
+the screen, and the browser downloads it without leaving the page. While a
+file is generated the button reads "Generating PDF…" and cannot be pressed
+again; a notification confirms the file name or explains a failure.
+
+`POST /api/v1/reports/{key}/export` with
+`{format: "pdf"|"xlsx", period: {mode, year?, month?, from?, to?}, filters: {...}}`
+and the `X-Requested-With: operations-platform` header. The order is fixed:
+signed in and active → the report's view permissions → its export permission →
+validate format, period and filters (422) → fetch → render → return → audit.
+Unknown reports answer 404; a report never accepts a period its screen does not
+offer. There is no separate `dashboard.export` permission: each report needs
+its module's view permissions **and** its export permission, so an export
+right alone never reveals data.
+
+| Report key | Screen | Formats | Permissions |
+| ---------- | ------ | ------- | ----------- |
+| `car-dashboard` | CAR Dashboard | PDF, Excel | `car.view`, `qualityDashboard.view`, `car.export` |
+| `car-register` | CAR Register (every matching CAR, not one page) | Excel | `car.view`, `car.export` |
+| `copq` | Cost of Poor Quality | PDF, Excel | `qualityCost.view`, `qualityDashboard.view`, `qualityCost.export` |
+| `coq-matrix` | Cost of Quality Matrix | PDF, Excel | as COPQ |
+| `quality-cost-register` | Quality Cost Register (every matching item) | Excel | `qualityCost.view`, `qualityCost.export` |
+| `safety-incidents` | Incident & Near Miss Dashboard | PDF, Excel | `safetyRecord.view`, `safetyDashboard.view`, `safetyRecord.export` |
+| `safety-performance` | Safety Performance | PDF, Excel | as Incidents |
+| `safety-trir` | TRIR Experience | PDF, Excel | as Incidents |
+| `safety-observations` | Safety Observations Dashboard | PDF, Excel | `safetyObservation.view`, `safetyDashboard.view`, `safetyObservation.export` |
+
+Not exported yet: Moisture Analysis (it serves development fixtures by default
+and has no export permission) and data-entry screens.
+
+- **PDF** (`pdf.py`, reportlab): landscape Letter; header with
+  OPERATIONS-PLATFORM, module, title, period, applied filters, generated at
+  (site time) and generated by; KPI cards, vector charts and tables whose
+  header row repeats on every page; footer "Operations-Platform · Generated …"
+  and "Page X of Y". Long tables state when the PDF shows only the first rows.
+- **Excel** (`excel.py`, openpyxl): a Summary sheet (report, module, period,
+  generated at/by, filters, key figures), then one sheet per data table with a
+  context block, a styled frozen header, autofilter and column widths, and an
+  Analysis sheet with the chart data. Dates, money and percentages are native
+  cells with number formats; a missing value stays empty (or "Not recorded"),
+  never 0.
+- **File names**: `Operations-Platform_<Report>_<period>.<ext>`, e.g.
+  `Operations-Platform_CAR-Dashboard_2026-08.pdf`; only `A–Z a–z 0–9 . _ -`.
+- **Audit**: each export writes a `core.report_export` event (action `create`,
+  key `<report>:<format>`) whose value is `{event: "REPORT_EXPORTED",
+  actorUserId, reportKey, module, format, period, filters, exportedAt}`, with
+  no report contents. Refused exports write nothing.
+
+To add a report: write a `build(ctx) -> ReportContent` next to the module's
+service (see `app/quality/car/reports.py`), declare a `ReportDefinition`
+(key, title, filename, view and export permissions, a Pydantic filter model,
+formats, allowed period modes) in `app/reports/catalog.py`, and put an
+`ExportMenu` with the same key, permissions and the screen's period / filters
+on the page.
 
 ## Safety > Incident & Near Miss
 

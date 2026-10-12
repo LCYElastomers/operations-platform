@@ -6,8 +6,10 @@ import { useMemo, useState } from "react";
 
 import { BarChart } from "@/components/common/bar-chart";
 import { DataTable, type DataTableColumn } from "@/components/common/data-table";
+import { DashboardToolbar } from "@/components/common/dashboard-toolbar";
 import { EmptyState } from "@/components/common/empty-state";
-import { FilterBar, FilterSelect } from "@/components/common/filter-bar";
+import { ExportMenu } from "@/components/common/export-menu";
+import { FilterSelect } from "@/components/common/filter-bar";
 import { MetricCard } from "@/components/common/metric-card";
 import { PageHeader } from "@/components/common/page-header";
 import { StatusBadge, type StatusTone } from "@/components/common/status-badge";
@@ -163,13 +165,22 @@ export function PerformanceDashboard({ title, description, siteToday }: Performa
         }
       />
 
-      <FilterBar
+      <DashboardToolbar
         actions={
           query.isFetching && !query.isPending ? (
             <StatusBadge tone="pending" pulse>
               Updating
             </StatusBadge>
           ) : undefined
+        }
+        exportMenu={
+          <ExportMenu
+            reportKey="safety-performance"
+            title="Safety Performance"
+            requires={["safetyRecord.view", "safetyDashboard.view", "safetyRecord.export"]}
+            disabled={!data}
+            context={() => ({ period: { mode: "year", year }, filters: { through } })}
+          />
         }
       >
         <div className="w-full sm:w-44">
@@ -198,7 +209,7 @@ export function PerformanceDashboard({ title, description, siteToday }: Performa
             className="pointer-coarse:h-11"
           />
         </div>
-      </FilterBar>
+      </DashboardToolbar>
 
       <section aria-labelledby="kpi-heading" className="space-y-2">
         <h2 id="kpi-heading" className="px-1 text-base font-semibold">

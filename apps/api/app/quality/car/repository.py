@@ -69,8 +69,12 @@ class CarFilter:
     # "effective", "not_effective" and "not_recorded".
     effectiveness: tuple[str, ...] = ()
     assigned_to: str | None = None
+    # The assigned platform user ("Mine").
+    assigned_to_user_id: uuid.UUID | None = None
     # Not closed and due before this date.
     past_due_on: dt.date | None = None
+    # Not closed and due within this inclusive date range.
+    due_between: tuple[dt.date, dt.date] | None = None
     repeat: bool | None = None
     search: str | None = None
 
@@ -176,6 +180,13 @@ class CarRepository:
             conditions.append(_with_not_recorded(c.effectiveness_result, criteria.effectiveness))
         if criteria.assigned_to is not None:
             conditions.append(func.lower(c.assigned_to) == criteria.assigned_to.lower())
+        if criteria.assigned_to_user_id is not None:
+            conditions.append(c.assigned_to_user_id == criteria.assigned_to_user_id)
+        if criteria.due_between is not None:
+            first, last = criteria.due_between
+            conditions.append(
+                and_(c.status.is_distinct_from("closed"), c.due_date.between(first, last))
+            )
         if criteria.past_due_on is not None:
             conditions.append(
                 and_(
@@ -217,17 +228,23 @@ class CarRepository:
         return select(Car)
 
     def search(
-        self, criteria: CarFilter, *, limit: int | None = None, offset: int = 0
+        self,
+        criteria: CarFilter,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+        oldest_first: bool = False,
     ) -> tuple[list[CarRow], int]:
-        """Matching reports, newest first, with their actions, and how many match in all."""
+        """Matching reports by request date (newest first unless ``oldest_first``),
+        with their actions, and how many match in all."""
         where = self._where(criteria)
         count = self.session.scalar(select(func.count()).select_from(Car).where(where))
-        statement = (
-            self._select()
-            .where(where)
-            .order_by(Car.request_date.desc(), Car.car_number.desc())
-            .offset(offset)
+        order = (
+            (Car.request_date.asc(), Car.car_number.asc(), Car.id.asc())
+            if oldest_first
+            else (Car.request_date.desc(), Car.car_number.desc(), Car.id.desc())
         )
+        statement = self._select().where(where).order_by(*order).offset(offset)
         if limit is not None:
             statement = statement.limit(limit)
         cars = list(self.session.scalars(statement))

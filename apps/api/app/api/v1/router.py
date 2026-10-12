@@ -8,6 +8,7 @@ from app.quality.car import router as quality_cars
 from app.quality.cost import router as quality_cost
 from app.quality.moisture import ingestion_router as moisture_ingestion
 from app.quality.moisture import router as moisture
+from app.reports import router as reports
 from app.safety import router as safety
 from app.safety.observations import router as safety_observations
 from app.safety.performance import router as safety_performance
@@ -29,3 +30,4 @@ api_router.include_router(safety_records.router)
 api_router.include_router(safety_observations.router)
 api_router.include_router(safety_performance.router)
 api_router.include_router(safety_trir.router)
+api_router.include_router(reports.router)

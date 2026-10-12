@@ -3,37 +3,51 @@
 import { AlertTriangle, ClipboardList } from "lucide-react";
 import { useState } from "react";
 
+import { DashboardToolbar } from "@/components/common/dashboard-toolbar";
 import { EmptyState } from "@/components/common/empty-state";
-import { FilterBar, FilterSelect } from "@/components/common/filter-bar";
+import { ExportMenu } from "@/components/common/export-menu";
+import { FilterSelect } from "@/components/common/filter-bar";
+import { PeriodFilter } from "@/components/common/period-filter";
 import { StatusBadge } from "@/components/common/status-badge";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
+import type { PeriodValue } from "@/lib/period";
+import { useUrlState } from "@/lib/use-url-state";
 import { cn } from "@/lib/utils";
 
 import {
   describeCostError,
-  NO_DIMENSIONS,
   type CoqClass,
   type CostDimensions,
   type CostRecord,
   type CostRecordOptions,
   type CostRecordQuery,
   type CostSummary,
-  type CostSummaryQuery,
 } from "./api";
+import {
+  costPeriodConfig,
+  costQueryFromParams,
+  costQueryParams,
+  costReportContext,
+  EMPTY_COST_DASHBOARD,
+  type CostDashboardQuery,
+} from "./cost-query";
 import { ClassLabel, CostRecordDialog, FinancialBadge, StatusLabel, type CostDialogTarget } from "./record-dialog";
 import { formatDate, MONTH_LABELS, periodDates, usd } from "./format";
 import { useCostRecordOptions } from "./use-cost";
 
-const MONTH_OPTIONS = MONTH_LABELS.map((label, index) => ({ value: String(index + 1), label }));
+const writeCostQuery = (params: URLSearchParams, value: CostDashboardQuery) => {
+  for (const key of [...params.keys()]) params.delete(key);
+  costQueryParams(value).forEach((v, k) => params.set(k, v));
+};
 
-/** The dashboard filter state shared by KPIs, charts, the matrix and detail lists. */
-export function useCostSummaryQuery(poorOnly: boolean) {
-  return useState<CostSummaryQuery>({ year: null, from: null, through: null, poorOnly, ...NO_DIMENSIONS });
+/** The dashboard filter state shared by KPIs, charts, the matrix and detail lists; kept in the URL. */
+export function useCostDashboardQuery(initial: CostDashboardQuery = EMPTY_COST_DASHBOARD) {
+  return useUrlState<CostDashboardQuery>(initial, costQueryFromParams, writeCostQuery);
 }
 
 /** The Register query listing the records behind a dashboard's figures. */
-export function periodRecordQuery(data: CostSummary, query: CostSummaryQuery, classes: CoqClass[] = []): CostRecordQuery {
+export function periodRecordQuery(data: CostSummary, query: CostDimensions, classes: CoqClass[] = []): CostRecordQuery {
   const { from, to } = periodDates(data);
   return {
     areaId: query.areaId,
@@ -144,27 +158,46 @@ export function isFiltered(value: CostDimensions) {
   );
 }
 
-/** Period and dimension filters of the COPQ and COQ Matrix dashboards. */
+/** Period, dimension filters and export of the COPQ and COQ Matrix dashboards. */
 export function CostFilters({
   query,
   onChange,
   data,
   fetching,
   classes,
+  today,
+  report,
 }: {
-  query: CostSummaryQuery;
-  onChange: (query: CostSummaryQuery) => void;
+  query: CostDashboardQuery;
+  onChange: (query: CostDashboardQuery) => void;
   data: CostSummary | undefined;
   fetching: boolean;
   classes?: CoqClass[];
+  today: string;
+  report: { key: string; title: string };
 }) {
   const options = useCostRecordOptions();
-  const years = [...new Set([...(data?.availableYears ?? []), ...(query.year !== null ? [query.year] : [])])].sort(
+  const currentYear = Number(today.slice(0, 4));
+  const years = [...new Set([currentYear, ...(data?.availableYears ?? []), ...(query.period?.year ? [query.period.year] : [])])].sort(
     (a, b) => b - a,
   );
-  const latest = data?.latestMonth;
+  // The default shows as the latest year with records once the API has said which it is.
+  const shown: PeriodValue = query.period ?? (data?.year ? { mode: "year", year: data.year } : { mode: "this-year" });
   return (
-    <FilterBar
+    <DashboardToolbar
+      period={
+        <PeriodFilter
+          value={shown}
+          onChange={(period) => onChange({ ...query, period })}
+          today={today}
+          config={costPeriodConfig(years)}
+          hint={
+            query.period === null && data?.year
+              ? `latest year with records, through ${MONTH_LABELS[data.throughMonth - 1]}`
+              : undefined
+          }
+        />
+      }
       actions={
         <>
           {fetching && (
@@ -172,46 +205,25 @@ export function CostFilters({
               Updating
             </StatusBadge>
           )}
-          {(isFiltered(query) || query.year !== null || query.from !== null || query.through !== null) && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onChange({ ...query, year: null, from: null, through: null, ...NO_DIMENSIONS })}
-            >
+          {(isFiltered(query) || query.period !== null) && (
+            <Button variant="ghost" size="sm" onClick={() => onChange(EMPTY_COST_DASHBOARD)}>
               Clear filters
             </Button>
           )}
         </>
       }
+      exportMenu={
+        <ExportMenu
+          reportKey={report.key}
+          title={report.title}
+          requires={["qualityCost.view", "qualityDashboard.view", "qualityCost.export"]}
+          disabled={!data?.year}
+          context={() => costReportContext(query, data)}
+        />
+      }
     >
-      <FilterSelect
-        label="Year"
-        placeholder={data?.year ? `Latest (${data.year})` : "Latest"}
-        options={years.map((value) => ({ value: String(value), label: String(value) }))}
-        value={query.year === null ? "" : String(query.year)}
-        onChange={(event) =>
-          onChange({ ...query, year: event.target.value ? Number(event.target.value) : null, from: null, through: null })
-        }
-        className="pointer-coarse:h-11"
-      />
-      <FilterSelect
-        label="From"
-        placeholder="Jan"
-        options={MONTH_OPTIONS}
-        value={query.from === null ? "" : String(query.from)}
-        onChange={(event) => onChange({ ...query, from: event.target.value ? Number(event.target.value) : null })}
-        className="pointer-coarse:h-11"
-      />
-      <FilterSelect
-        label="Through"
-        placeholder={latest ? `Latest (${MONTH_LABELS[latest - 1]})` : "Latest"}
-        options={MONTH_OPTIONS}
-        value={query.through === null ? "" : String(query.through)}
-        onChange={(event) => onChange({ ...query, through: event.target.value ? Number(event.target.value) : null })}
-        className="pointer-coarse:h-11"
-      />
       <DimensionFilters value={query} onChange={(value) => onChange({ ...query, ...value })} options={options.data} classes={classes} />
-    </FilterBar>
+    </DashboardToolbar>
   );
 }
 

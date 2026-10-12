@@ -107,3 +107,20 @@ export async function apiSend<T>(
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }
+
+const FILENAME = /filename="([^"]+)"/;
+
+/** POSTs JSON and returns the file in the response with its server-chosen name. */
+export async function apiDownload(path: string, body: unknown): Promise<{ blob: Blob; filename: string | null }> {
+  const response = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...APP_HEADER },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    if (response.status === 401) onUnauthorized(path);
+    throw new ApiError(response.status, `POST ${path} failed: ${response.status}`, await readErrorDetail(response));
+  }
+  const filename = FILENAME.exec(response.headers.get("Content-Disposition") ?? "")?.[1] ?? null;
+  return { blob: await response.blob(), filename };
+}

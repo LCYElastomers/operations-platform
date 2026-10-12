@@ -7,6 +7,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TrirCalculation, TrirExperience } from "./api";
 import { monthCalculation, TrirExperiencePage } from "./trir-experience";
 
+// The export menu's permission check; these tests count the dashboard's own requests.
+vi.mock("@/features/auth/use-session", () => ({ usePermissions: () => ({ has: () => false }) }));
+
 vi.mock("@/components/common/bar-chart", () => ({
   BarChart: ({ title, categories, series, lines }: { title: string; categories: string[]; series: { name: string; values: (number | null)[] }[]; lines?: { name: string; values: (number | null)[] }[] }) => (
     <div data-chart={title} data-categories={categories.join("|")} data-series={[...series, ...(lines ?? [])].map((s) => `${s.name}:${s.values.join(",")}`).join("|")} />

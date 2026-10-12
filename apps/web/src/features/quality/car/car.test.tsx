@@ -8,8 +8,10 @@ import { getNavItem, moduleItems } from "@/config/navigation";
 
 import {
   canCompleteCarAction,
+  carApiParams,
   carQueryFromParams,
   carQueryParams,
+  EMPTY_CAR_DASHBOARD,
   EMPTY_CAR_QUERY,
   type Car,
   type CarAbilities,
@@ -295,6 +297,7 @@ let container: HTMLDivElement;
 let root: Root | null = null;
 
 beforeEach(() => {
+  window.history.replaceState(null, "", "/");
   requested = [];
   router.push.mockReset();
   router.replace.mockReset();
@@ -372,6 +375,17 @@ const button = (label: string, scope: ParentNode = container) => {
 
 const sent = (method: string, path: string) =>
   requested.filter((r) => r.init?.method === method && r.path === path).map((r) => JSON.parse(String(r.init!.body)));
+
+const quickView = (label: string) =>
+  [...container.querySelectorAll('nav[aria-label="Quick views"] button')].find((b) => b.textContent === label)!;
+
+const chipLabels = () =>
+  [...container.querySelectorAll('[aria-label="Active filters"] li button')].map((b) => b.textContent);
+
+async function choosePeriod(preset: string) {
+  await click(container.querySelector('button[aria-haspopup="dialog"]')!);
+  await click(button(preset, container.querySelector('[role="dialog"]')!));
+}
 
 const lastQuery = (path: string) => {
   const found = requested.filter((r) => (r.init?.method ?? "GET") === "GET" && r.path.split("?")[0] === path).at(-1);
@@ -507,14 +521,48 @@ describe("CAR register filters in the URL", () => {
     const params = carQueryParams(query);
     expect(params.toString()).toBe("status=open&rootCause=not_recorded&pastDue=true&repeat=true");
     expect(carQueryFromParams(Object.fromEntries(params))).toEqual(query);
-    expect(carQueryFromParams({ status: "<script>", from: "yesterday", pastDue: "1" })).toEqual(EMPTY_CAR_QUERY);
+    expect(
+      carQueryFromParams({ status: "<script>", from: "yesterday", pastDue: "1", page: "-1", sort: "sideways", period: "decade" }),
+    ).toEqual(EMPTY_CAR_QUERY);
+  });
+
+  it("keeps the period, Mine, sort and page in the URL", () => {
+    const query = {
+      ...EMPTY_CAR_QUERY,
+      period: { mode: "month" as const, year: 2003, month: 2 },
+      mine: true,
+      dueSoon: true,
+      sort: "oldest" as const,
+      page: 2,
+    };
+    const params = carQueryParams(query);
+    expect(params.toString()).toBe("year=2003&month=2&mine=true&dueSoon=true&sort=oldest&page=2");
+    expect(carQueryFromParams(Object.fromEntries(params))).toEqual(query);
+    expect(carQueryFromParams({ period: "ytd" }).period).toEqual({ mode: "ytd" });
+    expect(carQueryFromParams({ from: "2003-01-05", to: "2003-02-01" }).period).toEqual({
+      mode: "custom",
+      from: "2003-01-05",
+      to: "2003-02-01",
+    });
+  });
+
+  it("resolves the period to request dates on the site calendar for the API", () => {
+    const params = carApiParams({ ...EMPTY_CAR_QUERY, period: { mode: "this-month" }, page: 3 }, "2003-03-15", true);
+    expect(Object.fromEntries(params)).toEqual({ from: "2003-03-01", to: "2003-03-31", limit: "50", offset: "100" });
+    // All dates sends no date bounds at all.
+    expect(carApiParams(EMPTY_CAR_QUERY, "2003-03-15").toString()).toBe("");
   });
 });
 
 describe("CAR Register", () => {
   it("lists CARs with derived past due, action progress and cost", async () => {
     await render(<CarRegisterPage title="CAR Register" initial={EMPTY_CAR_QUERY} />);
-    const headings = [...container.querySelectorAll("thead th")].map((th) => th.textContent);
+    const visibleText = (th: Element) => {
+      const copy = th.cloneNode(true) as Element;
+      copy.querySelectorAll(".sr-only").forEach((hidden) => hidden.remove());
+      return copy.textContent;
+    };
+    const headings = [...container.querySelectorAll("thead th")].map(visibleText);
     expect(headings).toEqual([
       "CAR Number",
       "Request Date",
@@ -552,8 +600,7 @@ describe("CAR Register", () => {
     await change(control<HTMLSelectElement>("Effectiveness"), "effective");
     await change(control<HTMLSelectElement>("Past due"), "true");
     await change(control<HTMLSelectElement>("Previous / repeat"), "no");
-    await change(control<HTMLInputElement>("Requested from"), "2003-01-01");
-    await change(control<HTMLInputElement>("Requested to"), "2003-02-28");
+    await choosePeriod("Last Month");
     await change(control<HTMLInputElement>("Search"), "drum");
     const params = lastQuery(BASE);
     expect(Object.fromEntries(params)).toEqual({
@@ -565,11 +612,94 @@ describe("CAR Register", () => {
       effectiveness: "effective",
       pastDue: "true",
       repeat: "false",
-      from: "2003-01-01",
+      from: "2003-02-01",
       to: "2003-02-28",
       search: "drum",
+      limit: "50",
+      offset: "0",
     });
     expect(window.location.search).toContain("pastDue=true");
+    expect(window.location.search).toContain("period=last-month");
+    expect(container.querySelector('[data-testid="period-range"]')!.textContent).toContain("February 2003");
+  });
+
+  it("shows removable chips for the active filters and clears them all", async () => {
+    await render(<CarRegisterPage title="CAR Register" initial={EMPTY_CAR_QUERY} />);
+    expect(container.querySelector('[aria-label="Active filters"]')).toBeNull();
+    await change(control<HTMLSelectElement>("CAR status"), "open");
+    await change(control<HTMLSelectElement>("Past due"), "true");
+    await choosePeriod("Year to Date");
+    expect(chipLabels()).toEqual(["Requested: Year to Date · Jan 1 – Mar 15, 2003", "Status: Open", "Past due"]);
+
+    await click(container.querySelector('[aria-label="Remove filter Past due"]')!);
+    expect(lastQuery(BASE).has("pastDue")).toBe(false);
+    expect(lastQuery(BASE).get("status")).toBe("open");
+
+    await click(button("Clear all"));
+    expect(Object.fromEntries(lastQuery(BASE))).toEqual({ limit: "50", offset: "0" });
+    expect(window.location.search).toBe("");
+  });
+
+  it("applies quick views, including Mine by user and This Month by request date", async () => {
+    await render(<CarRegisterPage title="CAR Register" initial={EMPTY_CAR_QUERY} />);
+    expect(quickView("All").getAttribute("aria-pressed")).toBe("true");
+    await click(quickView("Mine"));
+    expect(lastQuery(BASE).get("mine")).toBe("true");
+    expect(quickView("Mine").getAttribute("aria-pressed")).toBe("true");
+    expect(chipLabels()).toEqual(["Assigned to me"]);
+
+    await click(quickView("This Month"));
+    const params = lastQuery(BASE);
+    expect(params.has("mine")).toBe(false);
+    expect(params.get("from")).toBe("2003-03-01");
+    expect(params.get("to")).toBe("2003-03-31");
+
+    await click(quickView("Past Due"));
+    expect(lastQuery(BASE).get("pastDue")).toBe("true");
+    await click(quickView("Due Soon"));
+    expect(lastQuery(BASE).get("dueSoon")).toBe("true");
+    await click(quickView("Closed"));
+    expect(lastQuery(BASE).get("status")).toBe("closed");
+  });
+
+  it("sorts by request date on the server, newest first by default", async () => {
+    await render(<CarRegisterPage title="CAR Register" initial={EMPTY_CAR_QUERY} />);
+    const heading = () => [...container.querySelectorAll("thead th")].find((th) => th.textContent?.startsWith("Request Date"))!;
+    expect(heading().getAttribute("aria-sort")).toBe("descending");
+    expect(lastQuery(BASE).has("sort")).toBe(false);
+    await click(heading().querySelector("button")!);
+    expect(heading().getAttribute("aria-sort")).toBe("ascending");
+    expect(lastQuery(BASE).get("sort")).toBe("oldest");
+    expect(window.location.search).toContain("sort=oldest");
+    expect(container.textContent).toContain("oldest request first");
+  });
+
+  it("pages through the register 50 at a time", async () => {
+    responses[`GET ${BASE}`] = { status: 200, body: { cars: [summary()], total: 120, canEdit: true, abilities: ALL_ABILITIES } };
+    await render(<CarRegisterPage title="CAR Register" initial={EMPTY_CAR_QUERY} />);
+    expect(container.textContent).toContain("Page 1 of 3");
+    expect(button("Previous").disabled).toBe(true);
+    await click(button("Next"));
+    expect(lastQuery(BASE).get("offset")).toBe("50");
+    expect(window.location.search).toContain("page=2");
+    expect(container.textContent).toContain("Page 2 of 3");
+    // A filter change starts again at the first page.
+    await change(control<HTMLSelectElement>("CAR status"), "open");
+    expect(lastQuery(BASE).get("offset")).toBe("0");
+  });
+
+  it("follows Back and Forward through the URL", async () => {
+    await render(<CarRegisterPage title="CAR Register" initial={EMPTY_CAR_QUERY} />);
+    await click(quickView("Closed"));
+    expect(window.location.search).toBe("?status=closed");
+    await act(async () => {
+      window.history.pushState(null, "", "/quality/cars/register?period=ytd");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    await settle();
+    expect(lastQuery(BASE).get("from")).toBe("2003-01-01");
+    expect(lastQuery(BASE).has("status")).toBe(false);
+    expect(quickView("Closed").getAttribute("aria-pressed")).toBe("false");
   });
 
   it("shows an empty state, not invented rows, when there are no CARs", async () => {
@@ -577,6 +707,19 @@ describe("CAR Register", () => {
     await render(<CarRegisterPage title="CAR Register" initial={EMPTY_CAR_QUERY} />);
     expect(container.textContent).toContain("No Corrective Action Reports yet");
     expect(container.querySelector("tbody")).toBeNull();
+  });
+
+  it("says when no CARs match the filters and offers to clear them", async () => {
+    responses[`GET ${BASE}`] = { status: 200, body: { cars: [], total: 0, canEdit: true, abilities: ALL_ABILITIES } };
+    await render(<CarRegisterPage title="CAR Register" initial={{ ...EMPTY_CAR_QUERY, status: "closed" }} />);
+    expect(container.textContent).toContain("No CARs match these filters.");
+    await click(button("Clear filters"));
+    expect(lastQuery(BASE).has("status")).toBe(false);
+  });
+
+  it("hides the export menu from a user without the export permission", async () => {
+    await render(<CarRegisterPage title="CAR Register" initial={EMPTY_CAR_QUERY} />);
+    expect([...container.querySelectorAll("button")].some((b) => b.textContent?.includes("Export"))).toBe(false);
   });
 
   it("scrolls the table sideways on narrow screens", async () => {
@@ -615,6 +758,16 @@ describe("CAR dashboard", () => {
     await change(control<HTMLSelectElement>("Department"), "production");
     expect(lastQuery(`${BASE}/dashboard`).get("department")).toBe("production");
     expect(container.textContent).toContain("No CARs match these filters");
+    await choosePeriod("Last 3 Months");
+    expect(lastQuery(`${BASE}/dashboard`).get("from")).toBe("2003-01-01");
+    expect(lastQuery(`${BASE}/dashboard`).get("to")).toBe("2003-03-31");
+    expect(window.location.search).toBe("?period=last-3-months&department=production");
+  });
+
+  it("links a KPI to the register with the dashboard's period", async () => {
+    await render(<CarDashboardPage title="Corrective Action Reports" initial={{ ...EMPTY_CAR_DASHBOARD, period: { mode: "ytd" } }} />);
+    expect(lastQuery(`${BASE}/dashboard`).get("from")).toBe("2003-01-01");
+    expect(container.querySelector('a[href="/quality/cars/register?period=ytd&pastDue=true"]')).not.toBeNull();
   });
 });
 

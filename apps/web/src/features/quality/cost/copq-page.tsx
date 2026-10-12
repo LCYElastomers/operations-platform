@@ -9,7 +9,10 @@ import { PageHeader } from "@/components/common/page-header";
 import { Tabs } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
-import { POOR_CLASSES, type CostSummary, type CostSummaryQuery } from "./api";
+import { siteToday } from "@/features/safety/site-calendar";
+import { useSiteToday } from "@/features/safety/use-site-calendar";
+
+import { POOR_CLASSES, type CostSummary } from "./api";
 import {
   CostError,
   CostFilters,
@@ -24,8 +27,9 @@ import {
   TableSection,
   TD,
   TH,
-  useCostSummaryQuery,
+  useCostDashboardQuery,
 } from "./cost-shared";
+import { summaryQueryOf, type CostDashboardQuery } from "./cost-query";
 import { CostEstimator } from "./estimator";
 import { COQ_CLASS_COLORS, MONTH_LABELS, percent, periodLabel, POTENTIAL_COLOR, quantity, recordsLabel, toNumber, usd } from "./format";
 import { AddCostRecordButton } from "./record-dialog";
@@ -33,7 +37,15 @@ import { useCostRecords, useCostSummary } from "./use-cost";
 
 type View = "dashboard" | "estimator";
 
-export function CopqPage({ title, description }: { title: string; description?: string }) {
+export function CopqPage({
+  title,
+  description,
+  initial,
+}: {
+  title: string;
+  description?: string;
+  initial?: CostDashboardQuery;
+}) {
   const [view, setView] = useState<View>("dashboard");
   return (
     <div className="space-y-5">
@@ -52,17 +64,18 @@ export function CopqPage({ title, description }: { title: string; description?: 
         value={view}
         onValueChange={setView}
       >
-        {view === "dashboard" ? <CopqDashboard /> : <CostEstimator />}
+        {view === "dashboard" ? <CopqDashboard initial={initial} /> : <CostEstimator />}
       </Tabs>
     </div>
   );
 }
 
-function CopqDashboard() {
-  const [query, setQuery] = useCostSummaryQuery(true);
-  const summary = useCostSummary(query);
+function CopqDashboard({ initial }: { initial?: CostDashboardQuery }) {
+  const today = useSiteToday(siteToday());
+  const [query, setQuery] = useCostDashboardQuery(initial);
+  const summary = useCostSummary(summaryQueryOf(query, today, true));
   const data = summary.data;
-  const filtered = isFiltered(query) || query.year !== null || query.from !== null || query.through !== null;
+  const filtered = isFiltered(query) || query.period !== null;
   return (
     <div className="space-y-5 pt-4">
       <p className="max-w-4xl text-sm text-muted-foreground">
@@ -75,6 +88,8 @@ function CopqDashboard() {
         data={data}
         fetching={summary.isFetching && !summary.isPending}
         classes={POOR_CLASSES}
+        today={today}
+        report={{ key: "copq", title: "COPQ Dashboard" }}
       />
       {summary.isError ? (
         <CostError error={summary.error} onRetry={() => void summary.refetch()} />
@@ -382,7 +397,7 @@ function CategoryTable({ data }: { data: CostSummary }) {
   );
 }
 
-function OpenItems({ data, query }: { data: CostSummary; query: CostSummaryQuery }) {
+function OpenItems({ data, query }: { data: CostSummary; query: CostDashboardQuery }) {
   const records = useCostRecords({ ...periodRecordQuery(data, query, POOR_CLASSES), open: true });
   const list = records.data;
   return (

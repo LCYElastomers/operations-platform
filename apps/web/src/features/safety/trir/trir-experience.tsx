@@ -11,8 +11,10 @@ import {
   useDisplayPreferences,
   visibleRows,
 } from "@/components/common/display-controls";
+import { DashboardToolbar } from "@/components/common/dashboard-toolbar";
 import { EmptyState } from "@/components/common/empty-state";
-import { FilterBar, FilterSelect } from "@/components/common/filter-bar";
+import { ExportMenu } from "@/components/common/export-menu";
+import { FilterSelect } from "@/components/common/filter-bar";
 import { MetricCard } from "@/components/common/metric-card";
 import { PageHeader } from "@/components/common/page-header";
 import { StatusBadge } from "@/components/common/status-badge";
@@ -104,13 +106,22 @@ export function TrirExperiencePage({
         they are never entered here. Every rate shows its calculation.
       </p>
 
-      <FilterBar
+      <DashboardToolbar
         actions={
           experience.isFetching && !experience.isPending ? (
             <StatusBadge tone="pending" pulse>
               Updating
             </StatusBadge>
           ) : undefined
+        }
+        exportMenu={
+          <ExportMenu
+            reportKey="safety-trir"
+            title="TRIR Experience"
+            requires={["safetyRecord.view", "safetyDashboard.view", "safetyRecord.export"]}
+            disabled={!data}
+            context={() => ({ period: { mode: "year", year }, filters: { through } })}
+          />
         }
       >
         <FilterSelect
@@ -137,7 +148,7 @@ export function TrirExperiencePage({
           disabled={data?.current.basis === "historical_annual"}
           className="pointer-coarse:h-11"
         />
-      </FilterBar>
+      </DashboardToolbar>
 
       {experience.isError ? (
         <EmptyState

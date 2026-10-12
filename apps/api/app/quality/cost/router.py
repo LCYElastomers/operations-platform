@@ -191,7 +191,7 @@ _WRITE_ERRORS = (
 )
 
 
-def _filter(
+def cost_filter(
     *,
     date_from: dt.date | None = None,
     date_to: dt.date | None = None,
@@ -217,6 +217,38 @@ def _filter(
         statuses=tuple(record_status or ()),
         search=text or None,
         search_id=records.parse_record_number(text) if text else None,
+    )
+
+
+def register_filter(
+    *,
+    date_from: dt.date | None,
+    date_to: dt.date | None,
+    area_id: int | None,
+    coq_class: list[CoqClass] | None,
+    category: str | None,
+    product: str | None,
+    owner: str | None,
+    financial_status: list[FinancialStatus] | None,
+    record_status: list[OperationalStatus] | None,
+    open_only: bool,
+    search: str | None,
+) -> RecordFilter:
+    """The Register's criteria (``GET /records`` and its export)."""
+    statuses = record_status or (
+        [s for s in OPERATIONAL_STATUSES if s != "closed"] if open_only else None
+    )
+    return cost_filter(
+        date_from=date_from,
+        date_to=date_to,
+        area_id=area_id,
+        coq_class=coq_class,
+        category=category,
+        product=product,
+        owner=owner,
+        financial_status=financial_status,
+        record_status=statuses,  # type: ignore[arg-type]
+        search=search,
     )
 
 
@@ -248,10 +280,7 @@ def list_records(
     """Quality Cost records, newest first. ``search`` matches the record number,
     title, description, product, campaign, lot, owner, customer / supplier and notes.
     ``open`` keeps records whose status is not Closed."""
-    statuses = record_status or (
-        [s for s in OPERATIONAL_STATUSES if s != "closed"] if open_only else None
-    )
-    criteria = _filter(
+    criteria = register_filter(
         date_from=date_from,
         date_to=date_to,
         area_id=area_id,
@@ -260,7 +289,8 @@ def list_records(
         product=product,
         owner=owner,
         financial_status=financial_status,
-        record_status=statuses,  # type: ignore[arg-type]
+        record_status=record_status,
+        open_only=open_only,
         search=search,
     )
     try:
@@ -411,29 +441,59 @@ def summary(
     year with records), ``from`` (default January) through ``through`` (default the
     latest month with a record), narrowed by the same filters as ``/records``.
     ``poorOnly`` keeps Internal and External Failure records (the COPQ view)."""
+    try:
+        return load_summary(
+            repository,
+            year=year,
+            from_month=from_month,
+            through=through,
+            area_id=area_id,
+            coq_class=coq_class,
+            category=category,
+            product=product,
+            owner=owner,
+            financial_status=financial_status,
+            poor_only=poor_only,
+        )
+    except SQLAlchemyError:
+        raise _database_unavailable() from None
+
+
+def load_summary(
+    repository: CostRepository,
+    *,
+    year: int | None,
+    from_month: int | None,
+    through: int | None,
+    area_id: int | None,
+    coq_class: list[CoqClass] | None,
+    category: str | None,
+    product: str | None,
+    owner: str | None,
+    financial_status: list[FinancialStatus] | None,
+    poor_only: bool,
+) -> CostSummaryResponse:
+    """The figures of ``/summary``; also used by the COPQ and COQ Matrix exports."""
     classes = coq_class
     if poor_only:
         classes = [c for c in coq_class if c in POOR_CLASSES] if coq_class else sorted(POOR_CLASSES)
-    try:
-        years = repository.record_years()
-        selected = year if year is not None else (years[0] if years else None)
-        rows: list[Any] = []
-        # An empty class list here means a filter that excludes every record.
-        if selected is not None and (classes is None or classes):
-            criteria = _filter(
-                date_from=dt.date(selected, 1, 1),
-                date_to=dt.date(selected, 12, calendar.monthrange(selected, 12)[1]),
-                area_id=area_id,
-                coq_class=classes,  # type: ignore[arg-type]
-                category=category,
-                product=product,
-                owner=owner,
-                financial_status=financial_status,
-            )
-            rows, _ = repository.search(criteria)
-        stored = [service.MonthInputs.from_row(r) for r in repository.facts().values()]
-    except SQLAlchemyError:
-        raise _database_unavailable() from None
+    years = repository.record_years()
+    selected = year if year is not None else (years[0] if years else None)
+    rows: list[Any] = []
+    # An empty class list here means a filter that excludes every record.
+    if selected is not None and (classes is None or classes):
+        criteria = cost_filter(
+            date_from=dt.date(selected, 1, 1),
+            date_to=dt.date(selected, 12, calendar.monthrange(selected, 12)[1]),
+            area_id=area_id,
+            coq_class=classes,  # type: ignore[arg-type]
+            category=category,
+            product=product,
+            owner=owner,
+            financial_status=financial_status,
+        )
+        rows, _ = repository.search(criteria)
+    stored = [service.MonthInputs.from_row(r) for r in repository.facts().values()]
     return service.summary(
         [row.record for row in rows],
         stored,

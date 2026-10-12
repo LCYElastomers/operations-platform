@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 
 import { EmptyState } from "@/components/common/empty-state";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { Toaster } from "@/components/ui/toast";
 import { accountNavigation, navigation } from "@/config/navigation";
 import { errorMessage } from "@/features/auth/api";
 import { useSession } from "@/features/auth/use-session";
@@ -82,6 +83,7 @@ function SignedInShell({ pathname, children }: { pathname: string; children: Rea
           <div className="mx-auto w-full max-w-7xl">{content}</div>
         </main>
       </div>
+      <Toaster />
     </div>
   );
 }
