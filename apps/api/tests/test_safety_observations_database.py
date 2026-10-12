@@ -27,16 +27,45 @@ pytestmark = requires_postgres
 NOW = dt.datetime(2026, 10, 7, 12, 0, tzinfo=dt.UTC)
 DAY = dt.date(2003, 5, 14)
 
-EXPECTED_CATEGORIES = [
-    ("building", "Building"),
+# The official categories (migration 0014), offered for new entries in this order.
+OFFICIAL_LABELS = [
+    "Awareness and Focus",
+    "Building",
+    "Contractors",
+    "Crane and Hoist",
+    "Cryogenics and Bulk Gases",
+    "DOT Hazardous Material Transportation",
+    "Driving",
+    "Electrical",
+    "Environmental",
+    "Ergonomics",
+    "Fall Protection",
+    "Fire Safety",
+    "First Aid",
+    "Guarding",
+    "Hazard Communications",
+    "Hot Work",
+    "Housekeeping",
+    "Lockout Tagout",
+    "Material Handling",
+    "Personal Protective Equipment",
+    "Policies and Procedures",
+    "Powered Industrial Trucks",
+    "Security Incident",
+    "Storage",
+    "Tools & Equipment",
+    "Training",
+]
+
+# Categories seeded by 0004 and retired by 0014: kept, unchanged, for observations
+# entered with them. Building, Electrical, Ergonomics, Housekeeping and Tools &
+# Equipment are on the official list and stay active.
+RETIRED_CATEGORIES = [
     ("chemical", "Chemical"),
     ("confined_space", "Confined Space"),
-    ("electrical", "Electrical"),
-    ("ergonomics", "Ergonomics"),
     ("fire", "Fire"),
     ("fire_system", "Fire System"),
     ("forklift", "Forklift"),
-    ("housekeeping", "Housekeeping"),
     ("loto", "LOTO"),
     ("material_defect", "Material Defect"),
     ("material_handling_lifting", "Material Handling or Lifting"),
@@ -45,7 +74,6 @@ EXPECTED_CATEGORIES = [
     ("respiratory_protection", "Respiratory Protection"),
     ("slip_trip_fall", "Slip, Trip, Fall"),
     ("stairs_ladders", "Stairs, Ladders"),
-    ("tools_equipment", "Tools & Equipment"),
     ("vehicle_company_owned", "Vehicle, Company Owned"),
     ("vehicle_not_company_owned", "Vehicle, Not Company Owned"),
     ("walking_working_surface", "Walking Working Surface"),
@@ -145,13 +173,21 @@ def test_tables_constraints_and_indexes(engine: Engine) -> None:
     assert nullable == {"area_location", "description", "corrective_action"}
 
 
-def test_categories_are_seeded_in_display_order(
+def test_official_categories_are_offered_in_order(
+    repository: DatabaseObservationRepository,
+) -> None:
+    assert [c.name for c in service.active_categories(repository)] == OFFICIAL_LABELS
+
+
+def test_old_categories_are_retired_unchanged_after_the_official_ones(
     repository: DatabaseObservationRepository,
 ) -> None:
     categories = repository.categories()
 
-    assert [(c.code, c.name) for c in categories] == EXPECTED_CATEGORIES
-    assert all(c.active for c in categories)
+    assert [c.name for c in categories[: len(OFFICIAL_LABELS)]] == OFFICIAL_LABELS
+    retired = categories[len(OFFICIAL_LABELS) :]
+    assert [(c.code, c.name) for c in retired] == RETIRED_CATEGORIES
+    assert not any(c.active for c in retired)
 
 
 def test_legacy_definitions_are_seeded_without_values(session: Session) -> None:
@@ -209,14 +245,14 @@ def test_create_update_delete_round_trip_with_audit(
             repository,
             outcome="safe",
             kind="act",
-            categoryId=category_id(repository, "fire_system"),
+            categoryId=category_id(repository, "fire_safety"),
             description=None,
             expectedUpdatedAt=record.updated_at.isoformat(),
         ),
         actor_id="db-second",
         now=later,
     )
-    assert (updated.values.outcome, updated.category_code) == ("safe", "fire_system")
+    assert (updated.values.outcome, updated.category_code) == ("safe", "fire_safety")
     assert updated.values.description is None
     assert (updated.created_by, updated.updated_by) == ("db-tester", "db-second")
     assert updated.updated_at == later
@@ -233,7 +269,7 @@ def test_create_update_delete_round_trip_with_audit(
     assert {e.entity_key for e in events} == {f"observations/{record.id}"}
     assert events[0].new_value is not None and events[0].new_value["category"] == "housekeeping"
     assert events[1].old_value == events[0].new_value
-    assert events[1].new_value is not None and events[1].new_value["category"] == "fire_system"
+    assert events[1].new_value is not None and events[1].new_value["category"] == "fire_safety"
     assert events[2].old_value == events[1].new_value
     assert len({e.change_set_id for e in events}) == 3
     ids = [e.id for e in events]
@@ -252,11 +288,11 @@ def test_create_update_delete_round_trip_with_audit(
 
 
 def test_search_filters_counts_and_years(repository: NonCommittingRepository) -> None:
-    ppe = category_id(repository, "ppe")
+    ppe = category_id(repository, "personal_protective_equipment")
     for day, outcome, kind, category in [
         (dt.date(2003, 1, 31), "safe", "act", ppe),
         (dt.date(2003, 2, 1), "unsafe", "condition", ppe),
-        (dt.date(2003, 2, 28), "safe", "condition", category_id(repository, "fire")),
+        (dt.date(2003, 2, 28), "safe", "condition", category_id(repository, "fire_safety")),
     ]:
         service.create_observation(
             repository,
@@ -287,12 +323,83 @@ def test_search_filters_counts_and_years(repository: NonCommittingRepository) ->
     assert (summary.counts.safe_act, summary.counts.safe_condition) == (1, 1)
     assert summary.counts.unsafe_condition == 1
     by_code = {c.code: c for c in summary.categories}
-    assert (by_code["ppe"].safe, by_code["ppe"].unsafe) == (1, 1)
-    assert by_code["fire_system"].total == 0
+    ppe_counts = by_code["personal_protective_equipment"]
+    assert (ppe_counts.safe, ppe_counts.unsafe) == (1, 1)
+    # Official categories are listed even without observations; retired ones only with them.
+    assert by_code["training"].total == 0
+    assert "fire_system" not in by_code
 
     dashboard = service.dashboard(repository, year=2003, today=NOW.date())
     assert [m.counts.total if m.counts else None for m in dashboard.months][:3] == [1, 2, 0]
     assert 2003 in dashboard.years_with_data
+
+
+def test_each_official_category_can_be_saved_and_read_back(
+    repository: NonCommittingRepository,
+) -> None:
+    for category in service.active_categories(repository):
+        for outcome in ("safe", "unsafe"):
+            saved = service.create_observation(
+                repository,
+                observation_input(repository, categoryId=category.id, outcome=outcome),
+                actor_id="db-tester",
+                now=NOW,
+            )
+            reopened = repository.get(saved.id)
+            assert reopened is not None
+            assert (reopened.values.category_id, reopened.category_name) == (
+                category.id,
+                category.name,
+            )
+            assert reopened.values.outcome == outcome
+
+
+def test_historical_observations_keep_their_retired_category(
+    session: Session, repository: NonCommittingRepository
+) -> None:
+    # Entered before 0014 with old categories; written directly, as the service
+    # no longer accepts them for new entries.
+    forklift = category_id(repository, "forklift")
+    trucks = category_id(repository, "powered_industrial_trucks")
+    historical = session.execute(
+        insert(Observation).values(_row(forklift, outcome="unsafe")).returning(Observation.id)
+    ).scalar_one()
+    service.create_observation(
+        repository, observation_input(repository, categoryId=trucks), actor_id="db-tester", now=NOW
+    )
+
+    record = repository.get(historical)
+    assert record is not None
+    assert (record.category_code, record.category_name) == ("forklift", "Forklift")
+
+    # Editing other fields keeps the retired category; it is never converted.
+    updated = service.update_observation(
+        repository,
+        historical,
+        observation_input(
+            repository,
+            categoryId=forklift,
+            description="Reviewed",
+            expectedUpdatedAt=record.updated_at.isoformat(),
+        ),
+        actor_id="db-second",
+        now=NOW + dt.timedelta(minutes=1),
+    )
+    assert (updated.category_code, updated.category_name) == ("forklift", "Forklift")
+
+    # Filters, summaries and the dashboard show old and new categories side by side.
+    records, total = repository.search(
+        ObservationFilter(dt.date(2003, 1, 1), dt.date(2003, 12, 31), category_id=forklift),
+        limit=10,
+        offset=0,
+    )
+    assert (total, [r.id for r in records]) == (1, [historical])
+    by_code = {c.code: c for c in service.summarize(repository, year=2003, month=None).categories}
+    assert by_code["forklift"].total == 1
+    assert by_code["powered_industrial_trucks"].total == 1
+    dashboard = service.dashboard(repository, year=2003, today=NOW.date())
+    names = [c.name for c in dashboard.categories]
+    assert names.index("Powered Industrial Trucks") < names.index("Forklift")
 
 
 def test_stale_update_is_a_conflict(repository: NonCommittingRepository) -> None:
@@ -310,19 +417,37 @@ def test_stale_update_is_a_conflict(repository: NonCommittingRepository) -> None
         )
 
 
-def test_retired_categories_cannot_be_chosen(
-    session: Session, repository: NonCommittingRepository
+@pytest.mark.parametrize("code", ["crane", "ppe", "loto", "forklift"])
+def test_retired_categories_cannot_be_chosen_for_new_observations(
+    repository: NonCommittingRepository, code: str
 ) -> None:
-    crane = session.get(ObservationCategory, category_id(repository, "crane"))
-    assert crane is not None
-    crane.active = False
-    session.flush()
+    retired = category_id(repository, code)
 
-    assert "crane" not in [c.code for c in service.active_categories(repository)]
+    assert code not in [c.code for c in service.active_categories(repository)]
     with pytest.raises(service.UnknownCategoryError):
         service.create_observation(
             repository,
-            observation_input(repository, categoryId=crane.id),
+            observation_input(repository, categoryId=retired),
+            actor_id="db-tester",
+            now=NOW,
+        )
+
+
+def test_an_edit_cannot_move_an_observation_to_a_retired_category(
+    repository: NonCommittingRepository,
+) -> None:
+    record = service.create_observation(
+        repository, observation_input(repository), actor_id="db-tester", now=NOW
+    )
+    with pytest.raises(service.UnknownCategoryError):
+        service.update_observation(
+            repository,
+            record.id,
+            observation_input(
+                repository,
+                categoryId=category_id(repository, "ppe"),
+                expectedUpdatedAt=record.updated_at.isoformat(),
+            ),
             actor_id="db-tester",
             now=NOW,
         )

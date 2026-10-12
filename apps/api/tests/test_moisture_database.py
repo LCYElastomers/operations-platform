@@ -53,7 +53,7 @@ pytestmark = requires_postgres
 SYNCED_AT = dt.datetime(2026, 10, 2, 12, 0, tzinfo=dt.UTC)
 SOURCE = "access-test"
 BASE = "/api/v1/quality/moisture"
-HEAD = "0013"
+HEAD = "0014"
 
 
 @pytest.fixture

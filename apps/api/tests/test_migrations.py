@@ -281,7 +281,7 @@ def test_car_migration_creates_car_tables_only(upgrade_sql: str) -> None:
 def test_users_migration_seeds_roles_and_links_without_rewriting_history(
     upgrade_sql: str,
 ) -> None:
-    sql = _segment(upgrade_sql, "0012 -> 0013")
+    sql = _segment(upgrade_sql, "0012 -> 0013", "0013 -> 0014")
     for table in ("users", "roles", "permissions", "role_permissions", "user_roles", "sessions"):
         assert f"CREATE TABLE core.{table} " in sql
     assert "CREATE TABLE core.password_tokens " in sql
@@ -302,3 +302,28 @@ def test_users_migration_seeds_roles_and_links_without_rewriting_history(
     assert "ALTER TABLE quality.cost_records ADD COLUMN owner_user_id UUID" in sql
     # Users are never deleted from under the records that name them.
     assert "REFERENCES core.users (id) ON DELETE RESTRICT" in sql
+
+
+def test_official_observation_categories_migration_rewrites_no_observations(
+    upgrade_sql: str,
+) -> None:
+    sql = _segment(upgrade_sql, "0013 -> 0014")
+    for label in (
+        "'Awareness and Focus'",
+        "'DOT Hazardous Material Transportation'",
+        "'Personal Protective Equipment'",
+        "'Lockout Tagout'",
+        "'Powered Industrial Trucks'",
+        "'Tools & Equipment'",
+        "'Training'",
+    ):
+        assert label in sql
+    assert "'Other'" not in sql
+    # Old categories are retired, never renamed, deleted or mapped onto new ones.
+    assert "UPDATE safety.observation_categories SET" in sql
+    assert "active=false" in sql
+    assert "ON CONFLICT (code) DO UPDATE" in sql
+    assert "SET name" not in sql
+    assert "safety.observations " not in sql
+    assert "DELETE" not in sql
+    assert "DROP" not in sql

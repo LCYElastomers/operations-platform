@@ -92,7 +92,7 @@ export function ChoiceGroup<T extends string | number>({
                 className="sr-only"
               />
               {checked && <Check aria-hidden className="size-4 shrink-0" />}
-              <span className="min-w-0 leading-tight">{option.label}</span>
+              <span className="min-w-0 leading-tight break-words">{option.label}</span>
             </label>
           );
         })}

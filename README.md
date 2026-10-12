@@ -1671,11 +1671,27 @@ corrective-action workflow yet.
 - Every count derives from the same records, so Safe + Unsafe and
   Act + Condition both equal Total.
 
-Category display names correct the workbook's spelling ("Housekeepng",
-"Tools") and spacing; the workbook labels belong in import mappings only.
-**Fire and Fire System are separate categories** because the workbook's Safe
-table lists "Fire" and its Unsafe table "Fire system"; merging them needs the
-Safety owner's confirmation and a migration.
+The category list is the rows of `safety.observation_categories`; the API
+and the form read it from there, and Safe and Unsafe observations use the
+same list. Migration `0014` made the official list active, in this order:
+Awareness and Focus, Building, Contractors, Crane and Hoist, Cryogenics and
+Bulk Gases, DOT Hazardous Material Transportation, Driving, Electrical,
+Environmental, Ergonomics, Fall Protection, Fire Safety, First Aid, Guarding,
+Hazard Communications, Hot Work, Housekeeping, Lockout Tagout, Material
+Handling, Personal Protective Equipment, Policies and Procedures, Powered
+Industrial Trucks, Security Incident, Storage, Tools & Equipment, Training.
+There is no "Other" category.
+
+The original 23 categories seeded by `0004` that are not on the official
+list (for example Forklift, PPE, LOTO, Fire, Fire System, Crane) are retired,
+not renamed or deleted: their rows keep their names and are listed after the
+official ones. No observation was changed and no old category is mapped onto
+a new one; observations recorded under a retired category keep showing it,
+still count under it in summaries, dashboards and exports for periods where
+they occur, and can be filtered by it. Building, Electrical, Ergonomics,
+Housekeeping and Tools & Equipment were already present with the same names
+and stay as they were. Changing a category list again is a migration that
+retires and adds rows; it never rewrites observations.
 
 ### Legacy 2026 workbook tallies
 

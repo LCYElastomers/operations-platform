@@ -58,6 +58,24 @@ describe("ObservationForm", () => {
     expect(html).toContain(">Fire System<");
   });
 
+  it("shows the official categories in the order given, with full labels", () => {
+    const labels = [
+      "Awareness and Focus", "Building", "Contractors", "Crane and Hoist", "Cryogenics and Bulk Gases",
+      "DOT Hazardous Material Transportation", "Driving", "Electrical", "Environmental", "Ergonomics",
+      "Fall Protection", "Fire Safety", "First Aid", "Guarding", "Hazard Communications", "Hot Work",
+      "Housekeeping", "Lockout Tagout", "Material Handling", "Personal Protective Equipment",
+      "Policies and Procedures", "Powered Industrial Trucks", "Security Incident", "Storage",
+      "Tools & Equipment", "Training",
+    ];
+    const categories = labels.map((name, index) => ({ id: index + 1, code: `c${index}`, name }));
+    const html = renderForm({ categories });
+    const shown = [...html.matchAll(/leading-tight break-words">([^<]+)</g)]
+      .map((match) => match[1].replace("&amp;", "&"))
+      .slice(4);
+    expect(shown).toEqual(labels);
+    expect(html).not.toMatch(/truncate|line-clamp/);
+  });
+
   it("has the fields in entry order with an explicit Add button", () => {
     const html = renderForm();
     const order = ["Date", "Safe or Unsafe", "Act or Condition", "Category", "Area / Location", "Description", "Corrective Action", "Add Observation"];
