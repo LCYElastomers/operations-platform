@@ -291,7 +291,7 @@ class _Facts:
                 record = self.records.get((year, month))
                 closed = record is not None and record.values.month_closed
                 self.counts[(year, month)] = month_counts(
-                    source, stored.get((year, month), {}), closed=closed
+                    source, stored.get((year, month)), closed=closed
                 )
         self.years_with_data = sorted({period[0] for period in self.records}, reverse=True)
 

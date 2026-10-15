@@ -36,6 +36,7 @@ from app.safety.analytics import INCIDENTS, METRIC_SET
 from app.safety.behavior import service
 from app.safety.behavior.repository import BehaviorRepository, DatabaseBehaviorRepository
 from app.safety.behavior.schemas import AnnualCount, BehaviorChange
+from app.safety.imports.runs import track_command
 from app.safety.legacy_import import LEGACY_IMPORT_ACTOR
 from app.safety.repository import DatabaseSafetyMetricsRepository, SafetyMetricsRepository
 from app.safety.schemas import ReportingYear
@@ -198,7 +199,7 @@ def run(command: str, path: Path) -> int:
     if command == "check":
         return 1 if discrepancy else 0
 
-    with get_sessionmaker()() as session:
+    with track_command("behavior", command, path) as run_, get_sessionmaker()() as session:
         repository = DatabaseBehaviorRepository(session)
         plan = plan_import(repository, mapping)
         _print_plan(plan)
@@ -210,12 +211,28 @@ def run(command: str, path: Path) -> int:
             + (f"; workbook states {stated.value} ({stated.stated_in})" if stated else "")
         )
         blocked = bool(discrepancy or plan.unknown or plan.differing)
-        if command == "plan":
-            return 1 if blocked else 0
-        if blocked:
+        if command == "plan" or blocked:
+            run_.finish(
+                "blocked" if blocked else "planned",
+                inserted=len(plan.changes),
+                skipped=plan.unchanged,
+                conflicts=len(plan.unknown) + len(plan.differing),
+                messages=[
+                    *(f"UNKNOWN category {category}" for category in plan.unknown),
+                    *(
+                        f"DIFFERS {category}: stored {current}, "
+                        f"file {'blank' if new is None else new}"
+                        for category, current, new in plan.differing
+                    ),
+                    *(["DISCREPANCY stated total differs from categories"] if discrepancy else []),
+                ],
+            )
+            if command == "plan":
+                return 1 if blocked else 0
             print("Not applied: resolve the issues above first.", file=sys.stderr)
             return 1
         if not plan.changes:
+            run_.finish("nothing_to_apply", inserted=0, skipped=plan.unchanged, conflicts=0)
             print("Nothing to apply.")
             return 0
         outcome = service.save_counts(
@@ -224,6 +241,13 @@ def run(command: str, path: Path) -> int:
             changes=plan.changes,
             actor_id=LEGACY_IMPORT_ACTOR,
             now=dt.datetime.now(dt.UTC),
+        )
+        run_.finish(
+            "applied",
+            inserted=outcome.changed_categories,
+            skipped=plan.unchanged,
+            conflicts=0,
+            change_set_id=outcome.change_set_id,
         )
         print(f"Applied {outcome.changed_categories} counts (change set {outcome.change_set_id}).")
     return 0

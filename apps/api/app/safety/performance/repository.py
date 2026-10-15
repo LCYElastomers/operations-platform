@@ -55,7 +55,9 @@ class AnnualRecord:
 
 
 # Stored monthly counts by period, keyed by the names in INCIDENT_CATEGORIES or
-# LEGACY_CATEGORIES. A name is absent when the month has no stored value.
+# LEGACY_CATEGORIES. A name is absent when the month has no stored value. An
+# Incident & Near Miss period is present (possibly empty) when the month has any
+# value in that metric set, and absent when it has none.
 StoredCounts = dict[Period, dict[str, int]]
 
 
@@ -225,10 +227,25 @@ class DatabasePerformanceRepository:
         )
 
     def counts(self, years: Collection[int]) -> tuple[StoredCounts, StoredCounts]:
-        return (
-            self._metric_counts(INCIDENTS, INCIDENT_CATEGORIES, years),
-            self._metric_counts(PERFORMANCE_LEGACY, LEGACY_CATEGORIES, years),
+        incidents = self._metric_counts(INCIDENTS, INCIDENT_CATEGORIES, years)
+        for period in self._reported_periods(INCIDENTS, years):
+            incidents.setdefault(period, {})
+        return incidents, self._metric_counts(PERFORMANCE_LEGACY, LEGACY_CATEGORIES, years)
+
+    def _reported_periods(self, metric_set: str, years: Collection[int]) -> list[Period]:
+        if not years:
+            return []
+        rows = self._session.execute(
+            select(MonthlyMetricValue.reporting_year, MonthlyMetricValue.reporting_month)
+            .join(MetricCategory, MonthlyMetricValue.category_id == MetricCategory.id)
+            .join(MetricSection, MetricCategory.section_id == MetricSection.id)
+            .where(
+                MetricSection.metric_set == metric_set,
+                MonthlyMetricValue.reporting_year.in_(list(years)),
+            )
+            .distinct()
         )
+        return [(year, month) for year, month in rows]
 
     def _metric_counts(
         self, metric_set: str, names: dict[str, tuple[str, str]], years: Collection[int]

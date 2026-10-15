@@ -154,8 +154,12 @@ def _monthly_calculation(
 ) -> CalculationOut:
     rate = incidence_rate(window.events, window.hours)
     unavailable = None
-    if window.ineligible:
+    if any(m.reason != "count_not_confirmed" for m in window.ineligible):
         unavailable = "Not every month in the period is complete in Safety Performance."
+    elif window.ineligible:
+        unavailable = "Recordable counts are not confirmed for every month in the period."
+        if source == "incidents":
+            unavailable += " Incident & Near Miss has no data for the months listed."
     elif rate is None:
         unavailable = "The period has no worked hours."
     return CalculationOut(

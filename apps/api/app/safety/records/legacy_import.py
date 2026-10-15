@@ -23,6 +23,8 @@ Rules:
   (passage location and hash) that is audited but never returned by the API.
 - ``apply`` is idempotent: a candidate whose source reference is already
   stored is skipped. A number already used by another record blocks ``apply``.
+  Each record is committed as it is created, so a run recorded as ``failed``
+  in ``safety.import_runs`` may have created some records; run ``plan`` again.
 - ``plan`` shows the documented counts by month and type next to the stored
   monthly totals. Records never change the totals.
 - Contributing factor and PSIF are reported for review only: records have no
@@ -45,6 +47,7 @@ from pydantic import ConfigDict, Field, ValidationError
 
 from app.core.schemas import CamelModel
 from app.db.session import get_sessionmaker
+from app.safety.imports.runs import track_command
 from app.safety.legacy_import import LEGACY_IMPORT_ACTOR
 from app.safety.records import narratives, service
 from app.safety.records.repository import RecordRepository
@@ -514,21 +517,39 @@ def run(argv: Sequence[str]) -> int:
             print(f"PROBLEM {problem}")
         return 1 if problems else 0
 
-    with get_sessionmaker()() as session:
+    with (
+        track_command("incident_records", args.command, args.review) as run_,
+        get_sessionmaker()() as session,
+    ):
         repository = RecordRepository(session)
         to_create, done, problems = plan(repository, review)
         _print_plan(repository, review, to_create, done)
         for problem in problems:
             print(f"PROBLEM {problem}")
-        if args.command == "plan":
-            return 1 if problems else 0
-        if problems:
+        if args.command == "plan" or problems:
+            run_.finish(
+                "blocked" if problems else "planned",
+                inserted=len(to_create),
+                skipped=len(done),
+                conflicts=len(problems),
+                messages=[f"PROBLEM {problem}" for problem in problems],
+            )
+            if args.command == "plan":
+                return 1 if problems else 0
             print("Not applied: resolve the problems above first.", file=sys.stderr)
             return 1
         if not to_create:
+            run_.finish("nothing_to_apply", inserted=0, skipped=len(done), conflicts=0)
             print("Nothing to apply.")
             return 0
         created, linked = apply(repository, review, dt.datetime.now(dt.UTC))
+        run_.finish(
+            "applied",
+            inserted=created,
+            updated=linked,
+            skipped=len(done),
+            conflicts=0,
+        )
         print(f"Created {created} records; linked {linked} reclassifications.")
     return 0
 

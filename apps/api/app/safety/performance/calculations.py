@@ -11,8 +11,10 @@ listed.
 
 Event counts for a year come from one source: Incident & Near Miss
 (``incidents``) from ``FIRST_INCIDENT_YEAR``, and the pre-platform workbook
-counts (``performance_legacy``) before it. Closing an Incident & Near Miss
-month confirms its counts are complete, so a count absent from it is zero.
+counts (``performance_legacy``) before it. Closing a month whose Incident &
+Near Miss data is reported (any value stored for the month) confirms its counts
+are complete, so a count absent from it is zero. A month with no Incident &
+Near Miss data at all stays unconfirmed: missing data is never read as zero.
 Closing a legacy month does not: a legacy count is known only when a value is
 stored (a typed value, or a zero proven by the source), and a window for a
 measure is unavailable while any of its legacy months lacks that count.
@@ -116,20 +118,26 @@ def _sum(*values: int | None) -> int | None:
     return sum(known) if known else None
 
 
-def month_counts(source: CountSource, stored: Mapping[str, int], *, closed: bool) -> MonthCounts:
+def month_counts(
+    source: CountSource, stored: Mapping[str, int] | None, *, closed: bool
+) -> MonthCounts:
     """Numerators for one month from its stored values, keyed by the names in
-    ``INCIDENT_CATEGORIES`` or ``LEGACY_CATEGORIES``."""
+    ``INCIDENT_CATEGORIES`` or ``LEGACY_CATEGORIES``. ``stored`` is None when the
+    month has no value at all in its source."""
+    reported = stored is not None
+    stored = stored or {}
     if source == INCIDENTS:
+        confirmed = closed and reported
 
         def value(name: str) -> int | None:
             found = stored.get(name)
-            return 0 if found is None and closed else found
+            return 0 if found is None and confirmed else found
 
         injury, illness = value("recordable_injury"), value("occupational_illness")
         damage, equipment = value("property_damage"), value("equipment_damage_failure")
         return MonthCounts(
             source=source,
-            confirmed=closed,
+            confirmed=confirmed,
             trir=_sum(injury, illness),
             first_aid=value("first_aid"),
             lopc=value("lopc"),

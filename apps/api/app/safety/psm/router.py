@@ -12,13 +12,14 @@ Email is sent after the change commits; a delivery failure never undoes it.
 """
 
 import datetime as dt
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import Annotated, Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from fastapi.responses import Response
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from app.auth import people
@@ -32,6 +33,7 @@ from app.core.permissions import Permission
 from app.db.session import DatabaseNotConfiguredError, get_sessionmaker
 from app.quality.cost.records import RecordForbiddenError, RecordNotFoundError, RecordRuleError
 from app.quality.cost.router import actor_of
+from app.safety.imports.runs import track
 from app.safety.psm import metrics, notifications, pha_import, service
 from app.safety.psm.models import (
     PsmAction,
@@ -121,6 +123,14 @@ def psm_store() -> Iterator[PsmStore]:
         yield PsmStore(session)
 
 
+def import_run_sessions() -> Callable[[], Session]:
+    """Sessions for ``safety.import_runs``, separate from the import's own."""
+    try:
+        return get_sessionmaker()
+    except DatabaseNotConfiguredError:
+        raise _unavailable() from None
+
+
 def _role(*permissions: Permission) -> Any:
     if len(permissions) == 1:
         return Depends(require_permission(permissions[0]))
@@ -128,6 +138,7 @@ def _role(*permissions: Permission) -> Any:
 
 
 Store = Annotated[PsmStore, Depends(psm_store)]
+RunSessions = Annotated[Callable[[], Session], Depends(import_run_sessions)]
 Viewer = Annotated[UserPrincipal, _role(P.PSM_VIEW)]
 StudyManager = Annotated[UserPrincipal, _role(P.PSM_MANAGE_STUDIES)]
 Editor = Annotated[UserPrincipal, _role(P.PSM_EDIT_RECOMMENDATIONS)]
@@ -1261,15 +1272,29 @@ def _import_summary(mapping: pha_import.PhaMapping, plan: pha_import.Plan) -> di
 
 @router.post("/imports/pha/plan", responses={**WRITE_RESPONSES, 413: {"description": "Too large"}})
 async def plan_import(
-    principal: Importer, store: Store, request: Request, file_name: FileName
+    principal: Importer,
+    store: Store,
+    run_sessions: RunSessions,
+    request: Request,
+    file_name: FileName,
 ) -> dict[str, Any]:
-    """Validate the workbook and compare it with stored data. Writes nothing."""
+    """Validate the workbook and compare it with stored data. Writes only the
+    import-run record."""
     mapping = await _workbook(request, file_name)
 
     def run() -> dict[str, Any]:
         try:
-            plan = pha_import.plan(store, mapping)
-            store.rollback()
+            with _tracked(run_sessions, "plan", mapping, principal) as run_:
+                plan = pha_import.plan(store, mapping)
+                store.rollback()
+                summary = plan.summary()
+                run_.finish(
+                    "blocked" if plan.conflicts else "planned",
+                    inserted=summary["newRecommendations"],
+                    skipped=summary["unchangedRecommendations"],
+                    conflicts=len(plan.conflicts),
+                    messages=[*plan.conflicts, *plan.differences],
+                )
             return _import_summary(mapping, plan)
         except SQLAlchemyError:
             raise _unavailable() from None
@@ -1277,9 +1302,29 @@ async def plan_import(
     return await run_in_threadpool(run)
 
 
+def _tracked(
+    run_sessions: Callable[[], Session],
+    command: str,
+    mapping: pha_import.PhaMapping,
+    principal: UserPrincipal,
+) -> Any:
+    return track(
+        run_sessions,
+        importer="psm_pha",
+        command=command,
+        source_file_name=mapping.source.file_name,
+        source_sha256=mapping.source.sha256,
+        initiated_by=principal.actor_id,
+    )
+
+
 @router.post("/imports/pha/apply", responses={**WRITE_RESPONSES, 413: {"description": "Too large"}})
 async def apply_import(
-    principal: Importer, store: Store, request: Request, file_name: FileName
+    principal: Importer,
+    store: Store,
+    run_sessions: RunSessions,
+    request: Request,
+    file_name: FileName,
 ) -> dict[str, Any]:
     """Validate and import, all or nothing. Stored records are never overwritten."""
     mapping = await _workbook(request, file_name)
@@ -1287,7 +1332,23 @@ async def apply_import(
 
     def run() -> dict[str, Any]:
         try:
-            result = pha_import.apply(store, mapping, actor)
+            with _tracked(run_sessions, "apply", mapping, principal) as run_:
+                try:
+                    result = pha_import.apply(store, mapping, actor)
+                except pha_import.ImportValidationError as error:
+                    run_.finish("blocked", conflicts=len(error.errors), messages=error.errors)
+                    raise
+                created = result.created_anything
+                run_.finish(
+                    "applied" if created else "nothing_to_apply",
+                    inserted=result.recommendations,
+                    skipped=result.plan.summary()["unchangedRecommendations"],
+                    conflicts=0,
+                    messages=[
+                        f"Created {result.scenarios} scenarios and {result.nodes} process nodes."
+                    ],
+                    change_set_id=result.change_set_id if created else None,
+                )
         except _WRITE_ERRORS as error:
             raise _write_error(error) from None
         return {

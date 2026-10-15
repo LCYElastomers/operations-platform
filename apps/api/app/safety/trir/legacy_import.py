@@ -37,6 +37,7 @@ from pydantic import ConfigDict, Field, ValidationError, model_validator
 from app.audit.recorder import AuditChange
 from app.core.schemas import CamelModel
 from app.db.session import get_sessionmaker
+from app.safety.imports.runs import track_command
 from app.safety.legacy_import import LEGACY_IMPORT_ACTOR
 from app.safety.rates import COMPARISON_TOLERANCE, display_rate, incidence_rate
 from app.safety.schemas import ReportingYear
@@ -323,17 +324,35 @@ def run(command: str, path: Path) -> int:
     if command == "check":
         return 1 if mismatch else 0
 
-    with get_sessionmaker()() as session:
+    with track_command("trir_history", command, path) as run_, get_sessionmaker()() as session:
         repository = TrirRepository(session)
         plan = plan_import(repository.facts(), mapping)
         _print_plan(plan)
         blocked = bool(mismatch or plan.differing)
-        if command == "plan":
-            return 1 if blocked else 0
-        if blocked:
+        if command == "plan" or blocked:
+            run_.finish(
+                "blocked" if blocked else "planned",
+                inserted=len(plan.inserts),
+                skipped=len(plan.unchanged),
+                conflicts=len({d[0] for d in plan.differing}),
+                messages=[
+                    *(
+                        f"DIFFERS {year} {field}: stored {current}, file {new}"
+                        for year, field, current, new in plan.differing
+                    ),
+                    *(
+                        ["MISMATCH legacy TRIR or TIR differs from recalculation"]
+                        if mismatch
+                        else []
+                    ),
+                ],
+            )
+            if command == "plan":
+                return 1 if blocked else 0
             print("Not applied: resolve the issues above first.", file=sys.stderr)
             return 1
         if not plan.inserts:
+            run_.finish("nothing_to_apply", inserted=0, skipped=len(plan.unchanged), conflicts=0)
             print("Nothing to apply.")
             return 0
         count, change_set = apply_plan(
@@ -342,6 +361,13 @@ def run(command: str, path: Path) -> int:
             path,
             actor_id=LEGACY_IMPORT_ACTOR,
             now=dt.datetime.now(dt.UTC),
+        )
+        run_.finish(
+            "applied",
+            inserted=count,
+            skipped=len(plan.unchanged),
+            conflicts=0,
+            change_set_id=change_set,
         )
         print(f"Applied {count} years (change set {change_set}).")
     return 0

@@ -26,6 +26,7 @@ Rules:
   import never overwrites entered data.
 - Writes go through the same service as the data entry page, so every
   value is recorded in core.audit_events under the actor ``legacy-import``.
+- Every ``plan`` and ``apply`` is recorded in ``safety.import_runs``.
 """
 
 import argparse
@@ -42,6 +43,7 @@ from pydantic import ConfigDict, Field, ValidationError, model_validator
 from app.core.schemas import CamelModel
 from app.db.session import get_sessionmaker
 from app.safety import service
+from app.safety.imports.runs import track_command
 from app.safety.repository import DatabaseSafetyMetricsRepository, SafetyMetricsRepository
 from app.safety.schemas import CellChange, MonthlyCount, ReportingYear
 
@@ -246,17 +248,25 @@ def run(command: str, path: Path) -> int:
     if command == "check":
         return 1 if discrepancies else 0
 
-    with get_sessionmaker()() as session:
+    with track_command("monthly_metrics", command, path) as run_, get_sessionmaker()() as session:
         repository = DatabaseSafetyMetricsRepository(session)
         plan = plan_import(repository, mapping)
         _print_plan(plan)
         blocked = bool(discrepancies or plan.unknown or plan.differing)
-        if command == "plan":
-            return 1 if blocked else 0
-        if blocked:
+        if command == "plan" or blocked:
+            run_.finish(
+                "blocked" if blocked else "planned",
+                inserted=len(plan.changes),
+                skipped=plan.unchanged,
+                conflicts=len(plan.differing) + len(plan.unknown),
+                messages=_plan_messages(plan, discrepancies),
+            )
+            if command == "plan":
+                return 1 if blocked else 0
             print("Not applied: resolve the issues above first.", file=sys.stderr)
             return 1
         if not plan.changes:
+            run_.finish("nothing_to_apply", inserted=0, skipped=plan.unchanged, conflicts=0)
             print("Nothing to apply.")
             return 0
         outcome = service.save_changes(
@@ -267,8 +277,30 @@ def run(command: str, path: Path) -> int:
             actor_id=LEGACY_IMPORT_ACTOR,
             now=dt.datetime.now(dt.UTC),
         )
+        run_.finish(
+            "applied",
+            inserted=outcome.changed_cells,
+            skipped=plan.unchanged,
+            conflicts=0,
+            change_set_id=outcome.change_set_id,
+        )
         print(f"Applied {outcome.changed_cells} values (change set {outcome.change_set_id}).")
     return 0
+
+
+def _plan_messages(plan: ImportPlan, discrepancies: list[TotalDiscrepancy]) -> list[str]:
+    return [
+        *(f"UNKNOWN category {s}/{c}" for s, c in plan.unknown),
+        *(
+            f"DIFFERS {s}/{c} month {m}: stored {old}, file {'unreported' if new is None else new}"
+            for s, c, m, old, new in plan.differing
+        ),
+        *(
+            f"DISCREPANCY {d.section}/{d.category}: stated {d.expected}, months sum to "
+            f"{d.calculated if d.calculated is not None else 'nothing'}"
+            for d in discrepancies
+        ),
+    ]
 
 
 def _main(argv: Sequence[str]) -> int:

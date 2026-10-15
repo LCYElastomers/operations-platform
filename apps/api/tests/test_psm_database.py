@@ -786,6 +786,11 @@ def api(store: NonCommitting) -> Iterator[Any]:
     def make(*permissions: P) -> TestClient:
         app = create_app()
         app.dependency_overrides[psm_router.psm_store] = lambda: store
+        app.dependency_overrides[psm_router.import_run_sessions] = lambda: (
+            lambda: Session(
+                bind=store.session.connection(), join_transaction_mode="create_savepoint"
+            )
+        )
         app.dependency_overrides[get_user_principal] = lambda: as_user(*permissions)
         return TestClient(app)
 

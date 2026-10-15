@@ -220,15 +220,24 @@ kept), `0006` Safety Performance, `0007` incident dimensions, `0008`
 Behavior, `0009` incident records and TRIR history, `0010` Cost of
 Quality monthly inputs (`app.quality.cost.legacy_import`), `0011` Quality
 Cost records and their related-record references, `0012` Corrective Action
-Reports (`app.quality.car.legacy_import`). Migrations seed
+Reports (`app.quality.car.legacy_import`), `0013` users, roles and
+sessions, `0014` official Observation categories, `0015` Process Safety
+Management, `0016` Safety import runs. Migrations seed
 reference data only; legacy values are loaded afterwards with the import
 CLIs, in this order: incident totals (`app.safety.legacy_import`), Safety
 Performance hours, Behavior, TRIR history, then reviewed incident
 narratives. Each has `check`, `plan` and `apply`; `apply` is audited and
-idempotent.
+idempotent. Then run `python -m app.safety.reconcile` (see
+[Safety data authority](#safety-data-authority-and-reconciliation)).
+
+`GET /api/v1/health` is liveness only. `GET /api/v1/health/ready` returns
+503 (`database`: `not_configured`, `unavailable` or `migrations_pending`)
+until the database answers and is at the migration head shipped with the
+code, so a deploy whose migration did not run is visible instead of
+serving partial data. It reveals no revision, host or credential.
 
 **Back up before upgrading production.** Downgrades are not a rollback for
-data: `0002`–`0012` each refuse to downgrade while their tables hold data,
+data: `0002`–`0012` and `0016` each refuse to downgrade while their tables hold data,
 so restoring the backup is the rollback once anything was imported.
 The release runbook and data-quality report for 0009 are in
 [`docs/safety-release-0009/`](docs/safety-release-0009/).
@@ -1603,6 +1612,76 @@ LOPC contributing factors, Process Safety Incidents, and the Behavior Pareto.
 These need structured data the platform does not hold yet.
 A 2025 LOPC comparison from `performance_legacy` is also deferred.
 
+## Safety data authority and reconciliation
+
+PostgreSQL is the only operational datastore for Safety. Every accepted
+value is written, in the request or import transaction that accepts it, to
+a permanent table in the `safety` schema, with its audit event in
+`core.audit_events`. No Safety data lives in temporary, unlogged or
+materialized tables, in files, in the browser (localStorage holds display
+preferences only) or in process memory, so restarts, deploys, cache clears
+and temp-directory cleanup lose nothing. A test fails the build if Safety
+code issues `TRUNCATE`, `DROP TABLE` or creates temporary, unlogged or
+materialized storage.
+
+| Data | Authoritative table | Derived from it |
+| --- | --- | --- |
+| Monthly Incident & Near Miss, classification, LOPC… counts | `monthly_metric_values` (by category code) | Incident dashboard, TRIR numerator (`recordable_injury` + `occupational_illness`) |
+| Individual incident and near miss records | `incident_records` | Register, documentation reconciliation (records never change the counts) |
+| Monthly hours and month closure | `performance_hours` | Safety Performance, TRIR denominator |
+| TRIR history before monthly data | `trir_annual_facts`, `performance_annual_legacy` | TRIR history |
+| Behavior tags | `annual_behavior_counts` | Behavior Pareto |
+| Observations | `observations` | Observation dashboard |
+| PSM studies, recommendations, scenarios, actions | `psm_*` | PSM dashboard, registers, reports |
+| Import runs | `import_runs` | — |
+
+Rates are never stored; they are recalculated on every request from the
+counts and hours above. An unreported month is absent (null), never zero,
+and makes the rate unavailable rather than understated.
+
+Excel workbooks are migration and reconciliation sources only. They are
+transcribed into reviewed mapping files under `apps/api/import_templates/`,
+which only the operator commands read; the API and pages never read a file.
+
+**Import runs.** Every `plan` and `apply` of the Safety import commands, and
+of the PSM workbook import in the application, is recorded in
+`safety.import_runs`: importer, command, source file name and SHA-256, who
+ran it, start and end, status (`running`, `planned`, `blocked`, `applied`,
+`nothing_to_apply`, `failed`), inserted / updated / skipped / conflict /
+failed counts, the blocking messages, and the audit change set of an apply.
+The run is recorded before the import starts, in its own transaction, so a
+failed import still leaves its record; `applied` is recorded and printed
+only after the import's own transaction commits. Database errors are
+recorded by kind only, never with statement parameters.
+
+**Reconciliation.** `python -m app.safety.reconcile` checks the datastore
+and writes nothing (it runs in a `READ ONLY` transaction):
+
+```bash
+cd apps/api
+uv run python -m app.safety.reconcile --year 2026 \
+  --incidents import_templates/safety_incidents_2026_lcy_ehs.mapping.json \
+  --incidents import_templates/safety_incidents_2026_dimensions_lcy_ehs.mapping.json \
+  --hours import_templates/safety_performance_hours_lcy_ehs.mapping.json \
+  --trir import_templates/safety_trir_experience_history_lcy_ehs.mapping.json \
+  --records import_templates/safety_incident_records_2026_lcy_ehs.review.json \
+  --behavior import_templates/safety_behavior_2026_lcy_ehs.mapping.json \
+  --pha import_templates/psm_pha_2026_300_400_600.mapping.json   # add --json for machines
+```
+
+It checks the schema is at head; every relation in `safety` and `core` is a
+permanent, logged table; no import run failed or never finished; the TRIR
+inputs for the year (or why the rate is unavailable); that records are
+counted by the monthly totals (a record in a month whose total is
+unreported or zero is a discrepancy; fewer records than the total is
+incomplete documentation, a warning); that classified records do not exceed
+the monthly classification counts, matched by category code; which active
+incident records have no classification; and, for each reviewed file
+given, that everything it reports is stored with the same value. Exit
+status 0 means nothing to resolve, 1 discrepancies, 2 unreadable input or
+database unavailable. Discrepancies are reported with both values; the
+command never chooses one.
+
 ## Safety site calendar
 
 "Today" and the current reporting year are the Baytown site's calendar date
@@ -1817,7 +1896,10 @@ metric set for earlier years. No rate, YTD total or rolling total is stored.
   default YTD). Hours can be entered once a month has started and a month
   can be closed once it has ended (Baytown site date).
 - Closing an Incident & Near Miss month (2026 on) confirms its counts are
-  complete, so a blank count then means zero. Closing a legacy month (before
+  complete, so a blank count then means zero, provided the month has Incident
+  & Near Miss data (any value stored for it). A closed month with no Incident &
+  Near Miss data at all stays unconfirmed (`count_not_confirmed`) and makes
+  every rate that includes it unavailable, never zero. Closing a legacy month (before
   2026) confirms its hours only. **Legacy completeness rule:** a legacy count
   is known only when a value is stored, either typed in the source or a zero
   proven by an independent typed source total. A blank stays unconfirmed,

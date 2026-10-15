@@ -12,7 +12,7 @@ import datetime as dt
 import importlib.util
 import json
 import uuid
-from collections.abc import Collection, Iterator, Sequence
+from collections.abc import Collection, Iterable, Iterator, Sequence
 from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
@@ -242,6 +242,12 @@ def load_legacy_counts(repository: InMemoryRepository) -> None:
     for cell in metrics_import.cells(mapping):
         if cell.value is not None:
             repository.legacy.setdefault((mapping.year, cell.month), {})[cell.category] = cell.value
+
+
+def report_incidents(repository: InMemoryRepository, year: int, months: Iterable[int]) -> None:
+    """Incident & Near Miss data exists for these months, none of it in a numerator category."""
+    for month in months:
+        repository.incidents.setdefault((year, month), {})
 
 
 def load_incident_counts(repository: InMemoryRepository) -> None:
@@ -532,6 +538,7 @@ def test_rolling_average_unavailable_without_prior_year(
 ) -> None:
     for month, hours in enumerate(HOURS_2026, start=1):
         set_hours(repository, 2026, month, hours)
+    report_incidents(repository, 2026, range(1, len(HOURS_2026) + 1))
 
     trir = kpi(dashboard(viewer), "trir")
 
@@ -558,6 +565,7 @@ def test_closing_confirms_absent_counts_as_zero_only_for_closed_months(
 ) -> None:
     set_hours(repository, 2026, 1, 1000, closed=True)
     set_hours(repository, 2026, 2, 1000, closed=False)
+    report_incidents(repository, 2026, [1, 2])
 
     months = dashboard(viewer)["months"]
 
@@ -567,6 +575,21 @@ def test_closing_confirms_absent_counts_as_zero_only_for_closed_months(
     assert set(months[1]["counts"].values()) == {None}
     assert months[2]["status"] == "not_reported"
     assert set(months[2]["counts"].values()) == {None}
+
+
+def test_closed_month_without_incident_data_is_unconfirmed_not_zero(
+    repository: InMemoryRepository, viewer: TestClient
+) -> None:
+    set_hours(repository, 2026, 1, 1000, closed=True)
+
+    data = dashboard(viewer, throughMonth=1)
+
+    assert data["months"][0]["countsConfirmed"] is False
+    assert set(data["months"][0]["counts"].values()) == {None}
+    trir = kpi(data, "trir")["ytd"]
+    assert trir["available"] is False
+    assert trir["rate"] is None
+    assert trir["ineligibleMonths"] == [{"year": 2026, "month": 1, "reason": "count_not_confirmed"}]
 
 
 def test_empty_year_has_no_kpis_and_no_history(
@@ -968,6 +991,7 @@ def test_january_2027_12mra_uses_the_eligible_2026_months(
     for month in range(1, 13):
         set_hours(repository, 2026, month, 1000)
     set_hours(repository, 2027, 1, 1000)
+    report_incidents(repository, 2026, range(1, 13))
     # January 2026 falls outside the window ending January 2027.
     for period in [(2026, 1), (2026, 6), (2027, 1)]:
         repository.incidents.setdefault(period, {})["recordable_injury"] = 1

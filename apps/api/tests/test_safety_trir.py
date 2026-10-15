@@ -9,6 +9,7 @@ import_templates/safety_trir_experience_history_lcy_ehs.mapping.json.
 import json
 import re
 from collections.abc import Iterator
+from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -364,6 +365,121 @@ def test_zero_hours_month_is_not_a_zero_rate() -> None:
     assert [m.reason for m in result.current.missing_months] == ["zero_hours"]
 
 
+# Regression: 2026 showed TRIR 0 when the Incident & Near Miss months were missing.
+
+
+def test_2026_trir_is_one_recordable_over_the_performance_hours(
+    performance: InMemoryRepository,
+) -> None:
+    current = _experience(performance).current
+
+    assert (current.recordables, current.hours) == (1, 145194)
+    assert current.rate is not None
+    assert current.rate == "1.377467388459578219485653677149193"
+    assert float(current.rate) == pytest.approx(1.3774673884595783, abs=1e-15)
+    assert current.display == "1.38"
+
+
+def test_closed_months_without_incident_data_are_unavailable_not_zero(
+    performance: InMemoryRepository,
+) -> None:
+    performance.incidents = {p: v for p, v in performance.incidents.items() if p[0] != 2026}
+
+    result = _experience(performance)
+    current = result.current
+
+    assert result.status.through_month == 8
+    assert (current.recordables, current.rate, current.display) == (None, None, None)
+    assert not current.complete
+    assert [(m.month, m.reason) for m in current.missing_months] == [
+        (m, "count_not_confirmed") for m in range(1, 9)
+    ]
+    assert "Incident & Near Miss has no data" in (current.unavailable_reason or "")
+    assert result.monthly[7].state == "count_not_confirmed"
+    assert result.monthly[7].recordables is None
+    assert result.comparison.status == "unavailable"
+
+
+def test_a_single_month_without_incident_data_blocks_the_rate(
+    performance: InMemoryRepository,
+) -> None:
+    del performance.incidents[(2026, 5)]
+
+    current = _experience(performance).current
+
+    assert current.rate is None and current.recordables is None
+    assert [(m.month, m.reason) for m in current.missing_months] == [(5, "count_not_confirmed")]
+
+
+def test_zero_recordables_with_valid_hours_is_zero(performance: InMemoryRepository) -> None:
+    del performance.incidents[(2026, 8)]["recordable_injury"]
+
+    current = _experience(performance).current
+
+    assert (current.recordables, current.hours) == (0, 145194)
+    assert current.rate == "0"
+    assert current.display == "0.00"
+    assert current.complete
+
+
+def test_recordables_with_zero_hours_are_unavailable(performance: InMemoryRepository) -> None:
+    hours = performance.hour_rows[(2026, 8)]
+    performance.hour_rows[(2026, 8)] = replace(
+        hours, values=replace(hours.values, total_hours=Decimal("0.00"))
+    )
+
+    current = _experience(performance, through=8).current
+
+    assert current.rate is None and current.display is None
+    assert [(m.month, m.reason) for m in current.missing_months] == [(8, "zero_hours")]
+
+
+def test_recordables_with_missing_hours_are_unavailable(performance: InMemoryRepository) -> None:
+    del performance.hour_rows[(2026, 8)]
+
+    result = _experience(performance, through=8)
+
+    assert result.current.rate is None and result.current.display is None
+    assert [(m.month, m.reason) for m in result.current.missing_months] == [(8, "not_reported")]
+    assert result.status.latest_complete_month == 7
+
+
+def test_recordable_injury_and_occupational_illness_are_both_counted(
+    performance: InMemoryRepository,
+) -> None:
+    performance.incidents[(2026, 3)]["occupational_illness"] = 2
+
+    current = _experience(performance).current
+
+    assert current.recordables == 3
+    assert current.formula == "(3 × 200,000) ÷ 145,194"
+
+
+def test_non_recordable_classifications_are_not_counted(performance: InMemoryRepository) -> None:
+    before = _experience(performance).current.recordables
+    month = performance.incidents[(2026, 2)]
+    month.update(first_aid=4, property_damage=3, equipment_damage_failure=2, lopc=5)
+    month["lost_time_injury"] = 1  # a subset of recordable injuries, never added again
+
+    after = _experience(performance).current
+
+    assert before == after.recordables == 1
+
+
+def test_historical_years_are_unchanged_by_missing_2026_incident_data(
+    performance: InMemoryRepository,
+) -> None:
+    before = {row.year: row.calculation for row in _experience(performance).history}
+    performance.incidents = {p: v for p, v in performance.incidents.items() if p[0] != 2026}
+
+    after = {row.year: row.calculation for row in _experience(performance).history}
+
+    for year in (2021, 2022, 2023, 2024, 2025):
+        assert after[year] == before[year], year
+    assert after[2025].display == "0.00"
+    assert after[2026].rate is None
+
+
 # API ----------------------------------------------------------------------------
 
 
@@ -428,3 +544,27 @@ def test_experience_json_shape(api: Any) -> None:
     decimals += [row["calculation"]["rate"] for row in body["history"]]
     assert not [d for d in decimals if d is not None and "E" in d.upper()]
     assert body["monthly"][0]["ytdRate"] == "0"
+
+
+def test_experience_api_2026_current(api: Any) -> None:
+    current = api(*TRIR).get("/api/v1/safety/trir/experience?year=2026").json()["current"]
+
+    assert (current["recordables"], current["hours"]) == (1, 145194)
+    assert float(current["rate"]) == pytest.approx(1.3774673884595783, abs=1e-15)
+    assert current["display"] == "1.38"
+
+
+def test_experience_api_without_incident_data_returns_null_not_zero(
+    api: Any, performance: InMemoryRepository
+) -> None:
+    performance.incidents = {p: v for p, v in performance.incidents.items() if p[0] != 2026}
+
+    body = api(*TRIR).get("/api/v1/safety/trir/experience?year=2026").json()
+
+    current = body["current"]
+    assert current["recordables"] is None
+    assert current["rate"] is None and current["display"] is None
+    assert current["hours"] is None
+    assert current["unavailableReason"]
+    assert {m["reason"] for m in current["missingMonths"]} == {"count_not_confirmed"}
+    assert body["monthly"][7]["recordables"] is None

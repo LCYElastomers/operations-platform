@@ -541,6 +541,11 @@ class ApplyResult:
     scenarios: int
     nodes: int
     plan: Plan
+    change_set_id: uuid.UUID
+
+    @property
+    def created_anything(self) -> bool:
+        return bool(self.recommendations or self.scenarios or self.nodes)
 
 
 def apply(store: PsmStore, mapping: PhaMapping, actor: Actor) -> ApplyResult:
@@ -703,7 +708,9 @@ def apply(store: PsmStore, mapping: PhaMapping, actor: Actor) -> ApplyResult:
             actor_id=actor.actor_id, change_set_id=change_set, at=actor.now, changes=changes
         )
         store.commit()
-        return ApplyResult(study.id, len(wanted), created_scenarios, created_nodes, result_plan)
+        return ApplyResult(
+            study.id, len(wanted), created_scenarios, created_nodes, result_plan, change_set
+        )
     except Exception:
         store.rollback()
         raise
@@ -768,19 +775,50 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("The mapping meets the import rules.")
         return 0
     from app.db.session import get_sessionmaker
+    from app.safety.imports.runs import operator, track
 
-    with get_sessionmaker()() as session:
+    sessions = get_sessionmaker()
+    with (
+        track(
+            sessions,
+            importer="psm_pha",
+            command=args.command,
+            source_file_name=mapping.source.file_name,
+            source_sha256=mapping.source.sha256,
+            initiated_by=operator(),
+        ) as run_,
+        sessions() as session,
+    ):
         store = PsmStore(session)
         if args.command == "plan":
-            _print_plan(plan(store, mapping))
+            planned = plan(store, mapping)
+            summary = planned.summary()
+            run_.finish(
+                "blocked" if planned.conflicts else "planned",
+                inserted=summary["newRecommendations"],
+                skipped=summary["unchangedRecommendations"],
+                conflicts=len(planned.conflicts),
+                messages=[*planned.conflicts, *planned.differences],
+            )
+            _print_plan(planned)
             return 0
         try:
             result = apply(store, mapping, Actor(SYSTEM_IMPORT_ACTOR, dt.datetime.now(dt.UTC)))
         except ImportValidationError as error:
+            run_.finish("blocked", conflicts=len(error.errors), messages=error.errors)
             print("Refused; nothing written:", file=sys.stderr)
             for line in error.errors:
                 print(f"  - {line}", file=sys.stderr)
             return 1
+        created = result.created_anything
+        run_.finish(
+            "applied" if created else "nothing_to_apply",
+            inserted=result.recommendations,
+            skipped=result.plan.summary()["unchangedRecommendations"],
+            conflicts=0,
+            messages=[f"Created {result.scenarios} scenarios and {result.nodes} process nodes."],
+            change_set_id=result.change_set_id if created else None,
+        )
     _print_plan(result.plan)
     print(
         f"Imported {result.recommendations} recommendations, {result.scenarios} scenarios and "

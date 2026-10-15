@@ -29,6 +29,8 @@ pytestmark = requires_postgres
 
 NOW = dt.datetime(2026, 10, 7, 12, 0, tzinfo=dt.UTC)
 ACTOR = "db-tester"
+# An Incident & Near Miss value that is not a rate numerator.
+INCIDENT_TOTAL = ("incident_near_miss_totals", "incident")
 
 
 class NonCommittingRepository(DatabasePerformanceRepository):
@@ -304,6 +306,8 @@ def test_rates_read_stored_incident_counts(
         2099, 3, HoursValues(Decimal(2000), None, None, False), actor_id=ACTOR, at=NOW
     )
     incident = INCIDENT_CATEGORIES
+    for month in range(1, 13):
+        store_value(session, "incidents", INCIDENT_TOTAL, 2098, month, 1)
     store_value(session, "incidents", incident["recordable_injury"], 2098, 6, 2)
     store_value(session, "incidents", incident["recordable_injury"], 2099, 1, 1)
     store_value(session, "incidents", incident["occupational_illness"], 2099, 2, 1)
@@ -330,6 +334,28 @@ def test_rates_read_stored_incident_counts(
     annual = {a.year: a for a in data.annual_trir}
     assert (annual[2098].events, annual[2098].partial) == (2, False)
     assert (annual[2099].through_month, annual[2099].partial) == (2, True)
+
+
+def test_closed_month_without_incident_data_is_not_a_zero_count(
+    session: Session, repository: NonCommittingRepository
+) -> None:
+    close_months(repository, 2099, range(1, 4), 1000)
+    store_value(session, "incidents", INCIDENT_TOTAL, 2099, 1, 2)
+    store_value(session, "incidents", INCIDENT_CATEGORIES["recordable_injury"], 2099, 2, 1)
+    session.flush()
+
+    inputs = service.trir_inputs(repository, [2099])
+
+    january, february, march = (inputs.counts[(2099, m)] for m in (1, 2, 3))
+    # Reported without a recordable: a confirmed zero.
+    assert (january.confirmed, january.trir) == (True, 0)
+    assert (february.confirmed, february.trir) == (True, 1)
+    # Closed hours but nothing in Incident & Near Miss: unknown, not zero.
+    assert (march.confirmed, march.trir) == (False, None)
+    data = service.dashboard(repository, 2099, through_month=3, now=NOW)
+    trir = {k.measure: k for k in data.kpis}["trir"].ytd
+    assert (trir.available, trir.events, trir.rate) == (False, None, None)
+    assert [(m.month, m.reason) for m in trir.ineligible_months] == [(3, "count_not_confirmed")]
 
 
 def test_rates_before_2026_read_legacy_counts(

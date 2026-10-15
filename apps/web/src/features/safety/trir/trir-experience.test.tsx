@@ -121,9 +121,11 @@ let root: Root | null = null;
 let container: HTMLDivElement;
 let queryClient: QueryClient;
 let requested: string[] = [];
+let response: TrirExperience = EXPERIENCE;
 
 beforeEach(() => {
   requested = [];
+  response = EXPERIENCE;
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   container = document.createElement("div");
   document.body.append(container);
@@ -131,7 +133,7 @@ beforeEach(() => {
     "fetch",
     vi.fn((path: string) => {
       requested.push(path);
-      return Promise.resolve({ ok: true, status: 200, json: async () => EXPERIENCE });
+      return Promise.resolve({ ok: true, status: 200, json: async () => response });
     }),
   );
 });
@@ -229,6 +231,65 @@ describe("TRIR Experience", () => {
     const showAll = [...container.querySelectorAll("button")].find((b) => b.textContent === "Show all")!;
     await act(async () => showAll.click());
     expect(monthly()).toEqual(["Jan", "Feb", "Mar"]);
+  });
+
+  it("shows the API's 2026 figures: 1 recordable over 145,194 hours displays 1.38", async () => {
+    response = {
+      ...EXPERIENCE,
+      current: calculation({
+        recordables: 1,
+        hours: 145194,
+        rate: "1.377467388459578219485653677149193",
+        display: "1.38",
+        formula: "(1 × 200,000) ÷ 145,194",
+        throughMonth: 8,
+      }),
+    };
+    await render();
+
+    const kpis = container.querySelector('section[aria-label="TRIR"]')!.textContent;
+    expect(kpis).toContain("LCY TRIR YTD1.38");
+    expect(kpis).toContain("Recordable cases1");
+    expect(kpis).toContain("Hours worked145,194");
+  });
+
+  it("shows 0.00 for zero recordables over valid hours", async () => {
+    response = {
+      ...EXPERIENCE,
+      current: calculation({ recordables: 0, rate: "0", display: "0.00", formula: "(0 × 200,000) ÷ 300,000" }),
+    };
+    await render();
+
+    const kpis = container.querySelector('section[aria-label="TRIR"]')!.textContent;
+    expect(kpis).toContain("LCY TRIR YTD0.00");
+    expect(kpis).toContain("Recordable cases0");
+  });
+
+  it("shows an unavailable TRIR with its reason, never as zero", async () => {
+    const reason = "Recordable counts are not confirmed for every month in the period.";
+    response = {
+      ...EXPERIENCE,
+      current: calculation({
+        recordables: null,
+        hours: null,
+        rate: null,
+        display: null,
+        formula: null,
+        complete: false,
+        missingMonths: [{ year: 2003, month: 2, reason: "count_not_confirmed" }],
+        unavailableReason: reason,
+      }),
+    };
+    await render();
+
+    const kpis = container.querySelector('section[aria-label="TRIR"]')!.textContent!;
+    expect(kpis).toContain(`LCY TRIR YTD—No data${reason}`);
+    expect(kpis).toContain("Recordable cases—No data");
+    expect(kpis).not.toContain("LCY TRIR YTD0");
+    expect(kpis).not.toContain("Recordable cases0");
+
+    await act(async () => button("View calculation for LCY TRIR, Jan–Feb 2003").click());
+    expect(container.querySelector("dialog")!.textContent).toContain("Feb 2003: recordable count not confirmed");
   });
 
   it("formats a month's formula as the API does", () => {
