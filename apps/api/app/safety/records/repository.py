@@ -3,10 +3,10 @@
 import datetime as dt
 import uuid
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
-from sqlalchemy import Select, and_, extract, func, insert, or_, select, true, update
+from sqlalchemy import Select, and_, delete, extract, func, insert, or_, select, true, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, aliased
 
@@ -14,6 +14,9 @@ from app.audit.models import AuditEvent
 from app.audit.recorder import AuditChange, record_changes
 from app.auth import people
 from app.safety.models import Area, MetricCategory, MetricSection, MonthlyMetricValue
+from app.safety.records import categories
+from app.safety.records.detail_models import IncidentDetailCode, IncidentRecordClassification
+from app.safety.records.details import LOPC_CONTRIBUTING_FACTOR, SPECS, DetailSpec
 from app.safety.records.models import NUMBER_INDEX, IncidentRecord
 
 INCIDENTS_METRIC_SET = "incidents"
@@ -30,6 +33,26 @@ class DuplicateIncidentNumberError(Exception):
 
 
 @dataclass(frozen=True)
+class Option:
+    id: int
+    code: str
+    name: str
+    active: bool
+
+
+@dataclass(frozen=True)
+class RecordExtras:
+    """A record's further classifications (id, code, name) and its details by kind
+    (stored values plus ``updated_at`` and ``updated_by``)."""
+
+    classifications: tuple[tuple[int, str, str], ...] = ()
+    details: dict[str, dict[str, Any]] | None = None
+
+
+NO_EXTRAS = RecordExtras()
+
+
+@dataclass(frozen=True)
 class RecordRow:
     record: IncidentRecord
     area_code: str | None
@@ -37,14 +60,7 @@ class RecordRow:
     classification_code: str | None
     classification_name: str | None
     related_incident_number: str | None
-
-
-@dataclass(frozen=True)
-class Option:
-    id: int
-    code: str
-    name: str
-    active: bool
+    extras: RecordExtras = NO_EXTRAS
 
 
 @dataclass(frozen=True)
@@ -55,11 +71,16 @@ class RecordFilter:
     month: int | None = None
     event_type: str | None = None
     area_id: int | None = None
+    # Matches the record's own or a further classification.
     classification_category_id: int | None = None
     statuses: tuple[str, ...] = ("active",)
     search: str | None = None
     # Normalized number to match exactly, when the search text is a number.
     search_number: str | None = None
+    # An Event Experience category code (categories.EXPERIENCE_CATEGORIES).
+    category: str | None = None
+    # LOPC detail (column, value) conditions; value "unknown" is not recorded.
+    lopc: tuple[tuple[str, str], ...] = ()
 
 
 def _escape_like(value: str) -> str:
@@ -98,7 +119,36 @@ class RecordRepository:
 
     def get(self, record_id: int) -> RecordRow | None:
         row = self._session.execute(self._select().where(IncidentRecord.id == record_id)).first()
-        return None if row is None else self._row(row)
+        return None if row is None else self._with_extras([self._row(row)])[0]
+
+    def _with_extras(self, rows: list[RecordRow]) -> list[RecordRow]:
+        extras = self.extras([row.record.id for row in rows])
+        return [replace(row, extras=extras.get(row.record.id, NO_EXTRAS)) for row in rows]
+
+    def extras(self, record_ids: Sequence[int]) -> dict[int, RecordExtras]:
+        if not record_ids:
+            return {}
+        rc, c = IncidentRecordClassification, MetricCategory
+        further: dict[int, list[tuple[int, str, str]]] = {}
+        for record_id, category_id, code, name in self._session.execute(
+            select(rc.incident_record_id, c.id, c.code, c.name)
+            .join(c, c.id == rc.classification_category_id)
+            .where(rc.incident_record_id.in_(record_ids))
+            .order_by(rc.incident_record_id, c.display_order, c.id)
+        ).all():
+            further.setdefault(record_id, []).append((category_id, code, name))
+        details: dict[int, dict[str, dict[str, Any]]] = {}
+        for spec in SPECS:
+            for row in self._session.scalars(
+                select(spec.model).where(spec.model.incident_record_id.in_(record_ids))
+            ):
+                values = {column: getattr(row, column) for column in spec.columns}
+                values |= {"updated_at": row.updated_at, "updated_by": row.updated_by}
+                details.setdefault(row.incident_record_id, {})[spec.kind] = values
+        return {
+            record_id: RecordExtras(tuple(further.get(record_id, ())), details.get(record_id))
+            for record_id in set(further) | set(details)
+        }
 
     def lock(self, record_id: int) -> IncidentRecord | None:
         """The record, locked for update until the transaction ends."""
@@ -129,7 +179,11 @@ class RecordRepository:
         if criteria.area_id is not None:
             conditions.append(r.area_id == criteria.area_id)
         if criteria.classification_category_id is not None:
-            conditions.append(r.classification_category_id == criteria.classification_category_id)
+            conditions.append(categories.has_classification_id(criteria.classification_category_id))
+        if criteria.category is not None:
+            conditions.append(categories.in_category(categories.BY_CODE[criteria.category]))
+        for column, value in criteria.lopc:
+            conditions.append(categories.lopc_field(column, value))
         if criteria.statuses:
             conditions.append(r.status.in_(criteria.statuses))
         if criteria.search:
@@ -146,7 +200,7 @@ class RecordRepository:
         rows = self._session.execute(
             self._select().where(where).order_by(r.incident_date, r.id).limit(limit).offset(offset)
         ).all()
-        return [self._row(row) for row in rows], total
+        return self._with_extras([self._row(row) for row in rows]), total
 
     def documented_counts(self, year: int) -> dict[tuple[str, int], int]:
         """Active records per (event type, month) of ``year``."""
@@ -196,9 +250,42 @@ class RecordRepository:
         ).all()
         return [Option(*row) for row in rows]
 
+    def detail_codes(self) -> dict[str, list[tuple[str, str, bool]]]:
+        """Taxonomy -> (code, name, active) in display order, including the LOPC
+        contributing factors (the Incident & Near Miss categories)."""
+        d = IncidentDetailCode
+        codes: dict[str, list[tuple[str, str, bool]]] = {}
+        for taxonomy, code, name, active in self._session.execute(
+            select(d.taxonomy, d.code, d.name, d.active).order_by(d.taxonomy, d.display_order)
+        ).all():
+            codes.setdefault(taxonomy, []).append((code, name, active))
+        c, s = MetricCategory, MetricSection
+        section = LOPC_CONTRIBUTING_FACTOR.removeprefix("metric:")
+        codes[LOPC_CONTRIBUTING_FACTOR] = [
+            (code, name, active)
+            for code, name, active in self._session.execute(
+                select(c.code, c.name, c.active)
+                .join(s, s.id == c.section_id)
+                .where(s.metric_set == INCIDENTS_METRIC_SET, s.code == section)
+                .order_by(c.display_order, c.id)
+            ).all()
+        ]
+        return codes
+
     def source_reference_owner(self, reference: str) -> int | None:
         return self._session.scalar(
             select(IncidentRecord.id).where(IncidentRecord.source_reference == reference)
+        )
+
+    def legacy_passage_owner(self, passage: str) -> int | None:
+        """The record imported from a legacy narrative passage (``Sheet!Cell#N``)."""
+        escaped = passage.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        return self._session.scalar(
+            select(IncidentRecord.id).where(
+                IncidentRecord.source_reference.like(
+                    f"legacy-narrative {escaped} sha256:%", escape="\\"
+                )
+            )
         )
 
     def number_owner(self, number: str) -> int | None:
@@ -206,15 +293,22 @@ class RecordRepository:
             select(IncidentRecord.id).where(IncidentRecord.incident_number == number)
         )
 
-    def history(self, entity_type: str, entity_key: str) -> list[AuditEvent]:
+    def history(
+        self, entity_type: str, entity_key: str, detail_entity_type: str | None = None
+    ) -> list[AuditEvent]:
+        """The record's events, and with ``detail_entity_type`` its detail events
+        (keys ``<entity_key>/<kind>``)."""
         a = AuditEvent
-        return list(
-            self._session.scalars(
-                select(a)
-                .where(a.entity_type == entity_type, a.entity_key == entity_key)
-                .order_by(a.occurred_at, a.id)
+        condition = and_(a.entity_type == entity_type, a.entity_key == entity_key)
+        if detail_entity_type is not None:
+            condition = or_(
+                condition,
+                and_(
+                    a.entity_type == detail_entity_type,
+                    a.entity_key.like(entity_key.replace("_", "\\_") + "/%", escape="\\"),
+                ),
             )
-        )
+        return list(self._session.scalars(select(a).where(condition).order_by(a.occurred_at, a.id)))
 
     # Writing ---------------------------------------------------------------------
 
@@ -261,6 +355,85 @@ class RecordRepository:
             self._raise_duplicate(error, values.get("incident_number"))
             raise
         self._session.expire_all()
+
+    def further_classification_ids(self, record_id: int) -> list[int]:
+        rc = IncidentRecordClassification
+        return list(
+            self._session.scalars(
+                select(rc.classification_category_id)
+                .where(rc.incident_record_id == record_id)
+                .order_by(rc.id)
+            )
+        )
+
+    def set_further_classifications(
+        self,
+        record_id: int,
+        add: Sequence[int],
+        remove: Sequence[int],
+        *,
+        actor_id: str,
+        at: dt.datetime,
+    ) -> None:
+        rc = IncidentRecordClassification
+        if remove:
+            self._session.execute(
+                delete(rc).where(
+                    rc.incident_record_id == record_id, rc.classification_category_id.in_(remove)
+                )
+            )
+        if add:
+            self._session.execute(
+                insert(rc),
+                [
+                    {
+                        "incident_record_id": record_id,
+                        "classification_category_id": category_id,
+                        "created_at": at,
+                        "created_by": actor_id,
+                    }
+                    for category_id in add
+                ],
+            )
+
+    def detail(self, spec: DetailSpec, record_id: int) -> dict[str, Any] | None:
+        row = self._session.scalar(
+            select(spec.model).where(spec.model.incident_record_id == record_id)
+        )
+        return None if row is None else {column: getattr(row, column) for column in spec.columns}
+
+    def save_detail(
+        self,
+        spec: DetailSpec,
+        record_id: int,
+        values: dict[str, Any] | None,
+        *,
+        exists_now: bool,
+        actor_id: str,
+        at: dt.datetime,
+    ) -> None:
+        """Insert, replace or (``values`` None) remove the record's detail."""
+        model = spec.model
+        if values is None:
+            self._session.execute(delete(model).where(model.incident_record_id == record_id))
+        elif exists_now:
+            self._session.execute(
+                update(model)
+                .where(model.incident_record_id == record_id)
+                .values(**values, updated_at=at, updated_by=actor_id)
+            )
+        else:
+            self._session.execute(
+                insert(model).values(
+                    incident_record_id=record_id,
+                    **values,
+                    created_at=at,
+                    created_by=actor_id,
+                    updated_at=at,
+                    updated_by=actor_id,
+                )
+            )
+        self._session.flush()
 
     @staticmethod
     def _raise_duplicate(error: IntegrityError, number: str | None) -> None:

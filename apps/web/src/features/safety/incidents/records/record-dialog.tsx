@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, ArrowLeft, Ban, History, ListChecks, Pencil, Plus, Repeat2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Ban, Eye, History, ListChecks, Pencil, Plus, Repeat2 } from "lucide-react";
 import Link from "next/link";
 import { useId, useMemo, useState } from "react";
 
@@ -18,9 +18,22 @@ import {
   type MonthReconciliation,
   type RecordFields,
   type RecordOption,
+  type RecordOptionsResponse,
   type RecordPermissions,
   type RecordStatus,
 } from "./api";
+import {
+  classificationCodes,
+  codeNames,
+  DETAIL_LABELS,
+  detailDraftOf,
+  detailFieldsOf,
+  detailHistoryChanges,
+  detailProblems,
+} from "./detail-data";
+import { DetailSections } from "./detail-sections";
+import { Field, fieldClasses } from "./form-fields";
+import { RecordView } from "./record-view";
 import {
   describeReconciliation,
   EVENT_LABELS,
@@ -51,7 +64,7 @@ export type RecordDialogScope =
 export type RecordPanel =
   | { kind: "list" }
   | { kind: "create"; eventType: EventType }
-  | { kind: "edit" | "history" | "void" | "reclassify"; record: IncidentRecord };
+  | { kind: "view" | "edit" | "history" | "void" | "reclassify"; record: IncidentRecord };
 
 type RecordDialogProps = {
   open: boolean;
@@ -67,12 +80,6 @@ type RecordDialogProps = {
 const STATUS_TONES: Record<RecordStatus, StatusTone> = { active: "success", voided: "neutral", reclassified: "info" };
 const STATE_TONES = { ok: "success", warning: "warning", neutral: "neutral" } as const;
 const ALL_STATUSES: RecordStatus[] = ["active", "voided", "reclassified"];
-
-const fieldClasses = cn(
-  "w-full rounded-md border border-input bg-background px-3 text-sm shadow-xs outline-none",
-  "focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-60",
-  "aria-invalid:border-destructive pointer-coarse:text-base",
-);
 
 export function RecordStatusBadge({ status }: { status: RecordStatus }) {
   return <StatusBadge tone={STATUS_TONES[status]}>{STATUS_LABELS[status]}</StatusBadge>;
@@ -155,6 +162,17 @@ export function RecordDialog({ open, onClose, scope, initialPanel, permissions, 
         />
       )}
       {panel.kind === "history" && <HistoryList record={panel.record} options={options.data} />}
+      {panel.kind === "view" && (
+        <div className="space-y-4">
+          <RecordView record={panel.record} options={options.data} />
+          <RecordActions
+            record={panel.record}
+            permissions={permissions}
+            onPanel={setPanel}
+            exclude="view"
+          />
+        </div>
+      )}
     </Dialog>
   );
 }
@@ -171,6 +189,8 @@ function panelDescription(panel: RecordPanel): string | undefined {
       return `Reclassify ${recordName(panel.record)} as a ${EVENT_LABELS[OTHER_EVENT[panel.record.eventType]].one}.`;
     case "history":
       return `Every change to ${recordName(panel.record)}, oldest first.`;
+    case "view":
+      return `${EVENT_LABELS[panel.record.eventType].one} record. Unknown means not recorded.`;
     default:
       return undefined;
   }
@@ -290,15 +310,18 @@ export function RecordActions({
   permissions,
   onPanel,
   compact = false,
+  exclude,
 }: {
   record: IncidentRecord;
   permissions: RecordPermissions;
   onPanel: (panel: RecordPanel) => void;
   compact?: boolean;
+  exclude?: RecordPanel["kind"];
 }) {
   const name = recordName(record);
   const active = record.status === "active";
   const actions: [RecordPanel["kind"], string, React.ComponentType, boolean][] = [
+    ["view", "View details", Eye, exclude !== "view"],
     ["edit", "Edit", Pencil, allowsType(permissions, "editableTypes", record.eventType) && active],
     ["history", "View history", History, permissions.canViewHistory],
     ["void", "Void", Ban, allowsType(permissions, "voidableTypes", record.eventType) && active],
@@ -430,39 +453,6 @@ function ProblemAlert({ problem, onReload }: { problem: SaveProblem; onReload: (
         <Button variant="outline" size="sm" onClick={() => onReload(problem.conflict!)} className="pointer-coarse:h-11">
           Load the latest version
         </Button>
-      )}
-    </div>
-  );
-}
-
-function Field({
-  label,
-  hint,
-  error,
-  children,
-  id,
-}: {
-  label: string;
-  hint?: string;
-  error?: string;
-  children: React.ReactNode;
-  id: string;
-}) {
-  return (
-    <div className="flex flex-col gap-1">
-      <label htmlFor={id} className="text-sm font-medium">
-        {label}
-      </label>
-      {children}
-      {hint && !error && (
-        <p id={`${id}-hint`} className="text-xs text-muted-foreground">
-          {hint}
-        </p>
-      )}
-      {error && (
-        <p id={`${id}-error`} className="text-xs text-destructive">
-          {error}
-        </p>
       )}
     </div>
   );
@@ -621,7 +611,7 @@ function RecordForm({
   eventType: EventType;
   record: IncidentRecord | null;
   context: { reportingYear: number; reportingMonth: number } | undefined;
-  options: { areas: RecordOption[]; classifications: RecordOption[] } | undefined;
+  options: RecordOptionsResponse | undefined;
   today: string;
   onCancel: () => void;
   onSaved: (record: IncidentRecord, created: boolean) => void;
@@ -630,11 +620,14 @@ function RecordForm({
   const range = dateRange(record, context, today);
   const defaultDate = range && context && !record ? (today < range.max ? today : range.max) : "";
   const [draft, setDraft] = useState(() => draftOf(record, defaultDate));
+  const [details, setDetails] = useState(() => detailDraftOf(record));
   const [submitted, setSubmitted] = useState(false);
   const create = useCreateRecord();
   const update = useUpdateRecord();
   const mutation = record ? update : create;
-  const local = draftProblems(draft, range);
+  const primaryId = draft.classificationId ? Number(draft.classificationId) : null;
+  const codes = classificationCodes(primaryId, details.additional, options?.classifications);
+  const local = { ...draftProblems(draft, range), ...detailProblems(details, codes) };
   const problem = mutation.error ? saveProblem(mutation.error) : null;
   const problems: Record<string, string | undefined> = {
     ...(submitted ? local : {}),
@@ -645,7 +638,10 @@ function RecordForm({
     event.preventDefault();
     setSubmitted(true);
     if (Object.keys(local).length > 0) return;
-    const fields = fieldsOf(draft);
+    const fields = {
+      ...fieldsOf(draft),
+      ...detailFieldsOf({ ...details, additional: details.additional.filter((id) => id !== primaryId) }, codes, record),
+    };
     if (record) {
       update.mutate(
         {
@@ -676,6 +672,20 @@ function RecordForm({
         options={options}
         record={record}
       />
+      <DetailSections
+        draft={details}
+        onChange={setDetails}
+        primaryId={primaryId}
+        codes={codes}
+        options={options}
+        record={record}
+        problems={problems}
+      />
+      {submitted && Object.keys(local).length > 0 && (
+        <p role="alert" className="text-sm text-destructive">
+          Nothing was saved. Correct the highlighted fields.
+        </p>
+      )}
       <FormButtons saving={mutation.isPending} label={record ? "Save" : "Save record"} onCancel={onCancel} />
     </form>
   );
@@ -857,13 +867,14 @@ function HistoryList({
   options,
 }: {
   record: IncidentRecord;
-  options: { areas: RecordOption[]; classifications: RecordOption[] } | undefined;
+  options: RecordOptionsResponse | undefined;
 }) {
   const history = useRecordHistory(record.id);
   const names = useMemo(
     () => ({
       areas: new Map((options?.areas ?? []).map((option) => [option.id, option.name])),
       classifications: new Map((options?.classifications ?? []).map((option) => [option.id, option.name])),
+      codes: codeNames(options?.detailCodes),
     }),
     [options],
   );
@@ -878,10 +889,19 @@ function HistoryList({
   return (
     <ol className="space-y-3">
       {history.data.events.map((event) => {
-        const changes = historyChanges(event.oldValue, event.newValue, names);
-        const verb = event.oldValue === null ? "Created" : event.newValue?.status !== event.oldValue.status ? `Marked ${STATUS_LABELS[event.newValue?.status as RecordStatus]?.toLowerCase() ?? "changed"}` : "Edited";
+        const detail = event.detail ?? null;
+        const changes = detail
+          ? detailHistoryChanges(event.oldValue, event.newValue, names)
+          : historyChanges(event.oldValue, event.newValue, names);
+        const verb = detail
+          ? `${event.oldValue === null ? "Added" : event.newValue === null ? "Removed" : "Edited"} ${DETAIL_LABELS[detail].toLowerCase()}`
+          : event.oldValue === null
+            ? "Created"
+            : event.newValue?.status !== event.oldValue.status
+              ? `Marked ${STATUS_LABELS[event.newValue?.status as RecordStatus]?.toLowerCase() ?? "changed"}`
+              : "Edited";
         return (
-          <li key={`${event.changeSetId}-${event.occurredAt}`} className="rounded-lg border bg-card p-3 text-sm">
+          <li key={`${event.changeSetId}-${event.occurredAt}-${detail ?? "record"}`} className="rounded-lg border bg-card p-3 text-sm">
             <p className="font-medium">
               {verb} by {event.actorName ?? event.actorId}
             </p>

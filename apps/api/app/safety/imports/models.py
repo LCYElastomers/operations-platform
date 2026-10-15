@@ -38,6 +38,7 @@ IMPORTERS = (
     "trir_history",
     "incident_records",
     "psm_pha",
+    "incident_details",
 )
 COMMANDS = ("plan", "apply")
 # running: started, no outcome yet (or the process died). planned: a plan that

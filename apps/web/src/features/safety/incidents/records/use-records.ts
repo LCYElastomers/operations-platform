@@ -8,18 +8,19 @@ import {
   createRecord,
   fetchHistory,
   fetchReconciliation,
+  fetchRecord,
   fetchRecordOptions,
   fetchRecords,
   reclassifyRecord,
   recordKeys,
   updateRecord,
   voidRecord,
-  type EventType,
-  type MonthContext,
+  type CreateBody,
   type ReclassifyBody,
-  type RecordFields,
   type RecordFilter,
+  type UpdateBody,
 } from "./api";
+import { fetchEventExperience, fetchLopcRecords, fetchSeriousRisk } from "./insights-api";
 
 const MAX_RETRIES = 2;
 
@@ -57,6 +58,43 @@ export function useRecordReconciliation(year: number) {
   });
 }
 
+export function useRecord(id: number | null) {
+  return useQuery({
+    queryKey: recordKeys.record(id ?? 0),
+    queryFn: ({ signal }) => fetchRecord(id!, signal),
+    retry: shouldRetry,
+    enabled: id !== null,
+  });
+}
+
+/** Event Experience for a year, as of today in Baytown (31 December for a past year). */
+export function useEventExperience(year: number, enabled = true) {
+  return useQuery({
+    queryKey: recordKeys.insights("event-experience", year, null),
+    queryFn: ({ signal }) => fetchEventExperience(year, signal),
+    retry: shouldRetry,
+    enabled,
+  });
+}
+
+export function useLopcRecords(year: number, through: number | null, enabled = true) {
+  return useQuery({
+    queryKey: recordKeys.insights("lopc-records", year, through),
+    queryFn: ({ signal }) => fetchLopcRecords(year, through, signal),
+    retry: shouldRetry,
+    enabled,
+  });
+}
+
+export function useSeriousRisk(year: number, through: number | null, enabled = true) {
+  return useQuery({
+    queryKey: recordKeys.insights("serious-risk", year, through),
+    queryFn: ({ signal }) => fetchSeriousRisk(year, through, signal),
+    retry: shouldRetry,
+    enabled,
+  });
+}
+
 export function useRecordHistory(id: number | null) {
   return useQuery({
     queryKey: recordKeys.history(id ?? 0),
@@ -76,15 +114,11 @@ function useRecordMutation<A, R>(mutationFn: (args: A) => Promise<R>) {
 }
 
 export function useCreateRecord() {
-  return useRecordMutation((body: RecordFields & { eventType: EventType } & Partial<MonthContext>) =>
-    createRecord(body),
-  );
+  return useRecordMutation((body: CreateBody) => createRecord(body));
 }
 
 export function useUpdateRecord() {
-  return useRecordMutation(({ id, body }: { id: number; body: RecordFields & MonthContext & { version: number } }) =>
-    updateRecord(id, body),
-  );
+  return useRecordMutation(({ id, body }: { id: number; body: UpdateBody }) => updateRecord(id, body));
 }
 
 export function useVoidRecord() {

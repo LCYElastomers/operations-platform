@@ -21,6 +21,10 @@ from app.safety.performance.calculations import (
 )
 from app.safety.performance.models import PerformanceAnnualLegacy, PerformanceHours
 
+# A month's Incident & Near Miss counts are reported when it has a value in these
+# sections. Breakdowns (area, cause, body part...) never confirm a zero count.
+REPORTED_SECTIONS = ("incident_near_miss_totals", "incident_classification")
+
 
 @dataclass(frozen=True)
 class HoursValues:
@@ -228,11 +232,13 @@ class DatabasePerformanceRepository:
 
     def counts(self, years: Collection[int]) -> tuple[StoredCounts, StoredCounts]:
         incidents = self._metric_counts(INCIDENTS, INCIDENT_CATEGORIES, years)
-        for period in self._reported_periods(INCIDENTS, years):
+        for period in self._reported_periods(INCIDENTS, REPORTED_SECTIONS, years):
             incidents.setdefault(period, {})
         return incidents, self._metric_counts(PERFORMANCE_LEGACY, LEGACY_CATEGORIES, years)
 
-    def _reported_periods(self, metric_set: str, years: Collection[int]) -> list[Period]:
+    def _reported_periods(
+        self, metric_set: str, sections: Collection[str], years: Collection[int]
+    ) -> list[Period]:
         if not years:
             return []
         rows = self._session.execute(
@@ -241,6 +247,7 @@ class DatabasePerformanceRepository:
             .join(MetricSection, MetricCategory.section_id == MetricSection.id)
             .where(
                 MetricSection.metric_set == metric_set,
+                MetricSection.code.in_(list(sections)),
                 MonthlyMetricValue.reporting_year.in_(list(years)),
             )
             .distinct()

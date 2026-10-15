@@ -1,0 +1,90 @@
+{
+  "source": "LCY EHS 2026 Incident & Near Miss workbook, Dash sheet narratives (reviewed record details)",
+  "notes": [
+    "Only values the narrative states are given; everything else is left unrecorded (Unknown).",
+    "Contributing Factor 'M.I' is the existing LOPC contributing factor mechanical_integrity.",
+    "Not mapped until the record is classified: LCY-2026-010 (text reads Spill/ Release, approximately 2 gallons, R-7303 expansion joint), Dash!D39#2 (text reads Property Damage, forklift struck dock door #6), LCY-2026-063 (text reads Injury).",
+    "Not mapped: failure mechanism and secondary containment for LCY-2026-017 (a flange leak; the narrative does not name the mechanism category or the containment status)."
+  ],
+  "records": [
+    {
+      "incidentNumber": "LCY-2026-013",
+      "sourceQuotes": [
+        "NBL 15% solution leak identified at PSL-30145.",
+        "~ 0.5 gal LOPC. Contributing Factor: M.I"
+      ],
+      "lopcDetails": {
+        "isLopc": true,
+        "materialName": "NBL 15% solution",
+        "estimatedQuantity": "0.5",
+        "quantityUnitCode": "gallons",
+        "equipmentTag": "PSL-30145",
+        "contributingFactorCode": "mechanical_integrity"
+      }
+    },
+    {
+      "legacyPassage": "Dash!C29#1",
+      "sourceQuotes": [
+        "Three pipe leaks occurred during chemical cleaning of the Reactor 1 cooling water jacket",
+        "Contributing Factor: M.I"
+      ],
+      "lopcDetails": {
+        "failureMechanismCode": "pipe",
+        "contributingFactorCode": "mechanical_integrity"
+      }
+    },
+    {
+      "incidentNumber": "LCY-2026-017",
+      "sourceQuotes": [
+        "A cyclohexane leak was identified at a flange on the P-7404 A/B minimum flow line.",
+        "with approximately 60 gallons entering the process sump. Contributing Factor: M.I"
+      ],
+      "lopcDetails": {
+        "materialName": "cyclohexane",
+        "estimatedQuantity": "60",
+        "quantityUnitCode": "gallons",
+        "equipmentTag": "P-7404 A/B",
+        "contributingFactorCode": "mechanical_integrity"
+      }
+    },
+    {
+      "legacyPassage": "Dash!C30#1",
+      "sourceQuotes": [
+        "Equipment Damage: An operator observed that the new LEL monitor located behind the Aqueous Blowdown Tank was hanging due to a broken mounting bracket."
+      ],
+      "damageDetails": {
+        "damageKindCode": "equipment_damage",
+        "assetOrPropertyName": "LEL monitor"
+      }
+    },
+    {
+      "incidentNumber": "LCY-2026-023",
+      "sourceQuotes": [
+        "LCY-2026-023 Equipment Damage: A Mundy employee damaged the tip of a forklift fork (S5, Serial 28446)"
+      ],
+      "damageDetails": {
+        "damageKindCode": "equipment_damage",
+        "assetOrPropertyName": "Forklift fork (S5, Serial 28446)"
+      }
+    },
+    {
+      "legacyPassage": "Dash!C33#1",
+      "sourceQuotes": [
+        "an arc flash occurred inside the C-7714A panel. Contributing Factor: Human Error (PSIF)."
+      ],
+      "seriousRiskDetails": {
+        "isPsif": true,
+        "seriousRiskCategoryCode": "electrical_arc_flash"
+      }
+    },
+    {
+      "legacyPassage": "Dash!C39#1",
+      "sourceQuotes": [
+        "Contributing Factor: Human Error (PSIF)"
+      ],
+      "seriousRiskDetails": {
+        "isPsif": true
+      }
+    }
+  ]
+}

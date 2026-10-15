@@ -185,14 +185,17 @@ let requested: URL[] = [];
 
 type Reply = { status: number; body: unknown } | undefined;
 
+/** The record-derived analytics; answered by their own responder. */
+const INSIGHT_PATH = /\/analytics\/(event-experience|lopc-records|serious-risk)$/;
+
 /** Requests the responder does not answer stay pending: the page shows its loading state. */
-function stubApi(respond: (url: URL) => Reply = () => undefined) {
+function stubApi(respond: (url: URL) => Reply = () => undefined, insights: (url: URL) => Reply = () => undefined) {
   vi.stubGlobal(
     "fetch",
     vi.fn((path: string) => {
       const url = new URL(path, "http://baytown.test");
       requested.push(url);
-      const reply = respond(url);
+      const reply = INSIGHT_PATH.test(url.pathname) ? insights(url) : respond(url);
       if (reply === undefined) return new Promise(() => {});
       return Promise.resolve({
         ok: reply.status < 400,
@@ -588,8 +591,8 @@ describe("Incident & Near Miss Dashboard views", () => {
       tab("Overview").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
     });
 
-    expect(tab("Behavior").getAttribute("aria-selected")).toBe("true");
-    expect(document.activeElement).toBe(tab("Behavior"));
+    expect(tab("Event Experience").getAttribute("aria-selected")).toBe("true");
+    expect(document.activeElement).toBe(tab("Event Experience"));
   });
 
   it("compares Incidents with the prior year in grey, keeping a reported zero", async () => {
@@ -800,6 +803,7 @@ describe("Incident Register", () => {
       "Incident Analysis",
       "Incident Register",
       "Behavior",
+      "Event Experience",
     ]);
     expect(tab("Incident Register").getAttribute("aria-selected")).toBe("true");
   });
@@ -866,5 +870,495 @@ describe("Incident Register", () => {
     expect(buttons.map((b) => b.trim())).toContain("Void record");
     expect(buttons.join(" ")).not.toMatch(/delete/i);
     expect(dialog.textContent).toContain("Nothing is deleted.");
+  });
+});
+
+// Event Experience, record-derived analytics and record details ----------------------
+
+/** Test fixtures, not production data. */
+const PERMISSIONS = { canEdit: true, canManage: true, canViewHistory: true };
+
+function fixtureRecord(id: number, extra: Record<string, unknown> = {}) {
+  return {
+    id,
+    incidentNumber: `ZZT-2026-0${id}`,
+    eventType: "incident",
+    incidentDate: "2026-01-20",
+    reportingYear: 2026,
+    reportingMonth: 1,
+    description: `Fixture description ${id}.`,
+    areaId: null,
+    areaCode: null,
+    areaName: null,
+    classificationCategoryId: 11,
+    classificationCode: "spill_release",
+    classificationName: "Spill / Release",
+    status: "active",
+    statusReason: null,
+    relatedIncidentId: null,
+    relatedIncidentNumber: null,
+    source: "manual",
+    version: 1,
+    createdAt: "2026-01-21T00:00:00Z",
+    createdBy: "fixture",
+    updatedAt: "2026-01-21T00:00:00Z",
+    updatedBy: "fixture",
+    additionalClassifications: [],
+    lopcDetails: null,
+    damageDetails: null,
+    pitDetails: null,
+    seriousRiskDetails: null,
+    ...extra,
+  };
+}
+
+const OPTIONS = {
+  areas: [],
+  classifications: [
+    { id: 11, code: "spill_release", name: "Spill / Release", active: true },
+    { id: 12, code: "pit_accident", name: "PIT Accident", active: true },
+    { id: 13, code: "first_aid", name: "First Aid", active: true },
+    { id: 14, code: "property_damage", name: "Property Damage", active: true },
+  ],
+  detailCodes: {
+    quantity_unit: [{ code: "gal", name: "Gallons", active: true }],
+    lopc_failure_mechanism: [{ code: "corrosion", name: "Corrosion", active: true }],
+    lopc_contributing_factor: [{ code: "mechanical_integrity", name: "Mechanical Integrity", active: true }],
+    secondary_containment_status: [
+      { code: "not_applicable", name: "Not applicable", active: true },
+      { code: "unknown", name: "Unknown", active: true },
+    ],
+    damage_kind: [{ code: "property_damage", name: "Property damage", active: true }],
+    currency: [{ code: "USD", name: "US dollar", active: true }],
+    pit_ownership: [{ code: "owned", name: "Owned", active: true }],
+    potential_severity: [{ code: "fatality", name: "Fatality", active: true }],
+    serious_risk_category: [{ code: "line_of_fire", name: "Line of fire", active: true }],
+  },
+};
+
+function experienceCategory(code: string, name: string, extra: Record<string, unknown> = {}) {
+  return {
+    code,
+    name,
+    year: 2026,
+    asOf: "2026-02-10",
+    status: "no_event_in_scope",
+    latestEventDate: "2025-11-01",
+    daysSinceLatestEvent: 101,
+    latestInSelectedYear: false,
+    ytdEvents: 0,
+    ytdEventsComplete: true,
+    latestEvent: null,
+    monthlyCount: 0,
+    warnings: [],
+    ...extra,
+  };
+}
+
+const LOPC_EVENT = {
+  id: 41,
+  incidentNumber: "ZZT-2026-041",
+  eventType: "incident",
+  incidentDate: "2026-01-20",
+  areaId: null,
+  areaName: "Tank farm",
+  classifications: ["Spill / Release"],
+  description: "Fixture release at a pump seal.",
+};
+
+const EXPERIENCE = {
+  year: 2026,
+  asOf: "2026-02-10",
+  siteTimeZone: "America/Chicago",
+  includesNearMisses: true,
+  categories: [
+    experienceCategory("recordable_injury", "Recordable Injury"),
+    experienceCategory("first_aid", "First Aid", {
+      status: "complete",
+      latestEventDate: "2026-02-10",
+      daysSinceLatestEvent: 0,
+      latestInSelectedYear: true,
+      ytdEvents: 1,
+      monthlyCount: 1,
+    }),
+    experienceCategory("lost_time_injury", "Lost Time Injury"),
+    experienceCategory("spill_release_lopc", "Spill / Release / LOPC", {
+      status: "complete",
+      latestEventDate: "2026-01-20",
+      daysSinceLatestEvent: 21,
+      latestInSelectedYear: true,
+      ytdEvents: 2,
+      latestEvent: LOPC_EVENT,
+      monthlyCount: 2,
+    }),
+    experienceCategory("equipment_damage", "Equipment Damage"),
+    experienceCategory("equipment_failure", "Equipment Failure"),
+    experienceCategory("property_damage", "Property Damage"),
+    experienceCategory("pit", "Powered Industrial Vehicle Accident"),
+    experienceCategory("fire", "Fire", {
+      latestEventDate: null,
+      daysSinceLatestEvent: null,
+      monthlyCount: null,
+    }),
+    experienceCategory("hazardous_condition", "Hazardous Condition"),
+    experienceCategory("psif", "PSIF", {
+      status: "insufficient_classification_data",
+      latestEventDate: "2026-01-05",
+      daysSinceLatestEvent: 36,
+      latestInSelectedYear: true,
+      ytdEvents: 1,
+      ytdEventsComplete: false,
+      monthlyCount: 3,
+      warnings: ["The monthly PSIF count is 3; 1 record is designated PSIF."],
+    }),
+  ],
+};
+
+const LOPC_RECORDS = {
+  year: 2026,
+  throughMonth: 2,
+  records: 2,
+  withDetails: 1,
+  monthlyCount: 2,
+  monthlyCountComplete: true,
+  byFailureMechanism: [
+    { key: "corrosion", name: "Corrosion", count: 1 },
+    { key: "unknown", name: "Unknown / not recorded", count: 1 },
+  ],
+  byMaterial: [{ key: "cyclohexane", name: "cyclohexane", count: 1 }, { key: "unknown", name: "Unknown / not recorded", count: 1 }],
+  byEquipment: [{ key: "unknown", name: "Unknown / not recorded", count: 2 }],
+  byContainment: [{ key: "unknown", name: "Unknown / not recorded", count: 2 }],
+  byProcessSafety: [{ key: "unknown", name: "Unknown / not recorded", count: 2 }],
+  quantities: [
+    { unitCode: "gal", unitName: "Gallons", total: "60.5", records: 1 },
+    { unitCode: "lb", unitName: "Pounds", total: "4", records: 1 },
+  ],
+  recordsWithoutQuantity: 0,
+  recent: [LOPC_EVENT],
+  warnings: ["1 of 2 Spill / Release records have no LOPC details; their values show as Unknown."],
+};
+
+const SERIOUS_RISK = {
+  year: 2026,
+  throughMonth: 2,
+  includesNearMisses: true,
+  psifRecords: 1,
+  monthlyCount: 3,
+  monthlyCountComplete: true,
+  monthly: [
+    { month: 1, records: 1, monthlyCount: 3 },
+    { month: 2, records: 0, monthlyCount: null },
+  ],
+  byClassification: [{ key: "11", name: "Spill / Release", count: 1 }],
+  byArea: [{ key: null, name: "Unknown / not recorded", count: 1 }],
+  byContributingFactor: [],
+  bySeverity: [],
+  recent: [LOPC_EVENT],
+  warnings: ["The monthly PSIF count is 3; 1 record is designated PSIF. The record views are incomplete until every PSIF event is documented."],
+};
+
+function stubInsights(records: Record<number, unknown> = {}) {
+  stubApi(
+    (url) => {
+      const one = url.pathname.match(/\/records\/(\d+)$/);
+      if (one) return ok({ record: records[Number(one[1])], ...PERMISSIONS });
+      if (url.pathname.endsWith("/records/reconciliation")) return ok({ year: 2026, months: [], ...PERMISSIONS });
+      if (url.pathname.endsWith("/records/options")) return ok(OPTIONS);
+      if (url.pathname.endsWith("/records")) return ok({ records: [], total: 0, ...PERMISSIONS });
+      return ok(withBreakdowns());
+    },
+    (url) => {
+      if (url.pathname.endsWith("/event-experience")) return ok(EXPERIENCE);
+      if (url.pathname.endsWith("/lopc-records")) return ok(LOPC_RECORDS);
+      return ok(SERIOUS_RISK);
+    },
+  );
+}
+
+const cardFor = (code: string) =>
+  container.querySelector<HTMLElement>(`[data-testid="days-${code}"]`)!.closest("button")!;
+const buttonNamed = (name: string, root: ParentNode = container) =>
+  [...root.querySelectorAll<HTMLButtonElement>("button")].find(
+    (b) => b.textContent?.trim() === name || b.getAttribute("aria-label") === name,
+  )!;
+
+async function click(element: HTMLElement) {
+  await act(async () => element.click());
+  await settle();
+}
+
+describe("Event Experience", () => {
+  afterEach(() => window.history.replaceState(null, "", "/"));
+
+  it("is the last tab and renders eleven category cards from the record API", async () => {
+    stubInsights();
+    await render("2026-02-10T15:00:00Z", "event-experience");
+
+    expect(tab("Event Experience").getAttribute("aria-selected")).toBe("true");
+    const cards = container.querySelectorAll('section[aria-label="Event Experience categories"] > button');
+    expect(cards).toHaveLength(11);
+    expect(requested.some((url) => url.pathname.endsWith("/analytics/event-experience"))).toBe(true);
+    expect(container.querySelector('section[aria-label="Event Experience comparison"]')).not.toBeNull();
+  });
+
+  it("shows days since, the YTD count and the completeness status on each card", async () => {
+    stubInsights();
+    await render("2026-02-10T15:00:00Z", "event-experience");
+
+    const lopc = cardFor("spill_release_lopc").textContent!;
+    expect(lopc).toContain("21 days");
+    expect(lopc).toContain("Since Jan 20, 2026");
+    expect(lopc).toContain("This year: 2");
+    expect(lopc).toContain("Complete");
+    expect(cardFor("first_aid").textContent).toContain("Today");
+    const psif = cardFor("psif").textContent!;
+    expect(psif).toContain("At least 1");
+    expect(psif).toContain("Incomplete classification");
+    expect(cardFor("recordable_injury").textContent).toContain("(an earlier year)");
+  });
+
+  it("never shows a category without a known event, or an unreported count, as zero", async () => {
+    stubInsights();
+    await render("2026-02-10T15:00:00Z", "event-experience");
+
+    const fire = cardFor("fire");
+    expect(fire.querySelector('[data-testid="days-fire"]')!.textContent).toBe("No event on file");
+    expect(fire.textContent).toContain("No last event");
+    const row = [...container.querySelectorAll('section[aria-label="Event Experience comparison"] tbody tr')].find(
+      (tr) => tr.querySelector("th")!.textContent === "Fire",
+    )!;
+    const cells = [...row.querySelectorAll("td")].map((td) => td.textContent);
+    expect(cells[0]).toBe("None on file");
+    expect(cells[1]).toBe("–");
+    expect(cells[3]).toBe("–");
+  });
+
+  it("opens a category's details on selection without navigating", async () => {
+    stubInsights();
+    await render("2026-02-10T15:00:00Z", "event-experience");
+    const before = requested.length;
+
+    await click(cardFor("spill_release_lopc"));
+
+    expect(cardFor("spill_release_lopc").getAttribute("aria-pressed")).toBe("true");
+    const details = container.querySelector('section[aria-label="Spill / Release / LOPC details"]')!;
+    expect(details.textContent).toContain("ZZT-2026-041");
+    expect(details.textContent).toContain("Fixture release at a pump seal.");
+    expect(tab("Event Experience").getAttribute("aria-selected")).toBe("true");
+    expect(new URL(window.location.href).searchParams.get("view")).not.toBe("register");
+    expect(requested).toHaveLength(before);
+
+    await click(cardFor("psif"));
+    const psif = container.querySelector('section[aria-label="PSIF details"]')!;
+    expect(psif.textContent).toContain("The monthly PSIF count is 3; 1 record is designated PSIF.");
+    expect(buttonNamed("View Last Event", psif).disabled).toBe(true);
+  });
+
+  it("View Last Event opens that record in the Incident Register", async () => {
+    stubInsights({ 41: fixtureRecord(41, { lopcDetails: { isLopc: true, materialName: "cyclohexane", estimatedQuantity: "60", quantityUnitCode: "gal", equipmentTag: null, failureMechanismCode: null, contributingFactorCode: null, secondaryContainmentStatusCode: null, processSafetyIncident: null, notes: null, updatedAt: "2026-01-21T00:00:00Z", updatedBy: "fixture" } }) });
+    await render("2026-02-10T15:00:00Z", "event-experience");
+    await click(cardFor("spill_release_lopc"));
+
+    await click(buttonNamed("View Last Event"));
+    await settle();
+
+    expect(tab("Incident Register").getAttribute("aria-selected")).toBe("true");
+    const url = new URL(window.location.href);
+    expect(url.searchParams.get("view")).toBe("register");
+    expect(url.searchParams.get("record")).toBe("41");
+    expect(requested.some((u) => u.pathname.endsWith("/records/41"))).toBe(true);
+    const dialog = container.querySelector("dialog")!;
+    expect(dialog.querySelector("h2")!.textContent).toBe("ZZT-2026-041");
+    expect(dialog.textContent).toContain("cyclohexane");
+    expect(dialog.textContent).toContain("60 Gallons");
+    // Not recorded reads Unknown, never No or 0.
+    expect(dialog.textContent).toMatch(/Process safety incident\s*Unknown/);
+  });
+
+  it("View All Matching Events filters the Register to the category", async () => {
+    stubInsights();
+    await render("2026-02-10T15:00:00Z", "event-experience");
+    await click(cardFor("spill_release_lopc"));
+
+    await click(buttonNamed("View All Matching Events"));
+
+    expect(tab("Incident Register").getAttribute("aria-selected")).toBe("true");
+    const url = new URL(window.location.href);
+    expect(url.searchParams.get("category")).toBe("spill_release_lopc");
+    expect(url.searchParams.get("eventType")).toBe("incident");
+    const list = requested.filter((u) => u.pathname.endsWith("/records")).at(-1)!;
+    expect(list.searchParams.get("category")).toBe("spill_release_lopc");
+    expect(list.searchParams.get("eventType")).toBe("incident");
+    expect(text()).toContain("Category: Spill / Release / LOPC");
+
+    await click(buttonNamed("Remove filter Category: Spill / Release / LOPC"));
+    expect(requested.filter((u) => u.pathname.endsWith("/records")).at(-1)!.searchParams.get("category")).toBeNull();
+  });
+
+  it("keeps every existing tab and its content", async () => {
+    stubInsights();
+    await render("2026-02-10T15:00:00Z");
+
+    expect([...container.querySelectorAll('[role="tab"]')].map((t) => t.textContent)).toEqual([
+      "Overview",
+      "Area",
+      "Incident Analysis",
+      "Incident Register",
+      "Behavior",
+      "Event Experience",
+    ]);
+    expect(cardLabels()).toHaveLength(6);
+    expect(chart("Incident Classification")).not.toBeNull();
+    await openTab("Area");
+    expect(chart("Incidents by Area")).not.toBeNull();
+    await openTab("Incident Analysis");
+    expect(chart("LOPC by Month")).not.toBeNull();
+    expect(chart("LOPC Contributing Factors")).not.toBeNull();
+    expect(chart("Near-Miss Cause")).not.toBeNull();
+    await openTab("Incident Register");
+    expect(text()).toContain("Add Incident");
+    await openTab("Behavior");
+    expect(text()).toContain("No behavior data recorded for 2026.");
+  });
+});
+
+describe("Record-derived Incident Analysis", () => {
+  afterEach(() => window.history.replaceState(null, "", "/"));
+
+  it("breaks LOPC records down by unit without adding units, shows Unknown, and drills through", async () => {
+    stubInsights();
+    await render("2026-02-10T15:00:00Z", "incident-analysis");
+
+    const lopc = container.querySelector('section[aria-label="LOPC records"]')!;
+    expect(lopc.textContent).toContain("Record-derived from 2 Spill / Release records");
+    expect(lopc.textContent).toContain("1 of 2 Spill / Release records have no LOPC details");
+    expect(lopc.textContent).toContain("Quantities in different units are never added together.");
+    expect(lopc.textContent).toContain("60.5");
+    expect(lopc.textContent).not.toContain("64.5");
+    expect(lopc.textContent).toContain("Unknown / not recorded");
+
+    await click(buttonNamed("View 1 record: Failure mechanism, Unknown / not recorded", lopc));
+
+    const url = new URL(window.location.href);
+    expect(url.searchParams.get("view")).toBe("register");
+    expect(url.searchParams.get("failureMechanism")).toBe("unknown");
+    expect(url.searchParams.get("category")).toBe("spill_release_lopc");
+    const list = requested.filter((u) => u.pathname.endsWith("/records")).at(-1)!;
+    expect(list.searchParams.get("failureMechanism")).toBe("unknown");
+  });
+
+  it("warns when the stored PSIF count exceeds the PSIF records and drills to them", async () => {
+    stubInsights();
+    await render("2026-02-10T15:00:00Z", "incident-analysis");
+
+    const risk = container.querySelector('section[aria-label="Serious risk (PSIF) records"]')!;
+    expect(risk.textContent).toContain("The monthly PSIF count is 3; 1 record is designated PSIF.");
+    expect(risk.textContent).toContain("2 not documented");
+    // The PSIF counter itself stays on the Overview.
+    expect(risk.querySelector("[data-chart]")).toBeNull();
+
+    await click(buttonNamed("View all PSIF records", risk));
+    const list = requested.filter((u) => u.pathname.endsWith("/records")).at(-1)!;
+    expect(list.searchParams.get("category")).toBe("psif");
+    expect(list.searchParams.get("eventType")).toBeNull();
+  });
+});
+
+describe("Record details form", () => {
+  afterEach(() => window.history.replaceState(null, "", "/"));
+
+  const field = (label: string) => {
+    const dialog = container.querySelector("dialog")!;
+    const found = [...dialog.querySelectorAll("label")].find((l) => l.textContent === label);
+    if (!found) throw new Error(`No "${label}" field`);
+    return dialog.querySelector<HTMLInputElement & HTMLSelectElement>(`[id="${found.htmlFor}"]`)!;
+  };
+
+  async function type(element: HTMLInputElement, value: string) {
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(element, value);
+      element.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  }
+
+  async function pick(element: HTMLSelectElement, value: string) {
+    await act(async () => {
+      element.value = value;
+      element.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  }
+
+  async function openCreate() {
+    stubInsights();
+    await render("2026-02-10T15:00:00Z", "register");
+    await click(buttonNamed("Add Incident"));
+  }
+
+  const section = (title: string) =>
+    [...container.querySelectorAll("dialog fieldset")].find((f) => f.querySelector("legend")?.textContent === title);
+
+  it("shows each detail section only for its classification", async () => {
+    await openCreate();
+
+    expect(section("Spill / Release / LOPC details")).toBeUndefined();
+    expect(section("Powered industrial vehicle details")).toBeUndefined();
+    expect(section("Serious risk (PSIF)")).toBeDefined();
+
+    await pick(field("Classification (optional)"), "11");
+    expect(section("Spill / Release / LOPC details")).toBeDefined();
+
+    const additional = [...container.querySelectorAll<HTMLLabelElement>("dialog label")].find(
+      (l) => l.textContent === "PIT Accident",
+    )!;
+    await click(additional.querySelector("input")!);
+    expect(section("Powered industrial vehicle details")).toBeDefined();
+    expect(section("Damage / failure details")).toBeUndefined();
+
+    // Unknown is its own answer, distinct from No.
+    expect([...field("Loss of primary containment").options].map((o) => o.textContent)).toEqual(["Unknown", "Yes", "No"]);
+    expect([...field("Secondary containment").options].map((o) => o.textContent)).toEqual([
+      "Not recorded",
+      "Not applicable",
+      "Unknown",
+    ]);
+  });
+
+  it("shows inline validation and sends nothing when the quantity has no unit", async () => {
+    await openCreate();
+    await pick(field("Classification (optional)"), "11");
+    const description = container.querySelector<HTMLTextAreaElement>("dialog textarea")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(description, "Fixture release.");
+      description.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await type(field("Estimated quantity"), "1.5");
+    const before = requested.length;
+
+    await click(buttonNamed("Save record"));
+
+    const quantityUnit = field("Quantity unit");
+    expect(quantityUnit.getAttribute("aria-invalid")).toBe("true");
+    expect(document.getElementById(quantityUnit.getAttribute("aria-describedby")!)!.textContent).toBe(
+      "Choose the unit of the quantity.",
+    );
+    expect(text()).toContain("Nothing was saved. Correct the highlighted fields.");
+    expect(requested).toHaveLength(before);
+
+    await type(field("Estimated quantity"), "-2");
+    expect(field("Estimated quantity").getAttribute("aria-invalid")).toBe("true");
+  });
+
+  it("keeps values typed into a section when its classification is deselected and chosen again", async () => {
+    await openCreate();
+    await pick(field("Classification (optional)"), "11");
+    await type(field("Material released"), "Fixture solvent");
+    await pick(field("Quantity unit"), "gal");
+
+    await pick(field("Classification (optional)"), "13");
+    expect(section("Spill / Release / LOPC details")).toBeUndefined();
+    await pick(field("Classification (optional)"), "11");
+
+    expect(field("Material released").value).toBe("Fixture solvent");
+    expect(field("Quantity unit").value).toBe("gal");
   });
 });

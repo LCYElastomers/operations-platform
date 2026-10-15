@@ -17,6 +17,7 @@ export const DASHBOARD_VIEWS = [
   { value: "incident-analysis", label: "Incident Analysis" },
   { value: "register", label: "Incident Register" },
   { value: "behavior", label: "Behavior" },
+  { value: "event-experience", label: "Event Experience" },
 ] as const;
 export type DashboardView = (typeof DASHBOARD_VIEWS)[number]["value"];
 

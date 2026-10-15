@@ -6,6 +6,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
 from app.core.authorization import UserPrincipal, require_all_permissions, require_permission
 from app.core.permissions import Permission
@@ -21,6 +22,12 @@ from app.safety.behavior.schemas import (
 )
 from app.safety.behavior.service import BehaviorConflictError, UnknownBehaviorCategoryError
 from app.safety.models import MAX_REPORTING_YEAR, MIN_REPORTING_YEAR
+from app.safety.records import insights
+from app.safety.records.schemas import (
+    EventExperienceResponse,
+    LopcRecordsResponse,
+    SeriousRiskResponse,
+)
 from app.safety.repository import DatabaseSafetyMetricsRepository, SafetyMetricsRepository
 from app.safety.schemas import (
     IncidentAnalyticsResponse,
@@ -29,6 +36,7 @@ from app.safety.schemas import (
     SaveMonthlyMetricsResponse,
 )
 from app.safety.service import EditConflictError, UnknownCategoryError
+from app.safety.site_calendar import site_today
 
 router = APIRouter(prefix="/safety", tags=["safety"])
 
@@ -136,6 +144,119 @@ def incident_analytics(
             "Analytics cannot run through a month that has not started.",
             latestMonth=error.latest_month,
         ) from None
+    except SQLAlchemyError:
+        raise _database_unavailable() from None
+
+
+def insight_session() -> Iterator[Session]:
+    try:
+        sessions = get_sessionmaker()
+    except DatabaseNotConfiguredError:
+        raise _database_unavailable() from None
+    with sessions() as session:
+        yield session
+
+
+InsightSession = Annotated[Session, Depends(insight_session)]
+INSIGHT_RESPONSES: dict[int | str, dict[str, Any]] = {
+    401: {"description": "Not signed in"},
+    403: {"description": "Missing safetyRecord.view, safetyDashboard.view or incident.view"},
+    422: {"description": "Invalid year, or a date or month that has not started"},
+    503: {"description": "Database unavailable"},
+}
+
+
+def _incident_insights(principal: UserPrincipal) -> bool:
+    """Record-derived views need incident.view; near misses count only with nearMiss.view."""
+    if not principal.has(Permission.INCIDENT_VIEW):
+        raise _error(
+            status.HTTP_403_FORBIDDEN, "forbidden", "Viewing incident records is not permitted."
+        )
+    return principal.has(Permission.NEAR_MISS_VIEW)
+
+
+def _through(year: int, through: int | None) -> int | None:
+    latest = analytics.latest_started_month(year, site_today(_now()))
+    if latest is None or (through is not None and through > latest):
+        raise _error(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "month_not_started",
+            "Analytics cannot run through a month that has not started.",
+            latestMonth=latest,
+        )
+    return through or latest
+
+
+@router.get(
+    "/incidents/analytics/event-experience",
+    response_model=EventExperienceResponse,
+    responses=INSIGHT_RESPONSES,
+)
+def event_experience(
+    principal: DashboardViewer,
+    session: InsightSession,
+    year: Annotated[int, Query(ge=MIN_REPORTING_YEAR, le=MAX_REPORTING_YEAR)],
+    as_of: Annotated[dt.date | None, Query(alias="asOf")] = None,
+) -> EventExperienceResponse:
+    """Days since the latest event and year-to-date counts per category, from the
+    active Incident Register records. As of today in Baytown for the current year,
+    31 December for a past year."""
+    near_misses = _incident_insights(principal)
+    today = site_today(_now())
+    if year > today.year:
+        raise _error(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, "year_not_started", "The year has not started."
+        )
+    if as_of is None:
+        as_of = today if year == today.year else dt.date(year, 12, 31)
+    elif as_of.year != year or as_of > today:
+        raise _error(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "invalid_as_of",
+            "The as-of date must be in the selected year and not after today.",
+        )
+    try:
+        return insights.event_experience(session, year=year, as_of=as_of, near_misses=near_misses)
+    except SQLAlchemyError:
+        raise _database_unavailable() from None
+
+
+@router.get(
+    "/incidents/analytics/lopc-records",
+    response_model=LopcRecordsResponse,
+    responses=INSIGHT_RESPONSES,
+)
+def lopc_records(
+    principal: DashboardViewer,
+    session: InsightSession,
+    year: Annotated[int, Query(ge=MIN_REPORTING_YEAR, le=MAX_REPORTING_YEAR)],
+    through: Annotated[int | None, Query(ge=1, le=12)] = None,
+) -> LopcRecordsResponse:
+    """LOPC breakdowns from the Spill / Release records' LOPC details."""
+    _incident_insights(principal)
+    through = _through(year, through)
+    try:
+        return insights.lopc_records(session, year=year, through=through)
+    except SQLAlchemyError:
+        raise _database_unavailable() from None
+
+
+@router.get(
+    "/incidents/analytics/serious-risk",
+    response_model=SeriousRiskResponse,
+    responses=INSIGHT_RESPONSES,
+)
+def serious_risk(
+    principal: DashboardViewer,
+    session: InsightSession,
+    year: Annotated[int, Query(ge=MIN_REPORTING_YEAR, le=MAX_REPORTING_YEAR)],
+    through: Annotated[int | None, Query(ge=1, le=12)] = None,
+) -> SeriousRiskResponse:
+    """PSIF breakdowns from the records designated PSIF."""
+    near_misses = _incident_insights(principal)
+    through = _through(year, through)
+    try:
+        return insights.serious_risk(session, year=year, through=through, near_misses=near_misses)
     except SQLAlchemyError:
         raise _database_unavailable() from None
 

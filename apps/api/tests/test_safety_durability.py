@@ -82,8 +82,10 @@ def test_safety_runtime_code_never_reads_import_templates_or_workbooks() -> None
         if p.name in ("router.py", "service.py", "repository.py", "store.py")
         or p.parent.name == "safety"
         and p.name in ("analytics.py", "reports.py", "rates.py")
+        or p.parent.name == "records"
+        and p.name in ("insights.py", "categories.py", "details.py", "detail_models.py")
     ]
-    assert runtime
+    assert {"insights.py", "categories.py", "details.py"} <= {p.name for p in runtime}
     for path in runtime:
         source = path.read_text(encoding="utf-8")
         assert "import_templates" not in source, path

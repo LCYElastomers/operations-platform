@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, ListChecks, Plus } from "lucide-react";
+import { AlertTriangle, ListChecks, Plus, X } from "lucide-react";
 import { useId, useState } from "react";
 
 import {
@@ -18,12 +18,16 @@ import { ApiError } from "@/lib/api-client";
 import { describeSafetyError } from "../api";
 import {
   allowsType,
+  DRILL_KEYS,
+  type DrillFilter,
   type EventType,
   type IncidentRecord,
   type MonthReconciliation,
   type RecordPermissions,
   type RecordStatus,
 } from "./api";
+import { codeNames } from "./detail-data";
+import { drillLabel } from "./insights-data";
 import {
   describeReconciliation,
   EVENT_LABELS,
@@ -34,9 +38,25 @@ import {
   stateTone,
 } from "./record-data";
 import { RecordActions, RecordDialog, RecordStatusBadge, type RecordPanel } from "./record-dialog";
-import { useRecordOptions, useRecordReconciliation, useRecords } from "./use-records";
+import { useRecord, useRecordOptions, useRecordReconciliation, useRecords } from "./use-records";
 
-export type RegisterFilters = { month?: number; eventType?: EventType };
+function drillOf(initial: RegisterFilters | undefined): DrillFilter {
+  const drill: DrillFilter = {};
+  for (const key of DRILL_KEYS) {
+    const value = initial?.[key];
+    if (value) (drill as Record<string, string>)[key] = value;
+  }
+  return drill;
+}
+
+/** `record` opens one record's details; the drill filters come from dashboard drill-throughs. */
+export type RegisterFilters = {
+  month?: number;
+  eventType?: EventType;
+  areaId?: number;
+  classificationId?: number;
+  record?: number;
+} & DrillFilter;
 
 const STATE_TONES = { ok: "success", warning: "warning", neutral: "neutral" } as const;
 const EVENT_TYPES: EventType[] = ["incident", "near_miss"];
@@ -56,12 +76,21 @@ type RegisterProps = {
 export function IncidentRegister({ year, through, today, initial }: RegisterProps) {
   const [month, setMonth] = useState(initial?.month ? String(initial.month) : "");
   const [eventType, setEventType] = useState<string>(initial?.eventType ?? "");
-  const [areaId, setAreaId] = useState("");
-  const [classificationId, setClassificationId] = useState("");
+  const [areaId, setAreaId] = useState(initial?.areaId ? String(initial.areaId) : "");
+  const [classificationId, setClassificationId] = useState(
+    initial?.classificationId ? String(initial.classificationId) : "",
+  );
   const [status, setStatus] = useState("");
   const [showInactive, setShowInactive] = useState(false);
   const [search, setSearch] = useState("");
+  const [drill, setDrill] = useState<DrillFilter>(() => drillOf(initial));
   const [panel, setPanel] = useState<RecordPanel | null>(null);
+  const [linkedId, setLinkedId] = useState<number | null>(initial?.record ?? null);
+  const linked = useRecord(linkedId);
+  if (linkedId !== null && linked.data && !panel) {
+    setPanel({ kind: "view", record: linked.data.record });
+    setLinkedId(null);
+  }
   const display = useDisplayPreferences("safety.incidents.register");
   const toggleId = useId();
   const searchText = useDebouncedValue(search, 300);
@@ -82,12 +111,15 @@ export function IncidentRegister({ year, through, today, initial }: RegisterProp
       classificationId: classificationId ? Number(classificationId) : undefined,
       statuses,
       search: searchText,
+      ...drill,
     },
     through !== null,
   );
   const reconciliation = useRecordReconciliation(year);
   const options = useRecordOptions();
-  const permissions = records.data ?? reconciliation.data;
+  const permissions = records.data ?? reconciliation.data ?? linked.data;
+  const drillKeys = DRILL_KEYS.filter((key) => drill[key]);
+  const codes = codeNames(options.data?.detailCodes);
 
   const accessDenied =
     records.error instanceof ApiError && (records.error.status === 401 || records.error.status === 403);
@@ -201,6 +233,38 @@ export function IncidentRegister({ year, through, today, initial }: RegisterProp
           Show inactive
         </label>
       </FilterBar>
+
+      {drillKeys.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 px-1 text-sm" aria-label="Dashboard filters">
+          <span className="text-muted-foreground">From the dashboard:</span>
+          {drillKeys.map((key) => {
+            const label = drillLabel(key, drill[key]!, codes);
+            return (
+              <Button
+                key={key}
+                variant="outline"
+                size="sm"
+                aria-label={`Remove filter ${label}`}
+                onClick={() => setDrill((current) => ({ ...current, [key]: undefined }))}
+                className="pointer-coarse:h-11"
+              >
+                {label}
+                <X />
+              </Button>
+            );
+          })}
+          {drillKeys.length > 1 && (
+            <Button variant="ghost" size="sm" onClick={() => setDrill({})} className="pointer-coarse:h-11">
+              Clear all
+            </Button>
+          )}
+        </div>
+      )}
+      {linked.isError && (
+        <p role="alert" className="px-1 text-sm text-destructive">
+          Could not open the record. {describeSafetyError(linked.error)}
+        </p>
+      )}
 
       <p className="px-1 text-sm text-muted-foreground" aria-live="polite">
         {!records.data

@@ -9,7 +9,7 @@ A record's audit history also needs ``safetyRecord.view``.
 
 import datetime as dt
 from collections.abc import Iterator
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.exc import SQLAlchemyError
@@ -24,10 +24,11 @@ from app.core.authorization import (
 from app.core.permissions import Permission
 from app.db.session import DatabaseNotConfiguredError, get_sessionmaker
 from app.safety.models import MAX_REPORTING_YEAR, MIN_REPORTING_YEAR
-from app.safety.records import service
+from app.safety.records import categories, details, service
 from app.safety.records.numbers import InvalidIncidentNumberError, normalize_incident_number
 from app.safety.records.repository import RecordFilter, RecordRepository
 from app.safety.records.schemas import (
+    DetailCodeOut,
     EventType,
     HistoryEventOut,
     HistoryResponse,
@@ -48,6 +49,8 @@ from app.safety.records.schemas import (
 router = APIRouter(prefix="/safety/incidents", tags=["safety"])
 
 MAX_PAGE = 500
+ExperienceCode = Literal[tuple(c.code for c in categories.EXPERIENCE_CATEGORIES)]  # type: ignore[valid-type]
+CODE_PATTERN = r"^[A-Za-z0-9_]{1,60}$"
 
 
 def _error(status_code: int, error: str, message: str, **extra: Any) -> HTTPException:
@@ -214,11 +217,30 @@ def list_records(
     classification_id: Annotated[int | None, Query(alias="classificationId", ge=1)] = None,
     record_status: Annotated[list[RecordStatus] | None, Query(alias="status")] = None,
     search: Annotated[str | None, Query(max_length=200)] = None,
+    category: Annotated[ExperienceCode | None, Query()] = None,
+    failure_mechanism: Annotated[
+        str | None, Query(alias="failureMechanism", pattern=CODE_PATTERN)
+    ] = None,
+    containment: Annotated[str | None, Query(pattern=CODE_PATTERN)] = None,
+    contributing_factor: Annotated[
+        str | None, Query(alias="contributingFactor", pattern=CODE_PATTERN)
+    ] = None,
+    quantity_unit: Annotated[str | None, Query(alias="quantityUnit", pattern=CODE_PATTERN)] = None,
+    process_safety: Annotated[
+        Literal["yes", "no", "unknown"] | None, Query(alias="processSafety")
+    ] = None,
+    material: Annotated[str | None, Query(min_length=1, max_length=200)] = None,
+    equipment_tag: Annotated[
+        str | None, Query(alias="equipmentTag", min_length=1, max_length=100)
+    ] = None,
     limit: Annotated[int, Query(ge=1, le=MAX_PAGE)] = MAX_PAGE,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> RecordListResponse:
     """Records, oldest first. Active records only unless ``status`` says otherwise.
-    ``search`` matches the description or the number (in any accepted form)."""
+    ``search`` matches the description or the number (in any accepted form).
+    ``classificationId`` matches a record's own or further classification;
+    ``category`` an Event Experience category; the LOPC detail filters take a
+    code, or ``unknown`` for not recorded (the dashboards' drill-throughs)."""
     if (through is not None or month is not None) and year is None:
         raise _error(
             status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -245,6 +267,20 @@ def list_records(
         statuses=tuple(record_status) if record_status else ("active",),
         search=text or None,
         search_number=number,
+        category=category,
+        lopc=tuple(
+            (column, value)
+            for column, value in (
+                ("failure_mechanism_code", failure_mechanism),
+                ("secondary_containment_status_code", containment),
+                ("contributing_factor_code", contributing_factor),
+                ("quantity_unit_code", quantity_unit),
+                ("process_safety_incident", process_safety),
+                ("material_name", material.strip() if material else None),
+                ("equipment_tag", equipment_tag.strip() if equipment_tag else None),
+            )
+            if value
+        ),
     )
     try:
         rows, total = repository.search(criteria, limit=limit, offset=offset)
@@ -256,9 +292,12 @@ def list_records(
 
 @router.get("/records/options", response_model=RecordOptionsResponse)
 def record_options(principal: Viewer, repository: Repository) -> RecordOptionsResponse:
-    """Areas and Incident Classifications a record can reference (inactive ones flagged)."""
+    """Areas, Incident Classifications and record-detail codes a record can reference
+    (inactive ones flagged). The LOPC contributing factors are listed under
+    ``lopc_contributing_factor``."""
     try:
         areas, classifications = repository.areas(), repository.classifications()
+        codes = repository.detail_codes()
     except SQLAlchemyError:
         raise _database_unavailable() from None
     return RecordOptionsResponse(
@@ -266,6 +305,12 @@ def record_options(principal: Viewer, repository: Repository) -> RecordOptionsRe
         classifications=[
             OptionOut(id=o.id, code=o.code, name=o.name, active=o.active) for o in classifications
         ],
+        detail_codes={
+            taxonomy.removeprefix("metric:"): [
+                DetailCodeOut(code=code, name=name, active=active) for code, name, active in entries
+            ]
+            for taxonomy, entries in codes.items()
+        },
     )
 
 
@@ -299,10 +344,12 @@ def get_record(principal: Viewer, repository: Repository, record_id: int) -> Rec
 def record_history(
     principal: HistoryViewer, repository: Repository, record_id: int
 ) -> HistoryResponse:
-    """The record's audit trail, oldest first."""
+    """The record's audit trail with its detail changes, oldest first."""
     try:
         _require_type(principal, _type_of(repository, record_id), VIEW)
-        events = repository.history(service.ENTITY_TYPE, service.entity_key(record_id))
+        events = repository.history(
+            service.ENTITY_TYPE, service.entity_key(record_id), details.DETAIL_ENTITY_TYPE
+        )
         names = repository.actor_names(e.actor_id for e in events)
     except SQLAlchemyError:
         raise _database_unavailable() from None
@@ -317,6 +364,11 @@ def record_history(
                 change_set_id=str(e.change_set_id),
                 old_value=service.public_audit_value(e.old_value),
                 new_value=service.public_audit_value(e.new_value),
+                detail=(
+                    e.entity_key.rsplit("/", 1)[1]  # type: ignore[arg-type]
+                    if e.entity_type == details.DETAIL_ENTITY_TYPE
+                    else None
+                ),
             )
             for e in events
         ],

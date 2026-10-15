@@ -358,6 +358,20 @@ def test_closed_month_without_incident_data_is_not_a_zero_count(
     assert [(m.month, m.reason) for m in trir.ineligible_months] == [(3, "count_not_confirmed")]
 
 
+def test_a_month_with_only_breakdown_values_is_not_a_zero_count(
+    session: Session, repository: NonCommittingRepository
+) -> None:
+    """Area or cause breakdowns imported without the classification counts must
+    not turn the missing recordable count into zero."""
+    close_months(repository, 2099, range(1, 2), 1000)
+    store_value(session, "incidents", ("incidents_by_area", "mundy"), 2099, 1, 1)
+    session.flush()
+
+    january = service.trir_inputs(repository, [2099]).counts[(2099, 1)]
+
+    assert (january.confirmed, january.trir) == (False, None)
+
+
 def test_rates_before_2026_read_legacy_counts(
     session: Session, repository: NonCommittingRepository
 ) -> None:

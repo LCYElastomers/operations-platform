@@ -222,12 +222,14 @@ Quality monthly inputs (`app.quality.cost.legacy_import`), `0011` Quality
 Cost records and their related-record references, `0012` Corrective Action
 Reports (`app.quality.car.legacy_import`), `0013` users, roles and
 sessions, `0014` official Observation categories, `0015` Process Safety
-Management, `0016` Safety import runs. Migrations seed
-reference data only; legacy values are loaded afterwards with the import
-CLIs, in this order: incident totals (`app.safety.legacy_import`), Safety
-Performance hours, Behavior, TRIR history, then reviewed incident
-narratives. Each has `check`, `plan` and `apply`; `apply` is audited and
-idempotent. Then run `python -m app.safety.reconcile` (see
+Management, `0016` Safety import runs, `0017` incident record details
+(further classifications, LOPC, damage, PIT and serious-risk details and
+their code lists). Migrations seed reference data only; legacy values are
+loaded afterwards with the import CLIs, in this order: incident totals
+(`app.safety.legacy_import`), Safety Performance hours, Behavior, TRIR
+history, reviewed incident narratives, then reviewed incident details
+(`app.safety.records.detail_import`). Each has `check`, `plan` and
+`apply`; `apply` is audited and idempotent. Then run `python -m app.safety.reconcile` (see
 [Safety data authority](#safety-data-authority-and-reconciliation)).
 
 `GET /api/v1/health` is liveness only. `GET /api/v1/health/ready` returns
@@ -237,7 +239,7 @@ code, so a deploy whose migration did not run is visible instead of
 serving partial data. It reveals no revision, host or credential.
 
 **Back up before upgrading production.** Downgrades are not a rollback for
-data: `0002`–`0012` and `0016` each refuse to downgrade while their tables hold data,
+data: `0002`–`0012`, `0016` and `0017` each refuse to downgrade while their tables hold data,
 so restoring the backup is the rollback once anything was imported.
 The release runbook and data-quality report for 0009 are in
 [`docs/safety-release-0009/`](docs/safety-release-0009/).
@@ -1510,6 +1512,69 @@ dates or fields only from the source). Dates, numbers, areas and
 classifications are never invented. `apply` is idempotent (a stored source
 reference is skipped) and blocked by a number used by another record.
 
+### Record details and Event Experience
+
+Migration `0017` lets an Incident Register record carry further
+classifications and four optional details, each in its own permanent table
+keyed by the record (no parallel incident system): LOPC (needs Spill /
+Release), damage / failure (needs Property Damage or Equipment Damage /
+Failure), PIT (needs PIT Accident) and serious risk (the record-level PSIF
+designation, any record). Coded values use stable codes from
+`safety.incident_detail_codes`. Every field may be blank, which means not
+recorded (Unknown), never No or 0; quantities and costs are exact decimals
+and need their unit or currency. A classification cannot be removed while a
+detail that needs it is stored: the write is refused (`dependent_detail`)
+until the detail is removed too. Details are written with the record, in
+its transaction, and audited as `safety.incident_record_detail` (narrative
+text as a length and digest).
+
+The record API (`POST`/`PUT /api/v1/safety/incidents/records`) accepts
+`additionalClassificationIds`, `lopcDetails`, `damageDetails`, `pitDetails`
+and `seriousRiskDetails` (omitted: unchanged; `null`: removed);
+`GET /records/{id}` returns one record; `GET /records/options` lists the
+detail codes. The list accepts the dashboard drill-throughs `category`,
+`failureMechanism`, `containment`, `contributingFactor`, `quantityUnit`,
+`processSafety` (`yes`/`no`/`unknown`), `material` and `equipmentTag`
+(`unknown` matches not recorded).
+
+Record-derived analytics, read on each request from PostgreSQL (no file is
+read), require `safety.incidents.view` and the incident records permission:
+
+- `GET /api/v1/safety/incidents/analytics/event-experience?year=&asOf=` —
+  days since the last event for eleven categories, with a completeness
+  status (`complete`, `no_event_in_scope`,
+  `insufficient_classification_data`, `source_unavailable`). `asOf`
+  defaults to today in Baytown (31 December for a past year). An unknown
+  last event is `null`, never 0.
+- `GET .../analytics/lopc-records?year=&through=` — LOPC breakdowns by
+  failure mechanism, material, equipment, containment and process safety;
+  quantities totalled per unit, never across units.
+- `GET .../analytics/serious-risk?year=&through=` — PSIF records beside the
+  stored monthly PSIF count, with a warning when the count exceeds the
+  records.
+
+The dashboard's **Event Experience** tab shows the eleven categories as
+cards; selecting one opens its details, **View Last Event** opens the
+record in the Incident Register and **View All Matching Events** filters
+the Register. Incident Analysis adds the record-derived LOPC and serious-risk
+groups with drill-through to the Register.
+
+Reviewed details are loaded from a mapping (records matched by incident
+number or legacy passage; values only from quoted source text). The
+mapping is read by the CLI only:
+
+```bash
+cd apps/api
+uv run python -m app.safety.records.detail_import check import_templates/safety_incident_details_2026_lcy_ehs.mapping.json  # no database
+uv run python -m app.safety.records.detail_import plan  import_templates/safety_incident_details_2026_lcy_ehs.mapping.json
+uv run python -m app.safety.records.detail_import apply import_templates/safety_incident_details_2026_lcy_ehs.mapping.json  # audited as legacy-import
+```
+
+`apply` only fills values not yet recorded; a different stored value is a
+conflict and blocks the apply, as do a missing record or an unknown code.
+Then `python -m app.safety.reconcile --details <mapping.json>` confirms the
+stored details match the mapping.
+
 ### Dashboard
 
 The Incident & Near Miss Dashboard (`/safety/incidents/dashboard`,
@@ -1666,6 +1731,7 @@ uv run python -m app.safety.reconcile --year 2026 \
   --trir import_templates/safety_trir_experience_history_lcy_ehs.mapping.json \
   --records import_templates/safety_incident_records_2026_lcy_ehs.review.json \
   --behavior import_templates/safety_behavior_2026_lcy_ehs.mapping.json \
+  --details import_templates/safety_incident_details_2026_lcy_ehs.mapping.json \
   --pha import_templates/psm_pha_2026_300_400_600.mapping.json   # add --json for machines
 ```
 
@@ -1676,7 +1742,10 @@ counted by the monthly totals (a record in a month whose total is
 unreported or zero is a discrepancy; fewer records than the total is
 incomplete documentation, a warning); that classified records do not exceed
 the monthly classification counts, matched by category code; which active
-incident records have no classification; and, for each reviewed file
+incident records have no classification; that record details are consistent
+with their classifications and codes, and that PSIF, LOPC, PIT and damage
+records do not exceed the stored monthly counts; Event Experience for the
+year; and, for each reviewed file
 given, that everything it reports is stored with the same value. Exit
 status 0 means nothing to resolve, 1 discrepancies, 2 unreadable input or
 database unavailable. Discrepancies are reported with both values; the

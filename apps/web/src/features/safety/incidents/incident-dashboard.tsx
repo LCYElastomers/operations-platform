@@ -79,7 +79,13 @@ import { useAutomaticValue, useSiteToday } from "../use-site-calendar";
 import { defaultReportingYear, FIRST_REPORTING_YEAR, MONTH_LABELS } from "./grid";
 import { ReportingYearSelect } from "./reporting-year-select";
 import { useIncidentAnalytics } from "./use-incident-metrics";
+import { DRILL_KEYS } from "./records/api";
+import { EventExperienceView } from "./records/event-experience";
 import { IncidentRegister, type RegisterFilters } from "./records/incident-register";
+import { LopcRecordsGroup, SeriousRiskGroup } from "./records/record-analytics";
+
+/** URL parameters that carry the Incident Register's starting filters. */
+const REGISTER_PARAMS = ["month", "eventType", "areaId", "classificationId", "record", ...DRILL_KEYS];
 
 const KPI_ICONS: Record<AnalyticsKpi["key"], React.ComponentType<{ className?: string }>> = {
   incidents: Siren,
@@ -164,6 +170,23 @@ export function IncidentDashboard({
     url.searchParams.set("view", next);
     window.history.replaceState(window.history.state, "", url);
   };
+  const [registerFilters, setRegisterFilters] = useState<RegisterFilters | undefined>(initialRegister);
+  // A drill-through remounts the Register so it starts from the new filters.
+  const [registerKey, setRegisterKey] = useState(0);
+  const openRegister = (filters: RegisterFilters) => {
+    setRegisterFilters(filters);
+    setRegisterKey((key) => key + 1);
+    setView("register");
+    const url = new URL(window.location.href);
+    for (const key of REGISTER_PARAMS) url.searchParams.delete(key);
+    url.searchParams.set("view", "register");
+    url.searchParams.set("year", String(year));
+    for (const [key, value] of Object.entries(filters)) {
+      if (value !== undefined) url.searchParams.set(key, String(value));
+    }
+    window.history.replaceState(window.history.state, "", url);
+  };
+  const openRecord = (id: number) => openRegister({ record: id });
 
   const accessDenied =
     analytics.error instanceof ApiError && (analytics.error.status === 401 || analytics.error.status === 403);
@@ -280,11 +303,16 @@ export function IncidentDashboard({
           <OverviewView {...viewProps} loading={loading} kpiUnavailable={analytics.isError} />
         )}
         {view === "area" && <AreaView {...viewProps} />}
-        {view === "incident-analysis" && <IncidentAnalysisView {...viewProps} />}
+        {view === "incident-analysis" && (
+          <IncidentAnalysisView {...viewProps} through={through} onDrill={openRegister} onOpenRecord={openRecord} />
+        )}
         {view === "register" && (
-          <IncidentRegister year={year} through={through} today={today} initial={initialRegister} />
+          <IncidentRegister key={registerKey} year={year} through={through} today={today} initial={registerFilters} />
         )}
         {view === "behavior" && <BehaviorView {...viewProps} />}
+        {view === "event-experience" && (
+          <EventExperienceView year={year} onOpenRecord={openRecord} onViewAll={openRegister} />
+        )}
       </Tabs>
 
       {loading && <span className="sr-only">Loading Safety data</span>}
@@ -637,7 +665,21 @@ function AnalysisGroup({ title, children }: { title: string; children: React.Rea
   );
 }
 
-function IncidentAnalysisView({ data, isError, year, period, months, chart }: ViewProps) {
+function IncidentAnalysisView({
+  data,
+  isError,
+  year,
+  period,
+  months,
+  chart,
+  through,
+  onDrill,
+  onOpenRecord,
+}: ViewProps & {
+  through: number | null;
+  onDrill: (filters: RegisterFilters) => void;
+  onOpenRecord: (id: number) => void;
+}) {
   const display = useDisplayPreferences("safety.incidents.analysis");
   const tags = { preferences: display.preferences, onShowAll: () => display.update({ hideEmptyRows: false, showReportedZeros: true }) };
   return (
@@ -668,6 +710,9 @@ function IncidentAnalysisView({ data, isError, year, period, months, chart }: Vi
         />
         <LopcFactorChart data={data} isError={isError} period={period} months={months} chart={chart} />
       </AnalysisGroup>
+
+      <LopcRecordsGroup year={year} through={through} onDrill={onDrill} onOpenRecord={onOpenRecord} />
+      <SeriousRiskGroup year={year} through={through} onDrill={onDrill} onOpenRecord={onOpenRecord} />
 
       <AnalysisGroup title="Damage & vehicles">
         <BarChart

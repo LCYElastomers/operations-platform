@@ -7,16 +7,23 @@ refused with the current record, and nothing is written.
 
 Records never change the monthly totals, and saving a monthly total never
 creates or removes records. Reconciliation compares the two and only warns.
+
+A record's further classifications and details (``details``) are written in
+the record's transaction and audited as ``safety.incident_record_detail`` with
+key ``incident-records/<id>/<kind>``. Any change to them is a change to the
+record: it needs the current ``version`` and increments it.
 """
 
 import calendar
 import datetime as dt
 import logging
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from app.audit.recorder import AuditAction, AuditChange
+from app.safety.records import details
+from app.safety.records.details import BY_KIND, SPECS, DetailRuleError
 from app.safety.records.models import EARLIEST_INCIDENT_DATE, IncidentRecord
 from app.safety.records.numbers import InvalidIncidentNumberError, normalize_incident_number
 from app.safety.records.repository import (
@@ -26,12 +33,14 @@ from app.safety.records.repository import (
     RecordRow,
 )
 from app.safety.records.schemas import (
+    ClassificationRef,
     MonthContext,
     MonthReconciliationOut,
     ReclassifyRequest,
     ReconciliationResponse,
     ReconciliationState,
     RecordCreate,
+    RecordDetailFields,
     RecordFields,
     RecordOut,
     RecordUpdate,
@@ -100,7 +109,17 @@ class Actor:
 
 def record_out(row: RecordRow) -> RecordOut:
     r = row.record
+    stored = row.extras.details or {}
     return RecordOut(
+        additional_classifications=[
+            ClassificationRef(id=i, code=code, name=name)
+            for i, code, name in row.extras.classifications
+        ],
+        **{
+            spec.field: spec.out.model_validate(stored[spec.kind])
+            for spec in SPECS
+            if spec.kind in stored
+        },
         id=r.id,
         incident_number=r.incident_number,
         event_type=r.event_type,  # type: ignore[arg-type]
@@ -249,6 +268,150 @@ def _validated(
     }
 
 
+@dataclass
+class DetailPlan:
+    """The further classifications and details a write leaves the record with."""
+
+    further_before: list[int] = field(default_factory=list)
+    further_after: list[int] = field(default_factory=list)
+    # kind -> (stored, after); only details that change.
+    changes: dict[str, tuple[dict[str, Any] | None, dict[str, Any] | None]] = field(
+        default_factory=dict
+    )
+
+    @property
+    def classifications_change(self) -> bool:
+        return set(self.further_before) != set(self.further_after)
+
+    @property
+    def empty(self) -> bool:
+        return not self.changes and not self.classifications_change
+
+
+def _further(
+    repository: RecordRepository,
+    request: RecordDetailFields,
+    primary_id: int | None,
+    current: list[int],
+) -> list[int]:
+    if request.additional_classification_ids is None:
+        return [i for i in current if i != primary_id]
+    options = repository.classifications()
+    chosen: list[int] = []
+    for category_id in request.additional_classification_ids:
+        option = _option(options, category_id)
+        if option is None or not (option.active or category_id in current):
+            raise RecordRuleError(
+                "invalid_classification",
+                "Choose active Incident Classifications.",
+                field="additionalClassificationIds",
+            )
+        if category_id != primary_id and category_id not in chosen:
+            chosen.append(category_id)
+    return chosen
+
+
+def _plan_details(
+    repository: RecordRepository,
+    request: RecordDetailFields,
+    *,
+    record_id: int | None,
+    primary_id: int | None,
+) -> DetailPlan:
+    """Validate the request's classifications and details against the rules in
+    ``details``. Nothing is written."""
+    current = repository.further_classification_ids(record_id) if record_id else []
+    further = _further(repository, request, primary_id, current)
+    by_id = {o.id: o.code for o in repository.classifications()}
+    codes = {by_id[i] for i in (primary_id, *further) if i is not None and i in by_id}
+    plan = DetailPlan(further_before=current, further_after=further)
+    taxonomies: dict[str, list[tuple[str, str, bool]]] | None = None
+    for spec in SPECS:
+        stored = repository.detail(spec, record_id) if record_id else None
+        given = spec.field in request.model_fields_set
+        after = stored
+        if given:
+            detail = getattr(request, spec.field)
+            after = None if detail is None else details.normalized(spec, detail)
+            if after is not None:
+                if taxonomies is None:
+                    taxonomies = repository.detail_codes()
+                try:
+                    details.check_values(
+                        spec,
+                        after,
+                        known_codes={t: {c for c, _, _ in v} for t, v in taxonomies.items()},
+                        active_codes={t: {c for c, _, a in v if a} for t, v in taxonomies.items()},
+                        stored=stored,
+                    )
+                except DetailRuleError as error:
+                    raise RecordRuleError(error.error, error.message, field=error.field) from None
+        if after is not None:
+            problem = details.requirement_problem(spec, after, codes)
+            if problem is not None and given:
+                raise RecordRuleError("detail_not_allowed", problem, field=spec.wire_field)
+            if problem is not None:
+                raise RecordRuleError(
+                    "dependent_detail",
+                    f"This record has {spec.label.lower()}. {problem} Review or remove the "
+                    f"{spec.label.lower()} before removing the classification.",
+                    field=spec.wire_field,
+                )
+        if not details.same(spec, stored, after):
+            plan.changes[spec.kind] = (stored, after)
+    return plan
+
+
+def _write_details(
+    repository: RecordRepository,
+    record_id: int,
+    plan: DetailPlan,
+    actor: Actor,
+) -> list[AuditChange]:
+    changes: list[AuditChange] = []
+    if plan.classifications_change:
+        before, after = plan.further_before, plan.further_after
+        repository.set_further_classifications(
+            record_id,
+            add=[i for i in after if i not in before],
+            remove=[i for i in before if i not in after],
+            actor_id=actor.actor_id,
+            at=actor.now,
+        )
+        changes.append(
+            AuditChange(
+                action="update" if before else "create",
+                entity_type=details.DETAIL_ENTITY_TYPE,
+                entity_key=details.detail_entity_key(record_id, "classifications"),
+                old_value={"classification_category_ids": sorted(before)} if before else None,
+                new_value={"classification_category_ids": sorted(after)},
+            )
+        )
+    for kind, (stored, after) in plan.changes.items():
+        spec = BY_KIND[kind]
+        repository.save_detail(
+            spec,
+            record_id,
+            after,
+            exists_now=stored is not None,
+            actor_id=actor.actor_id,
+            at=actor.now,
+        )
+        action: AuditAction = (
+            "create" if stored is None else "delete" if after is None else "update"
+        )
+        changes.append(
+            AuditChange(
+                action=action,
+                entity_type=details.DETAIL_ENTITY_TYPE,
+                entity_key=details.detail_entity_key(record_id, kind),
+                old_value=details.audit_value(spec, stored),
+                new_value=details.audit_value(spec, after),
+            )
+        )
+    return changes
+
+
 def _duplicate(error: DuplicateIncidentNumberError) -> RecordRuleError:
     return RecordRuleError(
         "duplicate_incident_number",
@@ -329,6 +492,9 @@ def create(
     change_set = uuid.uuid4()
     try:
         values = _validated(repository, request, request, today=site_today(actor.now))
+        plan = _plan_details(
+            repository, request, record_id=None, primary_id=values["classification_category_id"]
+        )
         values |= {
             "event_type": request.event_type,
             "source": source,
@@ -337,6 +503,13 @@ def create(
             "status_reason": status_reason,
         }
         record_id = _audited_insert(repository, values, actor, change_set)
+        if not plan.empty:
+            repository.record_audit(
+                actor_id=actor.actor_id,
+                change_set_id=change_set,
+                at=actor.now,
+                changes=_write_details(repository, record_id, plan, actor),
+            )
         repository.commit()
     except Exception:
         repository.rollback()
@@ -350,7 +523,8 @@ def create(
 def update(
     repository: RecordRepository, record_id: int, request: RecordUpdate, actor: Actor
 ) -> RecordRow:
-    """Edit an active record's fields. Unchanged values write nothing."""
+    """Edit an active record's fields, further classifications and details, all in
+    one transaction. Unchanged values write nothing."""
     change_set = uuid.uuid4()
     try:
         record = _locked_active(repository, record_id, request.version)
@@ -358,7 +532,13 @@ def update(
             repository, request, request, today=site_today(actor.now), current=record
         )
         changed = {k: v for k, v in values.items() if getattr(record, k) != v}
-        if not changed:
+        plan = _plan_details(
+            repository,
+            request,
+            record_id=record_id,
+            primary_id=values["classification_category_id"],
+        )
+        if not changed and plan.empty:
             repository.rollback()
             row = repository.get(record_id)
             assert row is not None  # noqa: S101 - exists
@@ -370,13 +550,14 @@ def update(
             )
         except DuplicateIncidentNumberError as error:
             raise _duplicate(error) from None
+        detail_changes = _write_details(repository, record_id, plan, actor)
         after = repository.lock(record_id)
         assert after is not None  # noqa: S101 - updated above
         repository.record_audit(
             actor_id=actor.actor_id,
             change_set_id=change_set,
             at=actor.now,
-            changes=[_change("update", record_id, before, audit_value(after))],
+            changes=[_change("update", record_id, before, audit_value(after)), *detail_changes],
         )
         repository.commit()
     except Exception:

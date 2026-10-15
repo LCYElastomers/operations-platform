@@ -330,7 +330,7 @@ def test_official_observation_categories_migration_rewrites_no_observations(
 
 
 def test_psm_migration_creates_tables_and_reference_data_only(upgrade_sql: str) -> None:
-    sql = _segment(upgrade_sql, "0014 -> 0015")
+    sql = _segment(upgrade_sql, "0014 -> 0015", "0015 -> 0016")
     for table in (
         "psm_study_types",
         "psm_departments",
@@ -381,3 +381,42 @@ def test_psm_migration_creates_tables_and_reference_data_only(upgrade_sql: str) 
         "REFERENCES safety.psm_studies (id) ON DELETE CASCADE", ""
     )
     assert "DROP" not in sql
+
+
+def test_incident_detail_migration_creates_permanent_tables_and_codes_only(
+    upgrade_sql: str,
+) -> None:
+    sql = _segment(upgrade_sql, "0016 -> 0017")
+    for table in (
+        "incident_detail_codes",
+        "incident_record_classifications",
+        "incident_lopc_details",
+        "incident_damage_details",
+        "incident_pit_details",
+        "incident_serious_risk_details",
+    ):
+        assert f"CREATE TABLE safety.{table} " in sql
+        definition = sql.split(f"CREATE TABLE safety.{table} ", 1)[1].split(";", 1)[0]
+        assert "ON DELETE CASCADE" not in definition
+    upper = sql.upper()
+    assert "TEMPORARY" not in upper
+    assert "UNLOGGED" not in upper
+    assert "TRUNCATE" not in upper
+    assert "DELETE FROM" not in upper
+    # Taxonomy codes only; no record or detail data.
+    assert "INSERT INTO safety.incident_detail_codes" in sql
+    for table in (
+        "incident_records",
+        "incident_record_classifications",
+        "incident_lopc_details",
+        "incident_damage_details",
+        "incident_pit_details",
+        "incident_serious_risk_details",
+    ):
+        assert f"INSERT INTO safety.{table} " not in sql
+    for code in ("'pump_seal'", "'not_contained'", "'gallons'", "'equipment_failure'", "'USD'"):
+        assert code in sql
+    # The only change to an existing table is the importer list of import_runs.
+    alters = [line for line in sql.splitlines() if line.startswith("ALTER TABLE")]
+    assert alters and all(line.startswith("ALTER TABLE safety.import_runs") for line in alters)
+    assert "'incident_details'" in sql
