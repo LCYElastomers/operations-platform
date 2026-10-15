@@ -28,7 +28,11 @@ vi.mock("@/components/common/bar-chart", () => ({
 }));
 
 const router = { push: vi.fn(), replace: vi.fn() };
-vi.mock("next/navigation", () => ({ useRouter: () => router, usePathname: () => "/safety/psm" }));
+vi.mock("next/navigation", () => ({
+  useRouter: () => router,
+  usePathname: () => "/safety/psm",
+  useSearchParams: () => null,
+}));
 vi.mock("next/link", () => ({
   default: ({ href, children, ...props }: { href: string; children: React.ReactNode }) => (
     <a href={href} {...props}>

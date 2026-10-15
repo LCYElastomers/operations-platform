@@ -43,7 +43,7 @@ vi.mock("@/components/common/bar-chart", () => ({
 vi.mock("@/features/safety/site-calendar", () => ({ siteToday: () => "2003-03-15" }));
 
 const router = { push: vi.fn(), replace: vi.fn() };
-vi.mock("next/navigation", () => ({ useRouter: () => router }));
+vi.mock("next/navigation", () => ({ useRouter: () => router, useSearchParams: () => null }));
 vi.mock("next/link", () => ({
   default: ({ href, children, ...props }: { href: string; children: React.ReactNode }) => (
     <a href={href} {...props}>

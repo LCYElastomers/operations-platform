@@ -1,6 +1,6 @@
 "use client";
 
-import { ArchiveRestore, ArrowDown, ArrowLeft, ArrowUp, Check, History, Pencil, Plus, X } from "lucide-react";
+import { ArchiveRestore, ArrowDown, ArrowLeft, ArrowUp, Check, ChevronRight, History, Pencil, Plus, X } from "lucide-react";
 import Link from "next/link";
 import { useId, useState } from "react";
 
@@ -9,7 +9,7 @@ import { StatusBadge } from "@/components/common/status-badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { toast } from "@/components/ui/toast";
-import { NotEntered, TableSection, TD, TH } from "@/features/quality/cost/cost-shared";
+import { TableSection } from "@/features/quality/cost/cost-shared";
 import { formatDate, formatTimestamp } from "@/features/quality/cost/format";
 import { Field, fieldClasses, inputClasses } from "@/features/quality/cost/record-form";
 import { cn } from "@/lib/utils";
@@ -97,6 +97,7 @@ function CaseFile({ rec, options }: { rec: RecommendationDetail; options: PsmOpt
           <span className="flex flex-wrap gap-2">
             <DispositionBadge disposition={rec.disposition} />
             <RiskBadge risk={rec.governingRisk} />
+            {rec.action && <ActionStatusBadge status={rec.action.status} />}
             {rec.isDraft && <StatusBadge tone="neutral">Draft</StatusBadge>}
             {archived && <StatusBadge tone="neutral">Archived</StatusBadge>}
           </span>
@@ -148,97 +149,33 @@ function CaseFile({ rec, options }: { rec: RecommendationDetail; options: PsmOpt
           <Detail label="Governing risk">
             <RiskBadge risk={rec.governingRisk} />
           </Detail>
+          <Detail label="Recommendation number">{rec.recommendationNumber}</Detail>
+          <Detail label="Scenarios">{rec.scenarios.length}</Detail>
+          {rec.sourceRowStart !== null && (
+            <Detail label="Source">
+              {rec.study.sourceSheetName ? `Sheet “${rec.study.sourceSheetName}”, ` : ""}
+              {rec.sourceRowEnd !== rec.sourceRowStart ? `rows ${rec.sourceRowStart}–${rec.sourceRowEnd}` : `row ${rec.sourceRowStart}`}
+            </Detail>
+          )}
+          <Detail label={rec.sourceRowStart !== null ? "Imported" : "Created"}>{formatTimestamp(rec.createdAt)}</Detail>
+          <Detail label="Last updated">{formatTimestamp(rec.updatedAt)}</Detail>
           {rec.notes && (
             <Detail label="Notes" className="col-span-2 sm:col-span-4">
               <span className="whitespace-pre-wrap">{rec.notes}</span>
             </Detail>
           )}
-          {rec.sourceRowStart !== null && (
-            <Detail label="Source">
-              Workbook rows {rec.sourceRowStart}
-              {rec.sourceRowEnd !== rec.sourceRowStart ? `–${rec.sourceRowEnd}` : ""}
-            </Detail>
-          )}
-          <Detail label="Last updated">{formatTimestamp(rec.updatedAt)}</Detail>
         </dl>
       </section>
 
-      <TableSection
-        id="psm-scenarios"
-        title={`Hazard scenarios (${rec.scenarios.length})`}
-        description="The governing risk is the highest risk among these scenarios. Each scenario is kept separately."
-        actions={
-          canEdit ? (
-            <Button variant="outline" size="sm" onClick={() => setDialog("add-scenario")}>
-              <Plus />
-              Add scenario
-            </Button>
-          ) : undefined
-        }
-      >
-        {rec.scenarios.length === 0 ? (
-          <p className="px-4 py-3 text-sm text-muted-foreground">No scenarios recorded.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1000px] text-left text-sm">
-              <caption className="sr-only">Hazard scenarios</caption>
-              <thead className="border-b bg-muted/30">
-                <tr>
-                  {["#", "Event", "Cause", "Consequence", "Risk", "Area / equipment", "Process node", ""].map((h, i) => (
-                    <th key={i} scope="col" className={TH}>
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {rec.scenarios.map((s, index) => (
-                  <tr key={s.id} className="border-b border-border/60 align-top last:border-b-0">
-                    <td className={cn(TD, "tabular-nums")}>{index + 1}</td>
-                    <td className={cn(TD, "max-w-64 whitespace-pre-wrap")}>{s.event}</td>
-                    <td className={cn(TD, "max-w-64 whitespace-pre-wrap")}>{s.cause}</td>
-                    <td className={cn(TD, "max-w-72 whitespace-pre-wrap")}>{s.consequence}</td>
-                    <td className={TD}>
-                      <RiskBadge risk={s.risk} />
-                      {s.riskSource && s.riskSource.trim().toLowerCase() !== RISK_LABELS[s.risk]?.toLowerCase() && (
-                        <span className="mt-1 block text-xs text-muted-foreground">Recorded as “{s.riskSource}”</span>
-                      )}
-                    </td>
-                    <td className={TD}>{s.areaEquipment ?? <NotEntered label="—" />}</td>
-                    <td className={cn(TD, "max-w-48")}>{s.processNode ?? <NotEntered label="—" />}</td>
-                    <td className={cn(TD, "whitespace-nowrap")}>
-                      {canEdit && (
-                        <span className="flex gap-1">
-                          <Button variant="ghost" size="sm" aria-label={`Move scenario ${index + 1} up`} disabled={index === 0 || reorder.isPending} onClick={() => move(index, -1)}>
-                            <ArrowUp />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            aria-label={`Move scenario ${index + 1} down`}
-                            disabled={index === rec.scenarios.length - 1 || reorder.isPending}
-                            onClick={() => move(index, 1)}
-                          >
-                            <ArrowDown />
-                          </Button>
-                          <Button variant="ghost" size="sm" aria-label={`Edit scenario ${index + 1}`} onClick={() => setEditingScenario(s)}>
-                            <Pencil />
-                          </Button>
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        {reorder.error ? (
-          <div className="p-3">
-            <FormError error={reorder.error} />
-          </div>
-        ) : null}
-      </TableSection>
+      <ScenarioList
+        scenarios={rec.scenarios}
+        canEdit={canEdit}
+        reordering={reorder.isPending}
+        reorderError={reorder.error}
+        onMove={move}
+        onEdit={setEditingScenario}
+        onAdd={() => setDialog("add-scenario")}
+      />
 
       <DispositionSection rec={rec} canDecide={canDecide} onOpen={setDialog} />
       <ActionSummary rec={rec} />
@@ -328,11 +265,143 @@ function DispositionSection({ rec, canDecide, onOpen }: { rec: RecommendationDet
         <Detail label="Decided by">{rec.dispositionByName}</Detail>
         <Detail label="Decided">{rec.dispositionAt ? formatTimestamp(rec.dispositionAt) : null}</Detail>
         {rec.dispositionJustification && (
-          <Detail label="Rejection justification" className="col-span-2 sm:col-span-4">
+          <Detail
+            label={rec.disposition === "rejected" ? "Rejection justification" : "Earlier rejection justification"}
+            className="col-span-2 sm:col-span-4"
+          >
             <span className="whitespace-pre-wrap">{rec.dispositionJustification}</span>
           </Detail>
         )}
       </dl>
+    </section>
+  );
+}
+
+/** Each hazard scenario as its own collapsible card, in workbook order. */
+function ScenarioList({
+  scenarios,
+  canEdit,
+  reordering,
+  reorderError,
+  onMove,
+  onEdit,
+  onAdd,
+}: {
+  scenarios: Scenario[];
+  canEdit: boolean;
+  reordering: boolean;
+  reorderError: unknown;
+  onMove: (index: number, step: number) => void;
+  onEdit: (scenario: Scenario) => void;
+  onAdd: () => void;
+}) {
+  const [collapsed, setCollapsed] = useState<ReadonlySet<number>>(() => new Set());
+  const toggle = (id: number) =>
+    setCollapsed((previous) => {
+      const next = new Set(previous);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const allCollapsed = scenarios.every((s) => collapsed.has(s.id));
+  return (
+    <section aria-labelledby="psm-scenarios" className="space-y-3 rounded-lg border bg-card p-4 sm:p-5">
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 id="psm-scenarios" className="text-base font-semibold">
+            Hazard scenarios ({scenarios.length})
+          </h2>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            Each scenario is kept separately, in workbook order. The governing risk is the highest risk among them.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {scenarios.length > 1 && (
+            <>
+              <Button variant="ghost" size="sm" disabled={collapsed.size === 0} onClick={() => setCollapsed(new Set())}>
+                Expand all
+              </Button>
+              <Button variant="ghost" size="sm" disabled={allCollapsed} onClick={() => setCollapsed(new Set(scenarios.map((s) => s.id)))}>
+                Collapse all
+              </Button>
+            </>
+          )}
+          {canEdit && (
+            <Button variant="outline" size="sm" onClick={onAdd}>
+              <Plus />
+              Add scenario
+            </Button>
+          )}
+        </div>
+      </header>
+      {scenarios.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No scenarios recorded.</p>
+      ) : (
+        <ol className="space-y-3">
+          {scenarios.map((s, index) => {
+            const open = !collapsed.has(s.id);
+            const number = String(index + 1).padStart(2, "0");
+            const bodyId = `psm-scenario-${s.id}`;
+            return (
+              <li key={s.id} className="rounded-md border">
+                <div className="flex flex-wrap items-center gap-2 px-3 py-2">
+                  <button
+                    type="button"
+                    aria-expanded={open}
+                    aria-controls={bodyId}
+                    onClick={() => toggle(s.id)}
+                    className="flex min-w-0 flex-1 items-center gap-2 rounded-sm py-1 text-left text-sm font-medium focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  >
+                    <ChevronRight aria-hidden className={cn("size-4 shrink-0 transition-transform", open && "rotate-90")} />
+                    <span className="shrink-0">Scenario {number}</span>
+                    {!open && <span className="min-w-0 truncate font-normal text-muted-foreground">{s.event}</span>}
+                  </button>
+                  <RiskBadge risk={s.risk} />
+                  {canEdit && (
+                    <span className="flex gap-1">
+                      <Button variant="ghost" size="sm" aria-label={`Move scenario ${index + 1} up`} disabled={index === 0 || reordering} onClick={() => onMove(index, -1)}>
+                        <ArrowUp />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        aria-label={`Move scenario ${index + 1} down`}
+                        disabled={index === scenarios.length - 1 || reordering}
+                        onClick={() => onMove(index, 1)}
+                      >
+                        <ArrowDown />
+                      </Button>
+                      <Button variant="ghost" size="sm" aria-label={`Edit scenario ${index + 1}`} onClick={() => onEdit(s)}>
+                        <Pencil />
+                      </Button>
+                    </span>
+                  )}
+                </div>
+                <dl id={bodyId} hidden={!open} className={cn("grid gap-4 border-t px-3 py-3 lg:grid-cols-3", !open && "hidden")}>
+                  <Detail label="Event">
+                    <span className="whitespace-pre-wrap">{s.event}</span>
+                  </Detail>
+                  <Detail label="Cause">
+                    <span className="whitespace-pre-wrap">{s.cause}</span>
+                  </Detail>
+                  <Detail label="Consequence">
+                    <span className="whitespace-pre-wrap">{s.consequence}</span>
+                  </Detail>
+                  <Detail label="Risk">
+                    <RiskBadge risk={s.risk} />
+                    {s.riskSource && s.riskSource.trim().toLowerCase() !== RISK_LABELS[s.risk]?.toLowerCase() && (
+                      <span className="mt-1 block text-xs text-muted-foreground">Recorded as “{s.riskSource}”</span>
+                    )}
+                  </Detail>
+                  <Detail label="Area / equipment">{s.areaEquipment}</Detail>
+                  <Detail label="Process node">{s.processNode}</Detail>
+                </dl>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+      {reorderError ? <FormError error={reorderError} /> : null}
     </section>
   );
 }
@@ -364,8 +433,12 @@ function ActionSummary({ rec }: { rec: RecommendationDetail }) {
             </span>
           </Detail>
           <Detail label="Owner">
-            {action.ownerName}
-            {action.ownerEmail ? <span className="block text-xs text-muted-foreground">{action.ownerEmail}</span> : null}
+            {action.ownerName || action.ownerEmail ? (
+              <>
+                {action.ownerName}
+                {action.ownerEmail && <span className="block text-xs text-muted-foreground">{action.ownerEmail}</span>}
+              </>
+            ) : null}
           </Detail>
           <Detail label="Department">{action.department}</Detail>
           <Detail label="Due date">{action.dueDate ? formatDate(action.dueDate) : null}</Detail>
@@ -706,23 +779,27 @@ function TimelineSection({ id }: { id: number }) {
           <p className="px-4 py-3 text-sm text-muted-foreground">Loading…</p>
         ) : (
           <ol className="divide-y">
-            {timeline.data.map((event, index) => (
-              <li key={index} className="px-4 py-2 text-sm">
-                <p>
-                  <span className="font-medium">{EVENT_LABELS[event.event] ?? event.event}</span>
-                  <span className="text-muted-foreground">
-                    {" "}
-                    · {event.entity} · {event.actorName} · {formatTimestamp(event.occurredAt)}
-                  </span>
-                </p>
-                {(event.oldValue || event.newValue) && (
-                  <p className="mt-0.5 text-xs break-words text-muted-foreground">
-                    {event.oldValue && <span>From {describeValues(event.oldValue)}. </span>}
-                    {event.newValue && <span>To {describeValues(event.newValue)}.</span>}
+            {timeline.data.map((event, index) => {
+              const from = describeValues(event.oldValue);
+              const to = describeValues(event.newValue);
+              return (
+                <li key={index} className="px-4 py-2 text-sm">
+                  <p>
+                    <span className="font-medium">{EVENT_LABELS[event.event] ?? event.event}</span>
+                    <span className="text-muted-foreground">
+                      {" "}
+                      · {event.entity} · {event.actorName} · {formatTimestamp(event.occurredAt)}
+                    </span>
                   </p>
-                )}
-              </li>
-            ))}
+                  {(from || to) && (
+                    <p className="mt-0.5 text-xs break-words text-muted-foreground">
+                      {from && <span className="block">From {from}</span>}
+                      {to && <span className="block">To {to}</span>}
+                    </p>
+                  )}
+                </li>
+              );
+            })}
           </ol>
         ))}
     </TableSection>

@@ -288,7 +288,7 @@ def study_out(
         recommendation_prefix=study.recommendation_prefix,
         status=study.status,
         study_date=study.study_date,
-        areas=[Option(id=a.id, name=f"{a.code} {a.name}", active=True) for a in areas],
+        areas=[Option(id=a.id, name=a.name, active=True) for a in areas],
         source_file_name=study.source_file_name,
         source_sheet_name=study.source_sheet_name,
         source_reference=study.source_reference,

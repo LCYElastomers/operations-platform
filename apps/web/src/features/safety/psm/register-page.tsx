@@ -248,21 +248,6 @@ export function RegisterPage({
         />
       </DashboardToolbar>
       <ActiveFilters chips={chips} onClearAll={clear} />
-      {selected && (
-        <ContextPanel
-          title={`${selected.displayId} · ${selected.areaEquipment}`}
-          description={<span className="line-clamp-3">{selected.recommendationText}</span>}
-          details={[
-            { label: "Governing risk", value: <RiskBadge risk={selected.governingRisk} /> },
-            { label: "Scenarios", value: selected.scenarioCount },
-            { label: "Disposition", value: <DispositionBadge disposition={selected.disposition} /> },
-            { label: "Action", value: <ActionStatusBadge status={selected.actionStatus} /> },
-          ]}
-          viewHref={recommendationHref(selected.id)}
-          viewLabel="View recommendation"
-          onClear={() => setSelected(null)}
-        />
-      )}
       {register.isError ? (
         <PsmError error={register.error} onRetry={() => void register.refetch()} />
       ) : register.isPending ? (
@@ -301,6 +286,21 @@ export function RegisterPage({
             />
           </TableSection>
         )
+      )}
+      {selected && (
+        <ContextPanel
+          title={`${selected.displayId} · ${selected.areaEquipment}`}
+          description={<span className="line-clamp-3">{selected.recommendationText}</span>}
+          details={[
+            { label: "Governing risk", value: <RiskBadge risk={selected.governingRisk} /> },
+            { label: "Scenarios", value: selected.scenarioCount },
+            { label: "Disposition", value: <DispositionBadge disposition={selected.disposition} /> },
+            { label: "Action", value: <ActionStatusBadge status={selected.actionStatus} /> },
+          ]}
+          viewHref={recommendationHref(selected.id)}
+          viewLabel="View recommendation"
+          onClear={() => setSelected(null)}
+        />
       )}
     </div>
   );
@@ -409,7 +409,7 @@ export function RegisterTable({
                 <td className={cn(TD, "max-w-48")}>
                   <span className="line-clamp-2">{row.areaEquipment}</span>
                 </td>
-                <th scope="row" className={cn(TD, "max-w-96 font-normal")}>
+                <th scope="row" className={cn(TD, "max-w-96 min-w-72 font-normal")}>
                   <span className="line-clamp-2" title={row.recommendationText}>
                     {row.recommendationText}
                   </span>
@@ -425,7 +425,7 @@ export function RegisterTable({
                 <td className={TD}>
                   <RiskBadge risk={row.governingRisk} />
                 </td>
-                <td className={cn(TD, "max-w-48")}>
+                <td className={cn(TD, "max-w-48 min-w-40")}>
                   <span className="line-clamp-2">{row.processNode ?? <NotEntered label="—" />}</span>
                 </td>
                 <td className={TD}>
@@ -513,7 +513,7 @@ function Studies({ abilities, options }: { abilities: PsmOptions["abilities"] | 
                     </th>
                     <td className={TD}>{study.studyType}</td>
                     <td className={TD}>{study.year}</td>
-                    <td className={TD}>{study.areas.map((a) => a.name.split(" ")[0]).join(", ") || <NotEntered label="—" />}</td>
+                    <td className={TD}>{study.areas.map((a) => a.name).join(", ") || <NotEntered label="—" />}</td>
                     <td className={TD}>{c.recommendations}</td>
                     <td className={TD}>{c.scenarios}</td>
                     <td className={TD}>{c.pending}</td>

@@ -125,7 +125,9 @@ export function Detail({ label, children, className }: { label: string; children
 
 /**
  * The selected item of a dashboard or list: what it is, and an explicit button
- * to open it. Selecting never navigates; only the View button does.
+ * to open it. Selecting never navigates; only the View button does. Render it
+ * after the content it belongs to: it stays pinned to the bottom of the
+ * viewport, so it is visible wherever the selection was made.
  */
 export function ContextPanel({
   title,
@@ -146,7 +148,7 @@ export function ContextPanel({
     <aside
       aria-label="Selection"
       aria-live="polite"
-      className="flex flex-col gap-3 rounded-lg border border-primary/30 bg-primary/5 p-4 sm:flex-row sm:items-start sm:justify-between"
+      className="sticky bottom-4 z-20 flex flex-col gap-3 rounded-lg border border-primary/40 bg-card p-4 shadow-lg sm:flex-row sm:items-start sm:justify-between"
     >
       <div className="min-w-0 space-y-1">
         <p className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">Selected</p>

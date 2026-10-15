@@ -27,11 +27,16 @@ def _blank_is_none(value: object) -> object:
 
 Required = Annotated[str, BeforeValidator(_strip), Field(min_length=1, max_length=MAX_TEXT)]
 Short = Annotated[str, BeforeValidator(_strip), Field(min_length=1, max_length=MAX_SHORT)]
+# Constraints sit on the `str` branch: on the union they fail on an explicit null.
 OptionalText = Annotated[
-    str | None, BeforeValidator(_blank_is_none), Field(default=None, max_length=MAX_TEXT)
+    Annotated[str, Field(max_length=MAX_TEXT)] | None,
+    BeforeValidator(_blank_is_none),
+    Field(default=None),
 ]
 OptionalShort = Annotated[
-    str | None, BeforeValidator(_blank_is_none), Field(default=None, max_length=MAX_SHORT)
+    Annotated[str, Field(max_length=MAX_SHORT)] | None,
+    BeforeValidator(_blank_is_none),
+    Field(default=None),
 ]
 Reason = Annotated[
     str, BeforeValidator(_strip), Field(min_length=MIN_REASON_LENGTH, max_length=MAX_TEXT)
@@ -44,9 +49,9 @@ def _email(value: object) -> object:
 
 
 OptionalEmail = Annotated[
-    str | None,
+    Annotated[str, Field(max_length=254, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")] | None,
     BeforeValidator(_email),
-    Field(default=None, max_length=254, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$"),
+    Field(default=None),
 ]
 Risk = Literal["high", "medium", "low"]
 EvidenceType = Literal[

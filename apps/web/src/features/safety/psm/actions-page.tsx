@@ -185,21 +185,6 @@ export function ActionsPage({ title, description, initial }: { title: string; de
         onValueChange={(tab) => setFilters({ ...filters, tab })}
       >
         <div className="space-y-4">
-          {selected && (
-            <ContextPanel
-              title={`${selected.actionNumber} · ${selected.recommendationDisplayId}`}
-              description={<span className="line-clamp-3">{selected.title}</span>}
-              details={[
-                { label: "Status", value: <ActionStatusBadge status={selected.status} /> },
-                { label: "Owner", value: selected.ownerName },
-                { label: "Due date", value: selected.dueDate ? formatDate(selected.dueDate) : null },
-                { label: "Governing risk", value: <RiskBadge risk={selected.governingRisk} /> },
-              ]}
-              viewHref={actionHref(selected.id)}
-              viewLabel="View action"
-              onClear={() => setSelected(null)}
-            />
-          )}
           {actions.isError ? (
             <PsmError error={actions.error} onRetry={() => void actions.refetch()} />
           ) : actions.isPending ? (
@@ -242,6 +227,21 @@ export function ActionsPage({ title, description, initial }: { title: string; de
                 />
               </TableSection>
             )
+          )}
+          {selected && (
+            <ContextPanel
+              title={`${selected.actionNumber} · ${selected.recommendationDisplayId}`}
+              description={<span className="line-clamp-3">{selected.title}</span>}
+              details={[
+                { label: "Status", value: <ActionStatusBadge status={selected.status} /> },
+                { label: "Owner", value: selected.ownerName },
+                { label: "Due date", value: selected.dueDate ? formatDate(selected.dueDate) : null },
+                { label: "Governing risk", value: <RiskBadge risk={selected.governingRisk} /> },
+              ]}
+              viewHref={actionHref(selected.id)}
+              viewLabel="View action"
+              onClear={() => setSelected(null)}
+            />
           )}
         </div>
       </Tabs>
@@ -311,7 +311,7 @@ function ActionTable({
                     {row.actionNumber}
                   </button>
                 </th>
-                <td className={cn(TD, "max-w-80")}>
+                <td className={cn(TD, "max-w-80 min-w-64")}>
                   <span className="font-medium">{row.recommendationDisplayId}</span>
                   <span className="line-clamp-2 text-muted-foreground" title={row.title}>
                     {row.title}

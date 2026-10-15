@@ -140,8 +140,12 @@ function ActionFile({ detail, options }: { detail: ActionDetail; options: PsmOpt
         <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <Detail label="Department">{action.department}</Detail>
           <Detail label="Owner">
-            {action.ownerName}
-            {action.ownerEmail ? <span className="block text-xs text-muted-foreground">{action.ownerEmail}</span> : null}
+            {action.ownerName || action.ownerEmail ? (
+              <>
+                {action.ownerName}
+                {action.ownerEmail && <span className="block text-xs text-muted-foreground">{action.ownerEmail}</span>}
+              </>
+            ) : null}
           </Detail>
           <Detail label="Due date">{action.dueDate ? formatDate(action.dueDate) : null}</Detail>
           <Detail label="Open for">{action.status === "closed" ? "Closed" : `${action.ageDays} ${action.ageDays === 1 ? "day" : "days"}`}</Detail>
@@ -166,7 +170,7 @@ function ActionFile({ detail, options }: { detail: ActionDetail; options: PsmOpt
         target={{ actionId: action.id }}
         attachments={detail.attachments}
         evidenceTypes={options.evidenceTypes}
-        canUpload={(a.manageActions || a.requestClosure || a.editRecommendation) && !action.archived}
+        canUpload={(a.manageActions || a.requestClosure) && !action.archived}
         canRemove={a.manageActions || a.requestClosure || a.editRecommendation}
         lockedReason={locked}
       />

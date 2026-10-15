@@ -16,6 +16,7 @@ from app.core import mail
 from app.core.config import Settings
 from app.safety.psm import metrics, pha_import
 from app.safety.psm.metrics import ActionView, RecommendationView
+from app.safety.psm.reference import MAX_SHORT, MAX_TEXT
 from app.safety.psm.schemas import (
     AcceptRequest,
     ActionUpdate,
@@ -224,6 +225,27 @@ def test_acceptance_needs_confirmation_and_takes_external_owner_email() -> None:
     )
     assert ok.owner_email == "pat@example.com"
     assert ok.department_id is None and ok.due_date is None
+
+
+def test_optional_text_accepts_explicit_nulls_and_still_limits_length() -> None:
+    blank = AcceptRequest.model_validate(
+        {
+            "version": 1,
+            "confirm": True,
+            "departmentId": None,
+            "ownerUserId": None,
+            "ownerName": None,
+            "ownerEmail": None,
+            "dueDate": None,
+            "task": None,
+        }
+    )
+    assert blank.owner_name is None and blank.owner_email is None and blank.task is None
+    assert AcceptRequest.model_validate({"version": 1, "confirm": True, "task": "  "}).task is None
+    too_long = (("task", "x" * (MAX_TEXT + 1)), ("ownerName", "x" * (MAX_SHORT + 1)))
+    for field, value in (*too_long, ("ownerEmail", "nope")):
+        with pytest.raises(ValidationError):
+            AcceptRequest.model_validate({"version": 1, "confirm": True, field: value})
 
 
 # Worksheet parsing ---------------------------------------------------------------------

@@ -148,16 +148,6 @@ export function CommandCenter({ title, description, initialStudyId = "" }: { tit
         <NoPsmData filtered={Boolean(study)} />
       ) : (
         <>
-          {selected && (
-            <ContextPanel
-              title={selected.title}
-              description={selected.description}
-              details={selected.details}
-              viewHref={selected.href}
-              viewLabel={selected.viewLabel}
-              onClear={() => setSelected(null)}
-            />
-          )}
           <KpiCards data={data} study={study} selected={selected} onSelect={select} />
           {data && (
             <>
@@ -213,6 +203,16 @@ export function CommandCenter({ title, description, initialStudyId = "" }: { tit
                 emptyState={<p className="px-4 py-6 text-sm text-muted-foreground">No actions yet.</p>}
               />
             </>
+          )}
+          {selected && (
+            <ContextPanel
+              title={selected.title}
+              description={selected.description}
+              details={selected.details}
+              viewHref={selected.href}
+              viewLabel={selected.viewLabel}
+              onClear={() => setSelected(null)}
+            />
           )}
         </>
       )}
@@ -373,7 +373,7 @@ function RiskPanel({
                     style={{ width: `${share}%` }}
                   />
                 </span>
-                <span className="w-24 text-right text-sm tabular-nums">{plural(count, noun[0], noun[1])}</span>
+                <span className="shrink-0 text-right text-sm whitespace-nowrap tabular-nums">{plural(count, noun[0], noun[1])}</span>
               </Selectable>
             </li>
           );
@@ -424,7 +424,7 @@ function Matrix({ data, study, selected, onSelect }: PanelProps) {
                         }}
                         selected={selected}
                         onSelect={onSelect}
-                        className={cn("w-full rounded-md px-3 py-2 hover:bg-muted/60", count === 0 && "text-muted-foreground")}
+                        className={cn("w-full rounded-md px-3 py-2 text-center hover:bg-muted/60", count === 0 && "text-muted-foreground")}
                         label={`${RISK_LABELS[risk]} risk, ${column.label}: ${count}`}
                       >
                         {count}
@@ -581,7 +581,7 @@ function Deadlines({ data, study, selected, onSelect }: PanelProps) {
     <TableSection
       id="psm-deadlines"
       title="Deadlines"
-      description={`Open actions by due date. ${plural(data.needsScheduling, "open action has", "open actions have")} no due date and need scheduling; they are not overdue.`}
+      description={`Open actions by due date. ${plural(data.needsScheduling, "open action has no due date and needs scheduling; it is", "open actions have no due date and need scheduling; they are")} not overdue.`}
       actions={
         data.needsScheduling > 0 ? (
           <Link href={actionsHref({ studyId: study, dueState: "no_due_date" })} className="text-sm font-medium text-primary hover:underline">

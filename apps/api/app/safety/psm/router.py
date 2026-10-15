@@ -256,7 +256,7 @@ def options(principal: Viewer, store: Store) -> OptionsOut:
     return OptionsOut(
         studies=[Option(id=s.id, name=s.title, active=s.status != "archived") for s in studies],
         study_types=[Option(id=t.id, name=t.name, active=t.active) for t in types],
-        areas=[Option(id=a.id, name=f"{a.code} {a.name}", active=True) for a in areas],
+        areas=[Option(id=a.id, name=a.name, active=True) for a in areas],
         departments=[
             Option(id=d.id, name=d.name, active=d.active) for d in scope.departments.values()
         ],
