@@ -12,6 +12,7 @@ from app.reports import router as reports
 from app.safety import router as safety
 from app.safety.observations import router as safety_observations
 from app.safety.performance import router as safety_performance
+from app.safety.psm import router as safety_psm
 from app.safety.records import router as safety_records
 from app.safety.trir import router as safety_trir
 
@@ -30,4 +31,5 @@ api_router.include_router(safety_records.router)
 api_router.include_router(safety_observations.router)
 api_router.include_router(safety_performance.router)
 api_router.include_router(safety_trir.router)
+api_router.include_router(safety_psm.router)
 api_router.include_router(reports.router)

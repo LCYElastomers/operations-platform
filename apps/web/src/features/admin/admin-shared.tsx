@@ -108,6 +108,7 @@ const MODULE_LABELS: Record<string, string> = {
   safetyObservation: "Safety observations",
   safetyAction: "Safety actions",
   safetyInvestigation: "Safety investigations",
+  psm: "Process Safety Management",
   safetyDashboard: "Dashboards",
   assignments: "Assignments",
   attachments: "Attachments",

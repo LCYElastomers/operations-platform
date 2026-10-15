@@ -1,7 +1,8 @@
 """The standard roles and their initial permissions.
 
 Migration 0013 seeds these into ``core.roles`` and ``core.role_permissions``
-(with its own frozen copy; a test keeps the two equal). After that the
+(with its own frozen copy; 0015 adds the ``psm.*`` permissions and PSM_ADMIN;
+a test keeps the migrations and this module equal). After that the
 database is authoritative: administrators may change a role's permissions,
 but standard roles cannot be deleted. ADMIN is the only standard role holding
 ``users.manage`` and ``roles.manage``.
@@ -71,6 +72,7 @@ SAFETY_ADMIN = (
     | _group("safetyObservation")
     | _group("safetyAction")
     | _group("safetyInvestigation")
+    | _group("psm")
     | _ASSIGNMENTS_ALL
     | _ATTACHMENTS_ADMIN
     | _COMMENTS_ADMIN
@@ -103,11 +105,17 @@ SAFETY_USER = (
         P.SAFETY_INVESTIGATION_CREATE,
         P.SAFETY_INVESTIGATION_EDIT,
         P.SAFETY_INVESTIGATION_COMPLETE,
+        P.PSM_VIEW,
+        P.PSM_MANAGE_ACTIONS,
+        P.PSM_REQUEST_CLOSURE,
     }
     | _ASSIGNMENTS_OWN
     | _ATTACHMENTS_USER
     | _COMMENTS_USER
 )
+
+# Runs the whole PSM workflow, including for action owners who have no account.
+PSM_ADMIN = {P.APP_VIEW} | _group("psm")
 
 CONTRIBUTOR = {P.APP_VIEW} | _ASSIGNMENTS_OWN | _ATTACHMENTS_USER | _COMMENTS_USER
 
@@ -125,6 +133,7 @@ VIEWER = {
     P.SAFETY_OBSERVATION_VIEW,
     P.SAFETY_ACTION_VIEW,
     P.SAFETY_INVESTIGATION_VIEW,
+    P.PSM_VIEW,
     P.ATTACHMENTS_VIEW,
     P.COMMENTS_VIEW,
     P.ASSIGNMENTS_VIEW_OWN,
@@ -165,6 +174,14 @@ STANDARD_ROLES: tuple[RoleDefinition, ...] = (
         "Views Safety and enters and updates Safety records and observations. Does not "
         "approve or close records.",
         frozenset(SAFETY_USER),
+    ),
+    RoleDefinition(
+        "PSM_ADMIN",
+        "PSM Administrator",
+        "Administers Process Safety Management: PHA studies, recommendations and hazard "
+        "scenarios, dispositions, actions, closure verification, reference data, imports and "
+        "exports. No other Safety, Quality, user or role administration.",
+        frozenset(PSM_ADMIN),
     ),
     RoleDefinition(
         "CONTRIBUTOR",

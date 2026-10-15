@@ -1953,6 +1953,121 @@ rows are the workbook snapshot, kept for provenance and reconciliation. The
 denominator: from 2026, a year without Safety Performance monthly hours
 shows TRIR as unavailable instead of falling back to the history row.
 
+## Safety > Process Safety Management
+
+Routes under `/safety/psm` (Safety > Process Safety Management): Command
+Center (`/safety/psm`), PHA Management (`/pha`, `/pha/{studyId}`,
+`/pha/recommendations/{id}`, `/pha/recommendations/new`), Action Items
+(`/actions`, `/actions/{id}`), PSM Audits (`/audits`, an empty state until
+audits are configured), Reports (`/reports`) and Settings (`/settings`). Code
+lives in `apps/api/app/safety/psm/` and `apps/web/src/features/safety/psm/`.
+
+### Data model (migration `0015`, schema `safety`)
+
+A **study** (`psm_studies`, type PHA) has **recommendations**
+(`psm_recommendations`). Each recommendation has one or more **hazard
+scenarios** (`psm_scenarios`: event, cause, consequence, risk High / Medium /
+Low) and at most one **action** (`psm_actions`). Reference lists:
+`psm_study_types`, `psm_departments`, `psm_process_nodes`, `psm_elements`.
+Actions carry `psm_action_updates` (comments and workflow notes),
+`psm_attachments` (evidence; file bytes in `psm_attachment_contents`) and
+`psm_notifications` (the email outbox). `psm_notification_settings` is a
+single row.
+
+- **Disposition** (Pending Review, Accepted, Rejected) is the review decision
+  and is separate from the **action status** (Not Started, In Progress,
+  Pending Verification, Closed).
+- **Governing risk** is the highest scenario risk. Scenario-risk figures count
+  scenarios; governing-risk figures count recommendations.
+- Accepting creates exactly one action; accepting again (also after a
+  rejection) reinstates it. Rejecting needs a justification of at least 20
+  characters; a rejected recommendation with an action flags the action for a
+  PSM administrator to keep or archive. Nothing is deleted: recommendations
+  are archived with a reason and can be restored.
+- **Closure** only through a closure request (summary plus evidence, or a
+  PSM administrator's documented exception) followed by verification. Editing
+  never closes an action. Returning a closure, reopening, skipping In
+  Progress and moving the due date after work has begun all need a reason.
+- Drafts and archived recommendations are left out of every figure. A
+  missing due date is "needs scheduling", never overdue. Empty figures are
+  shown as empty, not zero percentages.
+- Every change is written to the audit trail (`core.audit_events`) with an
+  `event` name (for example `action_generated`, `closure_requested`,
+  `closure_verified`, `reopened`); the recommendation's History panel reads it.
+- Writes use optimistic concurrency (`version`): a stale edit gets HTTP 409
+  and saves nothing.
+
+### Permissions
+
+`psm.view`, `psm.manageStudies`, `psm.editRecommendations`,
+`psm.decideDisposition`, `psm.manageActions`, `psm.requestClosure`,
+`psm.verifyClosure`, `psm.reopen`, `psm.admin`, `psm.import`, `psm.export`.
+The migration grants all of them to ADMIN, SAFETY_ADMIN and the new
+PSM_ADMIN role; SAFETY_USER gets view, manage actions and request closure;
+VIEWER gets view. The API enforces every permission; the UI only hides what a
+user cannot do.
+
+### API (`/api/v1/safety/psm/...`)
+
+`options`, `dashboard`, `studies`, `recommendations` (register with filters,
+sort and paging; the same filters drive the Command Center figures),
+`recommendations/{id}` (case file, scenarios, accept / reject /
+return-to-pending / archive / restore, evidence, `timeline`), `actions`
+(tabs, filters, aging buckets), `actions/{id}` (assignment, status,
+closure-request / closure-approval / closure-return / reopen, comments,
+resolution, evidence), `reference/departments|process-nodes`,
+`notification-settings`, `notifications/deliver`, `imports/pha/plan|apply`.
+Exports use the shared report endpoint: `psm-recommendations` (recommendation
+sheet plus a separate Scenarios sheet, one row per scenario) and
+`psm-actions`.
+
+### Importing the reviewed PHA workbook
+
+Only the sheet `2026 PHA - 300,400,600` is read. The reviewed mapping
+`apps/api/import_templates/psm_pha_2026_300_400_600.mapping.json` holds 20
+recommendations and 30 scenarios (12 Low, 18 Medium, 0 High). The workbook
+itself is not in the repository and is never modified.
+
+```bash
+cd apps/api
+uv run python -m app.safety.psm.pha_import extract "<workbook>.xlsx" out.json  # no database
+uv run python -m app.safety.psm.pha_import check import_templates/psm_pha_2026_300_400_600.mapping.json  # no database
+uv run python -m app.safety.psm.pha_import plan  import_templates/psm_pha_2026_300_400_600.mapping.json
+uv run python -m app.safety.psm.pha_import apply import_templates/psm_pha_2026_300_400_600.mapping.json  # audited, all or nothing
+```
+
+PSM administrators with `psm.import` can do the same from Settings > Import
+(review, then apply). New recommendations start in Pending Review with no
+action. The import is idempotent: it adds only what is missing and never
+overwrites stored values; differences are listed in the plan.
+
+### Email notifications
+
+Assignment, due-date and status changes (and, if enabled, comments) queue a
+notice in `psm_notifications` inside the same transaction; delivery happens
+afterwards, so a mail failure never blocks or undoes the change. A notice is
+marked sent only when the mail server accepts it; failures are retried and
+then shown as failed on the action. Without a configured mail server,
+notices stay queued and the UI says "Email is not configured; not sent".
+
+Configure on the server only (see `.env.example`): `SMTP_HOST`, `SMTP_PORT`,
+`SMTP_SECURITY` (`starttls`, `tls` or `none`), `SMTP_USERNAME`,
+`SMTP_PASSWORD`, `SMTP_FROM`, `APP_PUBLIC_URL`. Scheduled jobs:
+
+```bash
+uv run python -m app.safety.psm.notifications remind   # queue due-soon and overdue reminders
+uv run python -m app.safety.psm.notifications deliver  # send queued notices
+```
+
+### Limitations
+
+- Email is off until SMTP is configured; nothing schedules `remind` or
+  `deliver` yet (run them from cron or a scheduled task).
+- Evidence files (10 MB each) are stored in PostgreSQL.
+- Owners without a platform account are stored by name and email; they do not
+  resolve through the user directory.
+- PSM Audits is a placeholder; no audit data model exists yet.
+
 ## shadcn/ui
 
 `apps/web/components.json`, the `cn()` helper in `src/lib/utils.ts`, and the

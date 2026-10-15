@@ -22,14 +22,14 @@ from app.db.session import DatabaseNotConfiguredError
 from app.main import create_app
 
 P = Permission
-MIGRATION = next(
-    (Path(__file__).parents[1] / "alembic" / "versions").glob("*-0013_users_roles_permissions.py")
-)
+VERSIONS = Path(__file__).parents[1] / "alembic" / "versions"
+MIGRATION = next(VERSIONS.glob("*-0013_users_roles_permissions.py"))
+PSM_MIGRATION = next(VERSIONS.glob("*-0015_process_safety_management.py"))
 COST_RECORDS = "/api/v1/quality/cost/records"
 
 
-def _migration() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("migration_0013", MIGRATION)
+def _migration(path: Path = MIGRATION) -> ModuleType:
+    spec = importlib.util.spec_from_file_location(f"migration_{path.stem}", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -49,6 +49,7 @@ def test_standard_roles_are_the_specified_set() -> None:
         "QUALITY_USER",
         "SAFETY_ADMIN",
         "SAFETY_USER",
+        "PSM_ADMIN",
         "CONTRIBUTOR",
         "VIEWER",
     ]
@@ -75,8 +76,17 @@ def test_only_admin_manages_users_and_roles() -> None:
 def test_module_roles_stay_in_their_module() -> None:
     quality = {p.value.split(".")[0] for p in ROLES["QUALITY_ADMIN"].permissions}
     safety = {p.value.split(".")[0] for p in ROLES["SAFETY_ADMIN"].permissions}
-    assert not quality & {"safety", "safetyRecord", "incident", "nearMiss", "safetyDashboard"}
+    psm = {p.value.split(".")[0] for p in ROLES["PSM_ADMIN"].permissions}
+    assert not quality & {
+        "safety",
+        "safetyRecord",
+        "incident",
+        "nearMiss",
+        "safetyDashboard",
+        "psm",
+    }
     assert not safety & {"quality", "qualityCost", "car", "qualityDashboard"}
+    assert psm == {"app", "psm"}
 
 
 def test_quality_user_cannot_approve_or_close_cars() -> None:
@@ -99,20 +109,29 @@ def test_contributor_has_no_module_access() -> None:
 
 
 def test_migration_seed_matches_the_catalog_and_roles() -> None:
-    migration = _migration()
-    assert set(migration.PERMISSIONS) == {p.value for p in Permission}
-    assert len(migration.PERMISSIONS) == len(set(migration.PERMISSIONS))
-    assert set(migration.MODULE_LABELS) == {p.value.split(".")[0] for p in Permission}
-    assert [code for code, _, _ in migration.ROLES] == list(ROLES)
-    for code, name, description in migration.ROLES:
+    """0013 seeds the catalog and roles; 0015 adds ``psm.*`` and PSM_ADMIN."""
+    migration, psm = _migration(), _migration(PSM_MIGRATION)
+    seeded = (*migration.PERMISSIONS, *psm.PERMISSIONS)
+    assert set(seeded) == {p.value for p in Permission}
+    assert len(seeded) == len(set(seeded))
+    assert set(migration.MODULE_LABELS) | {"psm"} == {p.value.split(".")[0] for p in Permission}
+    roles = [*migration.ROLES, psm.NEW_ROLE]
+    assert {code for code, _, _ in roles} == set(ROLES)
+    grants = {code: set(codes) for code, codes in migration.ROLE_PERMISSIONS.items()}
+    for code, codes in psm.ROLE_GRANTS.items():
+        grants[code] |= set(codes)
+    grants[psm.NEW_ROLE[0]] = set(psm.NEW_ROLE_PERMISSIONS)
+    for code, name, description in roles:
         assert (name, description) == (ROLES[code].name, ROLES[code].description)
-        assert set(migration.ROLE_PERMISSIONS[code]) == {p.value for p in ROLES[code].permissions}
+        assert grants[code] == {p.value for p in ROLES[code].permissions}, code
 
 
 def test_migration_creates_no_user_accounts() -> None:
-    source = MIGRATION.read_text(encoding="utf-8").lower()
-    assert "bulk_insert(users" not in source.replace(" ", "")
-    assert "insert into core.users" not in source
+    for path in (MIGRATION, PSM_MIGRATION):
+        source = path.read_text(encoding="utf-8").lower()
+        assert "bulk_insert(users" not in source.replace(" ", "")
+        assert "insert into core.users" not in source
+        assert "user_roles (" not in source
 
 
 # Principal ---------------------------------------------------------------------------

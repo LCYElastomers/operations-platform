@@ -17,6 +17,12 @@ const requiredRoutes = [
   "/safety/performance/data-entry",
   "/safety/performance/dashboard",
   "/safety/trir",
+  "/safety/psm",
+  "/safety/psm/pha",
+  "/safety/psm/actions",
+  "/safety/psm/audits",
+  "/safety/psm/reports",
+  "/safety/psm/settings",
   "/environmental",
   "/procurement",
   "/sales",
@@ -111,7 +117,33 @@ describe("navigation config", () => {
       "Safety Observations",
       "Safety Performance",
       "TRIR Experience",
+      "Process Safety Management",
     ]);
+  });
+
+  it.each([
+    ["/safety/psm", "Command Center"],
+    ["/safety/psm/pha", "PHA Management"],
+    ["/safety/psm/actions", "Action Items"],
+    ["/safety/psm/audits", "PSM Audits"],
+    ["/safety/psm/reports", "Reports"],
+  ])("nests %s under Safety > Process Safety Management", (route, label) => {
+    const trail = findNavTrail(navigation, route);
+    expect(trail.map((item) => item.label)).toEqual(["Safety", "Process Safety Management", label]);
+  });
+
+  it("keeps PSM record pages within their section", () => {
+    expect(findNavTrail(navigation, "/safety/psm/pha/recommendations/12").at(-1)?.id).toBe("safety-psm-pha");
+    expect(findNavTrail(navigation, "/safety/psm/actions/3").at(-1)?.id).toBe("safety-psm-actions");
+    expect(findNavTrail(navigation, "/safety/psm/actions").at(-1)?.id).toBe("safety-psm-actions");
+  });
+
+  it("restricts PSM pages to PSM permissions", () => {
+    const safety = moduleItems.find((item) => item.id === "safety");
+    const psm = safety?.children?.find((item) => item.id === "safety-psm");
+    for (const child of psm?.children ?? []) expect(child.requires?.all).toContain("psm.view");
+    expect(psm?.children?.find((c) => c.id === "safety-psm-reports")?.requires?.all).toContain("psm.export");
+    expect(psm?.children?.find((c) => c.id === "safety-psm-settings")?.requires?.any).toEqual(["psm.admin", "psm.import"]);
   });
 
   it("marks only the Observations page active on its dashboard", () => {

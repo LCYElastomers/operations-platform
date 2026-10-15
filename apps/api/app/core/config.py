@@ -76,6 +76,39 @@ class Settings(BaseSettings):
     login_max_failures: Annotated[int, Field(ge=3, le=20)] = 5
     login_lock_minutes: Annotated[int, Field(ge=1, le=24 * 60)] = 15
 
+    # Outgoing email (Process Safety Management notifications). Off unless
+    # SMTP_HOST and SMTP_FROM are set; notifications then stay queued and the
+    # application says so. The password is a secret and never logged.
+    smtp_host: str | None = None
+    smtp_port: Annotated[int, Field(ge=1, le=65535)] = 587
+    smtp_username: str | None = None
+    smtp_password: SecretStr | None = None
+    smtp_from: Annotated[str, Field(max_length=254)] | None = None
+    # "starttls" upgrades a plain connection (port 587); "tls" connects over TLS
+    # (port 465); "none" only for a trusted relay on the local network.
+    smtp_security: Literal["starttls", "tls", "none"] = "starttls"
+    smtp_timeout_seconds: Annotated[int, Field(ge=1, le=120)] = 20
+    # The address users open the application at, for links in emails.
+    app_public_url: Annotated[str, Field(max_length=300)] | None = None
+
+    @field_validator("smtp_host", "smtp_username", "smtp_from", "app_public_url", mode="before")
+    @classmethod
+    def _blank_is_unset(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value.strip() if isinstance(value, str) else value
+
+    @field_validator("smtp_password", mode="before")
+    @classmethod
+    def _blank_password_is_unset(cls, value: object) -> object:
+        if isinstance(value, str) and not value:
+            return None
+        return value
+
+    @property
+    def mail_enabled(self) -> bool:
+        return self.smtp_host is not None and self.smtp_from is not None
+
     @field_validator("database_url", mode="before")
     @classmethod
     def _blank_database_url_is_unset(cls, value: object) -> object:

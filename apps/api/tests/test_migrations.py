@@ -307,7 +307,7 @@ def test_users_migration_seeds_roles_and_links_without_rewriting_history(
 def test_official_observation_categories_migration_rewrites_no_observations(
     upgrade_sql: str,
 ) -> None:
-    sql = _segment(upgrade_sql, "0013 -> 0014")
+    sql = _segment(upgrade_sql, "0013 -> 0014", "0014 -> 0015")
     for label in (
         "'Awareness and Focus'",
         "'DOT Hazardous Material Transportation'",
@@ -326,4 +326,58 @@ def test_official_observation_categories_migration_rewrites_no_observations(
     assert "SET name" not in sql
     assert "safety.observations " not in sql
     assert "DELETE" not in sql
+    assert "DROP" not in sql
+
+
+def test_psm_migration_creates_tables_and_reference_data_only(upgrade_sql: str) -> None:
+    sql = _segment(upgrade_sql, "0014 -> 0015")
+    for table in (
+        "psm_study_types",
+        "psm_departments",
+        "psm_process_nodes",
+        "psm_elements",
+        "psm_studies",
+        "psm_study_areas",
+        "psm_recommendations",
+        "psm_scenarios",
+        "psm_actions",
+        "psm_action_updates",
+        "psm_attachments",
+        "psm_attachment_contents",
+        "psm_notifications",
+        "psm_notification_settings",
+    ):
+        assert f"CREATE TABLE safety.{table} " in sql
+    actions = sql.split("CREATE TABLE safety.psm_actions ", 1)[1].split(";", 1)[0]
+    # One primary action per recommendation; never closed without verification.
+    assert "UNIQUE (recommendation_id)" in actions
+    assert "verified_at IS NOT NULL" in actions
+    assert "'rejected'" not in actions
+    scenarios = sql.split("CREATE TABLE safety.psm_scenarios ", 1)[1].split(";", 1)[0]
+    assert "DEFERRABLE INITIALLY DEFERRED" in scenarios
+    assert "REFERENCES safety.psm_recommendations (id) ON DELETE RESTRICT" in scenarios
+    # Reference data, permissions and the PSM_ADMIN role; no study, recommendation,
+    # scenario, action, process node or user.
+    assert "INSERT INTO safety.psm_study_types" in sql
+    assert "INSERT INTO safety.psm_departments" in sql
+    assert "INSERT INTO safety.psm_elements" in sql
+    assert "INSERT INTO safety.psm_notification_settings" in sql
+    assert "INSERT INTO core.permissions" in sql
+    assert "'PSM_ADMIN'" in sql
+    for table in (
+        "psm_studies",
+        "psm_recommendations",
+        "psm_scenarios",
+        "psm_actions",
+        "psm_process_nodes",
+    ):
+        assert f"INSERT INTO safety.{table} " not in sql
+    assert "INSERT INTO core.users" not in sql
+    assert "INSERT INTO core.user_roles" not in sql
+    assert "Chad Kelly" not in sql
+    assert "ALTER TABLE" not in sql
+    assert "DELETE FROM" not in sql
+    assert "ON DELETE CASCADE" not in sql.replace(
+        "REFERENCES safety.psm_studies (id) ON DELETE CASCADE", ""
+    )
     assert "DROP" not in sql

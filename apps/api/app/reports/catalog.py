@@ -4,6 +4,7 @@ from app.quality.car import reports as car_reports
 from app.quality.cost import reports as cost_reports
 from app.reports.definitions import ReportDefinition
 from app.safety import reports as safety_reports
+from app.safety.psm import reports as psm_reports
 
 DEFINITIONS: tuple[ReportDefinition, ...] = (
     car_reports.DASHBOARD,
@@ -15,6 +16,8 @@ DEFINITIONS: tuple[ReportDefinition, ...] = (
     safety_reports.PERFORMANCE,
     safety_reports.TRIR,
     safety_reports.OBSERVATIONS,
+    psm_reports.RECOMMENDATIONS,
+    psm_reports.ACTIONS,
 )
 
 REPORTS: dict[str, ReportDefinition] = {d.key: d for d in DEFINITIONS}

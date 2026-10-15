@@ -1,0 +1,790 @@
+{
+  "source": {
+    "fileName": "PSM Dashboard 1.xlsx",
+    "sheetName": "2026 PHA - 300,400,600",
+    "sha256": "6cd0035a32671c0642326e3fed207944fd2fbdf6da860ac5c81bc83714520e6d"
+  },
+  "study": {
+    "studyCode": "PHA-2026-300-400-600",
+    "title": "2026 PHA - 300,400,600",
+    "year": 2026,
+    "studyType": "pha",
+    "recommendationPrefix": "PHA-2026",
+    "areaCodes": [
+      "300",
+      "400",
+      "600"
+    ]
+  },
+  "recommendations": [
+    {
+      "number": 1,
+      "rowStart": 2,
+      "rowEnd": 4,
+      "areaEquipment": "V-7406",
+      "recommendationText": "Consider a low level or pressure cutoff (LI 404##) on V-7406 to cut off pumps P-7406A/B",
+      "node": "10. 1st Stripper V-7406",
+      "scenarios": [
+        {
+          "row": 2,
+          "event": "1.1. Human Error - running pump with stripper empty",
+          "cause": "1. Pumping out of V-7406 with no polymer or cyclohexane in the vessel.",
+          "consequence": "1.1.1. Pull vacuum on the vessel leading to loss of containment, potential for fire and personnel injury",
+          "risk": "low",
+          "riskSource": "Low",
+          "areaEquipment": "V-7406",
+          "node": "10. 1st Stripper V-7406",
+          "cells": {
+            "A2": 1,
+            "B2": "V-7406",
+            "C2": "Consider a low level or pressure cutoff (LI 404##) on V-7406 to cut off pumps P-7406A/B",
+            "D2": "1.1.1. Pull vacuum on the vessel leading to loss of containment, potential for fire and personnel injury",
+            "E2": "1. Pumping out of V-7406 with no polymer or cyclohexane in the vessel.",
+            "F2": "1.1. Human Error - running pump with stripper empty",
+            "G2": "10. 1st Stripper V-7406",
+            "H2": "Low"
+          }
+        },
+        {
+          "row": 3,
+          "event": "1.1. Human Error - running pump with stripper empty",
+          "cause": "1. Pumping out of V-7407 with no polymer or cyclohexane in the vessel.",
+          "consequence": "1.1.1. Pull vacuum on the vessel leading to loss of containment, potential for fire and personnel injury",
+          "risk": "low",
+          "riskSource": "Low",
+          "areaEquipment": "V-7407",
+          "node": "11. 2nd Stripper V-7407",
+          "cells": {
+            "B3": "V-7407",
+            "D3": "1.1.1. Pull vacuum on the vessel leading to loss of containment, potential for fire and personnel injury",
+            "E3": "1. Pumping out of V-7407 with no polymer or cyclohexane in the vessel.",
+            "F3": "1.1. Human Error - running pump with stripper empty",
+            "G3": "11. 2nd Stripper V-7407",
+            "H3": "Low"
+          }
+        },
+        {
+          "row": 4,
+          "event": "1.1. Human Error - running pump with stripper empty",
+          "cause": "1. Pumping out of V-7408 with no polymer or cyclohexane in the vessel.",
+          "consequence": "1.1.1. Pull vacuum on the vessel leading to loss of containment, potential for fire and personnel injury",
+          "risk": "low",
+          "riskSource": "Low",
+          "areaEquipment": "V-7408",
+          "node": "12. 3rd Stripper V-7408",
+          "cells": {
+            "B4": "V-7408",
+            "D4": "1.1.1. Pull vacuum on the vessel leading to loss of containment, potential for fire and personnel injury",
+            "E4": "1. Pumping out of V-7408 with no polymer or cyclohexane in the vessel.",
+            "F4": "1.1. Human Error - running pump with stripper empty",
+            "G4": "12. 3rd Stripper V-7408",
+            "H4": "Low"
+          }
+        }
+      ]
+    },
+    {
+      "number": 2,
+      "rowStart": 5,
+      "rowEnd": 6,
+      "areaEquipment": "V-7405",
+      "recommendationText": "Consider a low level or pressure cutoff (LI 404##) on V-7405 to cut off pumps P-7404A/B",
+      "node": "8. Wastewater Stripper Decanter (V-7405) and Fin Fan Cooler (E-7405) Stripper Decanter Refrigerant Condenser (E-7407)",
+      "scenarios": [
+        {
+          "row": 5,
+          "event": "8.1. Valve is not opened after maintenance (100x)",
+          "cause": "8. Manual valve closed at  discharge of P-7404A/B",
+          "consequence": "8.1.1. Pump deadheads into valve leading to loss of containment of cyclohexane potentially causing a fire and personnel injury.",
+          "risk": "medium",
+          "riskSource": "Medium ",
+          "areaEquipment": "V-7405",
+          "node": "8. Wastewater Stripper Decanter (V-7405) and Fin Fan Cooler (E-7405) Stripper Decanter Refrigerant Condenser (E-7407)",
+          "cells": {
+            "A5": 2,
+            "B5": "V-7405",
+            "C5": "Consider a low level or pressure cutoff (LI 404##) on V-7405 to cut off pumps P-7404A/B",
+            "D5": "8.1.1. Pump deadheads into valve leading to loss of containment of cyclohexane potentially causing a fire and personnel injury.",
+            "E5": "8. Manual valve closed at  discharge of P-7404A/B",
+            "F5": "8.1. Valve is not opened after maintenance (100x)",
+            "G5": "8. Wastewater Stripper Decanter (V-7405) and Fin Fan Cooler (E-7405) Stripper Decanter Refrigerant Condenser (E-7407)",
+            "H5": "Medium "
+          }
+        },
+        {
+          "row": 6,
+          "event": "1.1. Human Error - running pump with reactor empty",
+          "cause": "1. Pumping out of V-7405 empty with P-7404 or 7405.",
+          "consequence": "1.1.1. Pull vacuum on the vessel leading to loss of containment, potential for fire and personnel injury",
+          "risk": "low",
+          "riskSource": "Low",
+          "areaEquipment": "V-7405",
+          "node": "8. Wastewater Stripper Decanter (V-7405) and Fin Fan Cooler (E-7405) Stripper Decanter Refrigerant Condenser (E-7407)",
+          "cells": {
+            "D6": "1.1.1. Pull vacuum on the vessel leading to loss of containment, potential for fire and personnel injury",
+            "E6": "1. Pumping out of V-7405 empty with P-7404 or 7405.",
+            "F6": "1.1. Human Error - running pump with reactor empty",
+            "H6": "Low"
+          }
+        }
+      ]
+    },
+    {
+      "number": 3,
+      "rowStart": 7,
+      "rowEnd": 7,
+      "areaEquipment": "R-7302",
+      "recommendationText": "Make sure hardwired PSH 30220 (Interlock 30102) and PAH 30219 are independent from each other.",
+      "node": "2. 2nd Polymerization Reactor (R-7302)",
+      "scenarios": [
+        {
+          "row": 7,
+          "event": "1.1.",
+          "cause": "1. Too little cooling water (80 F)",
+          "consequence": "1.1.1. During Butadiene charge, no cooling water leads to increased reaction, pressure and temperature and possibly damaging R-7302 leading to loss of containment with fire and personnel injury",
+          "risk": "low",
+          "riskSource": "Low",
+          "areaEquipment": "R-7302",
+          "node": "2. 2nd Polymerization Reactor (R-7302)",
+          "cells": {
+            "A7": 3,
+            "B7": "R-7302 ",
+            "C7": "Make sure hardwired PSH 30220 (Interlock 30102) and PAH 30219 are independent from each other.",
+            "D7": "1.1.1. During Butadiene charge, no cooling water leads to increased reaction, pressure and temperature and possibly damaging R-7302 leading to loss of containment with fire and personnel injury",
+            "E7": "1. Too little cooling water (80 F)",
+            "F7": "1.1.",
+            "G7": "2. 2nd Polymerization Reactor (R-7302)",
+            "H7": "Low"
+          }
+        }
+      ]
+    },
+    {
+      "number": 4,
+      "rowStart": 8,
+      "rowEnd": 8,
+      "areaEquipment": "R-7302",
+      "recommendationText": "Make sure hardwired PSH 30220 (Interlock 30102) and PAH 30119 are independent from each other.",
+      "node": "2. 2nd Polymerization Reactor (R-7302)",
+      "scenarios": [
+        {
+          "row": 8,
+          "event": "1.1. Human error - too much reactant",
+          "cause": "1. Too much Butadiene",
+          "consequence": "1.1.1. Leads to runaway reaction with pressure and temperature leading to reactor damage, loss of containment and multiple personnel fatality",
+          "risk": "medium",
+          "riskSource": "Medium ",
+          "areaEquipment": "R-7302",
+          "node": "2. 2nd Polymerization Reactor (R-7302)",
+          "cells": {
+            "A8": 4,
+            "B8": "R-7302 ",
+            "C8": "Make sure hardwired PSH 30220 (Interlock 30102) and PAH 30119 are independent from each other.",
+            "D8": "1.1.1. Leads to runaway reaction with pressure and temperature leading to reactor damage, loss of containment and multiple personnel fatality",
+            "E8": "1. Too much Butadiene",
+            "F8": "1.1. Human error - too much reactant",
+            "G8": "2. 2nd Polymerization Reactor (R-7302)",
+            "H8": "Medium "
+          }
+        }
+      ]
+    },
+    {
+      "number": 5,
+      "rowStart": 9,
+      "rowEnd": 9,
+      "areaEquipment": "R-7302",
+      "recommendationText": "Confirm that PSV 30214 is adequate to mitigating a runaway reaction from too much butadiene",
+      "node": "2. 2nd Polymerization Reactor (R-7302)",
+      "scenarios": [
+        {
+          "row": 9,
+          "event": "1.1. Human error - too much reactant",
+          "cause": "1. Too much Butadiene",
+          "consequence": "1.1.1. Leads to runaway reaction with pressure and temperature leading to reactor damage, loss of containment and multiple personnel fatality",
+          "risk": "medium",
+          "riskSource": "Medium ",
+          "areaEquipment": "R-7302",
+          "node": "2. 2nd Polymerization Reactor (R-7302)",
+          "cells": {
+            "A9": 5,
+            "B9": "R-7302 ",
+            "C9": "Confirm that PSV 30214 is adequate to mitigating a runaway reaction from too much butadiene",
+            "D9": "1.1.1. Leads to runaway reaction with pressure and temperature leading to reactor damage, loss of containment and multiple personnel fatality",
+            "E9": "1. Too much Butadiene",
+            "F9": "1.1. Human error - too much reactant",
+            "G9": "2. 2nd Polymerization Reactor (R-7302)",
+            "H9": "Medium "
+          }
+        }
+      ]
+    },
+    {
+      "number": 6,
+      "rowStart": 10,
+      "rowEnd": 11,
+      "areaEquipment": "R-7302",
+      "recommendationText": "Make sure hardwired PSH 30320 (Interlock 30302) and PAH 30319 are independent from each other.",
+      "node": "3. 3rd Polymerization Reactor (R-7302)",
+      "scenarios": [
+        {
+          "row": 10,
+          "event": "1.1.",
+          "cause": "1. Too little cooling water (80 F)",
+          "consequence": "1.1.1. During Butadiene charge, no cooling water leads to increased reaction, pressure and temperature and possibly damaging R-7303 leading to loss of containment with fire and personnel injury",
+          "risk": "low",
+          "riskSource": "Low",
+          "areaEquipment": "R-7302",
+          "node": "3. 3rd Polymerization Reactor (R-7302)",
+          "cells": {
+            "A10": 6,
+            "B10": "R-7302 ",
+            "C10": "Make sure hardwired PSH 30320 (Interlock 30302) and PAH 30319 are independent from each other.",
+            "D10": "1.1.1. During Butadiene charge, no cooling water leads to increased reaction, pressure and temperature and possibly damaging R-7303 leading to loss of containment with fire and personnel injury",
+            "E10": "1. Too little cooling water (80 F)",
+            "F10": "1.1.",
+            "G10": "3. 3rd Polymerization Reactor (R-7302)",
+            "H10": "Low"
+          }
+        },
+        {
+          "row": 11,
+          "event": "1.1. Human error - too much reactant",
+          "cause": "1. Too much Butadiene",
+          "consequence": "1.1.1. Leads to runaway reaction with pressure and temperature leading to reactor damage, loss of containment and multiple personnel fatality",
+          "risk": "medium",
+          "riskSource": "Medium ",
+          "areaEquipment": "R-7302",
+          "node": "3. 3rd Polymerization Reactor (R-7302)",
+          "cells": {
+            "D11": "1.1.1. Leads to runaway reaction with pressure and temperature leading to reactor damage, loss of containment and multiple personnel fatality",
+            "E11": "1. Too much Butadiene",
+            "F11": "1.1. Human error - too much reactant",
+            "H11": "Medium "
+          }
+        }
+      ]
+    },
+    {
+      "number": 7,
+      "rowStart": 12,
+      "rowEnd": 12,
+      "areaEquipment": "R-7307",
+      "recommendationText": "Reactivate the low level or pressure cutoff (LI 30321) on R-7303 to cut off pumps P-7301A/B/C",
+      "node": "3. 3rd Polymerization Reactor (R-7302)",
+      "scenarios": [
+        {
+          "row": 12,
+          "event": "3.1. Human Error - running pump with reactor empty",
+          "cause": "3. P-7301 A/B/C runs with R-7303 empty",
+          "consequence": "3.1.1. Pull vacuum on the reactor leading to loss of containment, potential for fire and personnel injury",
+          "risk": "low",
+          "riskSource": "Low",
+          "areaEquipment": "R-7307",
+          "node": "3. 3rd Polymerization Reactor (R-7302)",
+          "cells": {
+            "A12": 7,
+            "B12": "R-7307",
+            "C12": "Reactivate the low level or pressure cutoff (LI 30321) on R-7303 to cut off pumps P-7301A/B/C",
+            "D12": "3.1.1. Pull vacuum on the reactor leading to loss of containment, potential for fire and personnel injury",
+            "E12": "3. P-7301 A/B/C runs with R-7303 empty",
+            "F12": "3.1. Human Error - running pump with reactor empty",
+            "G12": "3. 3rd Polymerization Reactor (R-7302)",
+            "H12": "Low"
+          }
+        }
+      ]
+    },
+    {
+      "number": 8,
+      "rowStart": 13,
+      "rowEnd": 13,
+      "areaEquipment": "R-7302",
+      "recommendationText": "Confirm that PSV 30314 is adequate to mitigating a runaway reaction from too much butadiene",
+      "node": "3. 3rd Polymerization Reactor (R-7302)",
+      "scenarios": [
+        {
+          "row": 13,
+          "event": "1.1. Human error - too much reactant",
+          "cause": "1. Too much Butadiene",
+          "consequence": "1.1.1. Leads to runaway reaction with pressure and temperature leading to reactor damage, loss of containment and multiple personnel fatality",
+          "risk": "medium",
+          "riskSource": "Medium ",
+          "areaEquipment": "R-7302",
+          "node": "3. 3rd Polymerization Reactor (R-7302)",
+          "cells": {
+            "A13": 8,
+            "B13": "R-7302 ",
+            "C13": "Confirm that PSV 30314 is adequate to mitigating a runaway reaction from too much butadiene",
+            "D13": "1.1.1. Leads to runaway reaction with pressure and temperature leading to reactor damage, loss of containment and multiple personnel fatality",
+            "E13": "1. Too much Butadiene",
+            "F13": "1.1. Human error - too much reactant",
+            "G13": "3. 3rd Polymerization Reactor (R-7302)",
+            "H13": "Medium "
+          }
+        }
+      ]
+    },
+    {
+      "number": 9,
+      "rowStart": 14,
+      "rowEnd": 14,
+      "areaEquipment": "V-7601",
+      "recommendationText": "Consider inspecting V-7601 outer shell for corrosion under insulation and determine further need or appropriate frequency for further inspections.",
+      "node": "16. Condensate Collection Tank (V-7601)",
+      "scenarios": [
+        {
+          "row": 14,
+          "event": "1.1.",
+          "cause": "1. Corrosion under insulation for V-7601",
+          "consequence": "1.1.1. Leak develops from corrosion under insulation which leads to loss of containment of hot condensate and personnel injury",
+          "risk": "low",
+          "riskSource": "Low",
+          "areaEquipment": "V-7601",
+          "node": "16. Condensate Collection Tank (V-7601)",
+          "cells": {
+            "A14": 9,
+            "B14": "V-7601",
+            "C14": "Consider inspecting V-7601 outer shell for corrosion under insulation and determine further need or appropriate frequency for further inspections.",
+            "D14": "1.1.1. Leak develops from corrosion under insulation which leads to loss of containment of hot condensate and personnel injury",
+            "E14": "1. Corrosion under insulation for V-7601",
+            "F14": "1.1.",
+            "G14": "16. Condensate Collection Tank (V-7601)",
+            "H14": "Low"
+          }
+        }
+      ]
+    },
+    {
+      "number": 10,
+      "rowStart": 15,
+      "rowEnd": 18,
+      "areaEquipment": "H-7624",
+      "recommendationText": "Update scale on FT 60701 with appropriate high and low flow setpoints",
+      "node": "19. Cooling Tower (H-7624)",
+      "scenarios": [
+        {
+          "row": 15,
+          "event": "3.1. Valve is not opened after maintenance (100x)",
+          "cause": "3. Suction valve to P-7624 A/B/C is closed",
+          "consequence": "3.1.2. Impacts agitators, pump seals and condensers in all areas including 300 and 400 areas",
+          "risk": "medium",
+          "riskSource": "Medium ",
+          "areaEquipment": "H-7624",
+          "node": "19. Cooling Tower (H-7624)",
+          "cells": {
+            "A15": 10,
+            "B15": "H-7624",
+            "C15": "Update scale on FT 60701 with appropriate high and low flow setpoints",
+            "D15": "3.1.2. Impacts agitators, pump seals and condensers in all areas including 300 and 400 areas",
+            "E15": "3. Suction valve to P-7624 A/B/C is closed",
+            "F15": "3.1. Valve is not opened after maintenance (100x)",
+            "G15": "19. Cooling Tower (H-7624)",
+            "H15": "Medium "
+          }
+        },
+        {
+          "row": 16,
+          "event": "4.1. Valve is not opened after maintenance (100x)",
+          "cause": "4. Discharge valve to P-7624 A/B/C is closed",
+          "consequence": "4.1.2. Impacts agitators, pump seals and condensers in all areas including 300 and 400 areas",
+          "risk": "medium",
+          "riskSource": "Medium ",
+          "areaEquipment": "H-7624",
+          "node": "19. Cooling Tower (H-7624)",
+          "cells": {
+            "D16": "4.1.2. Impacts agitators, pump seals and condensers in all areas including 300 and 400 areas",
+            "E16": "4. Discharge valve to P-7624 A/B/C is closed",
+            "F16": "4.1. Valve is not opened after maintenance (100x)",
+            "H16": "Medium "
+          }
+        },
+        {
+          "row": 17,
+          "event": "1.1. Leak",
+          "cause": "1. Basin leaks (large)",
+          "consequence": "1.1.1. Leads to less water to the pumps and possible environmental issues with overhead condensers",
+          "risk": "medium",
+          "riskSource": "Medium ",
+          "areaEquipment": "H-7624",
+          "node": "19. Cooling Tower (H-7624)",
+          "cells": {
+            "D17": "1.1.1. Leads to less water to the pumps and possible environmental issues with overhead condensers",
+            "E17": "1. Basin leaks (large)",
+            "F17": "1.1. Leak",
+            "H17": "Medium "
+          }
+        },
+        {
+          "row": 18,
+          "event": "1.1. Corrosion",
+          "cause": "1. Cooling water piping from H-7624",
+          "consequence": "1.1.1. Leads to leaking water lines and possible loss of flow to critical condensers leading to environmental issues",
+          "risk": "medium",
+          "riskSource": "Medium ",
+          "areaEquipment": "H-7624",
+          "node": "19. Cooling Tower (H-7624)",
+          "cells": {
+            "D18": "1.1.1. Leads to leaking water lines and possible loss of flow to critical condensers leading to environmental issues",
+            "E18": "1. Cooling water piping from H-7624",
+            "F18": "1.1. Corrosion",
+            "H18": "Medium "
+          }
+        }
+      ]
+    },
+    {
+      "number": 11,
+      "rowStart": 19,
+      "rowEnd": 19,
+      "areaEquipment": "H-7624",
+      "recommendationText": "Set TI 60711 high temperature process alarm at a temperature that protects coolers from permit excursions",
+      "node": "19. Cooling Tower (H-7624)",
+      "scenarios": [
+        {
+          "row": 19,
+          "event": "1.1. Equipment failure",
+          "cause": "1. Cooling Tower fan failure",
+          "consequence": "1.1.1. Could lead to environmental issues if the plant is fully loaded and the weather is warm.",
+          "risk": "low",
+          "riskSource": "Low",
+          "areaEquipment": "H-7624",
+          "node": "19. Cooling Tower (H-7624)",
+          "cells": {
+            "A19": 11,
+            "B19": "H-7624",
+            "C19": "Set TI 60711 high temperature process alarm at a temperature that protects coolers from permit excursions",
+            "D19": "1.1.1. Could lead to environmental issues if the plant is fully loaded and the weather is warm.",
+            "E19": "1. Cooling Tower fan failure",
+            "F19": "1.1. Equipment failure",
+            "G19": "19. Cooling Tower (H-7624)",
+            "H19": "Low"
+          }
+        }
+      ]
+    },
+    {
+      "number": 12,
+      "rowStart": 20,
+      "rowEnd": 20,
+      "areaEquipment": "V-7403",
+      "recommendationText": "Review all the TK-105 interlocks to make sure the new system operates as purposed.",
+      "node": "7. Blend Tank V-7403 (Temporary Wet Solvent Tank for TK-105) (MOC #1239)) Team is recorded on the 500 PHA",
+      "scenarios": [
+        {
+          "row": 20,
+          "event": "3.1.",
+          "cause": "3. P-7404 B is used to put too much material in V-7401 or New XV50213B is opened when it should not be",
+          "consequence": "3.1.1. Material from one vessel will overflow into the other blend tanks - No safety impact.",
+          "risk": "low",
+          "riskSource": "Low",
+          "areaEquipment": "V-7403",
+          "node": "7. Blend Tank V-7403 (Temporary Wet Solvent Tank for TK-105) (MOC #1239)) Team is recorded on the 500 PHA",
+          "cells": {
+            "A20": 12,
+            "B20": "V-7403",
+            "C20": "Review all the TK-105 interlocks to make sure the new system operates as purposed.",
+            "D20": "3.1.1. Material from one vessel will overflow into the other blend tanks - No safety impact.",
+            "E20": "3. P-7404 B is used to put too much material in V-7401 or New XV50213B is opened when it should not be",
+            "F20": "3.1.",
+            "G20": "7. Blend Tank V-7403 (Temporary Wet Solvent Tank for TK-105) (MOC #1239)) Team is recorded on the 500 PHA",
+            "H20": "Low"
+          }
+        }
+      ]
+    },
+    {
+      "number": 13,
+      "rowStart": 21,
+      "rowEnd": 21,
+      "areaEquipment": "V-7644",
+      "recommendationText": "Review EF-902 P&ID and confirm that V-7644 pump out direction is correct to V-7405. The team feels this is in error.",
+      "node": "1. 1st Polymerization Reactor (R-7301)",
+      "scenarios": [
+        {
+          "row": 21,
+          "event": "1.1. Human error - too much reactants (10x)",
+          "cause": "1. Too much reactants put into R-7301",
+          "consequence": "1.1.1. Materials overflow from reactor leading to liquids to the Polymer Blowdown Header with possible loss of containment, potential for fire and personnel injury",
+          "risk": "low",
+          "riskSource": "Low",
+          "areaEquipment": "V-7644",
+          "node": "1. 1st Polymerization Reactor (R-7301)",
+          "cells": {
+            "A21": 13,
+            "B21": "V-7644",
+            "C21": "Review EF-902 P&ID and confirm that V-7644 pump out direction is correct to V-7405. The team feels this is in error.",
+            "D21": "1.1.1. Materials overflow from reactor leading to liquids to the Polymer Blowdown Header with possible loss of containment, potential for fire and personnel injury",
+            "E21": "1. Too much reactants put into R-7301",
+            "F21": "1.1. Human error - too much reactants (10x)",
+            "G21": "1. 1st Polymerization Reactor (R-7301)",
+            "H21": "Low"
+          }
+        }
+      ]
+    },
+    {
+      "number": 14,
+      "rowStart": 22,
+      "rowEnd": 22,
+      "areaEquipment": "V-7405",
+      "recommendationText": "Note a high temperature alarm on TI 60413.",
+      "node": "8. Wastewater Stripper Decanter (V-7405) and Fin Fan Cooler (E-7405) Stripper Decanter Refrigerant Condenser (E-7407)",
+      "scenarios": [
+        {
+          "row": 22,
+          "event": "3.1.",
+          "cause": "3. No refrigerated water",
+          "consequence": "3.1.1. Increases heat load on E-7407 and V-7405 leading to environmental impact",
+          "risk": "low",
+          "riskSource": "Low",
+          "areaEquipment": "V-7405",
+          "node": "8. Wastewater Stripper Decanter (V-7405) and Fin Fan Cooler (E-7405) Stripper Decanter Refrigerant Condenser (E-7407)",
+          "cells": {
+            "A22": 14,
+            "B22": "V-7405",
+            "C22": "Note a high temperature alarm on TI 60413.",
+            "D22": "3.1.1. Increases heat load on E-7407 and V-7405 leading to environmental impact",
+            "E22": "3. No refrigerated water",
+            "F22": "3.1.",
+            "G22": "8. Wastewater Stripper Decanter (V-7405) and Fin Fan Cooler (E-7405) Stripper Decanter Refrigerant Condenser (E-7407)",
+            "H22": "Low"
+          }
+        }
+      ]
+    },
+    {
+      "number": 15,
+      "rowStart": 23,
+      "rowEnd": 23,
+      "areaEquipment": "T-7401",
+      "recommendationText": "Consider a low level switch on the Stripper or low flow switch to the Pumps P-7405A/B or P-7402 to prevent the stripper from being emptied with steam fed to it.",
+      "node": "9. Wastewater Stripper (T-7401)",
+      "scenarios": [
+        {
+          "row": 23,
+          "event": "6.1.",
+          "cause": "6. LV 20 fails open",
+          "consequence": "6.1.1. Empty the WW Stripper leading to overheating from steam and damage to the stripper, loss of containment of steam, personnel injury",
+          "risk": "medium",
+          "riskSource": "Medium ",
+          "areaEquipment": "T-7401",
+          "node": "9. Wastewater Stripper (T-7401)",
+          "cells": {
+            "A23": 15,
+            "B23": "T-7401",
+            "C23": "Consider a low level switch on the Stripper or low flow switch to the Pumps P-7405A/B or P-7402 to prevent the stripper from being emptied with steam fed to it.",
+            "D23": "6.1.1. Empty the WW Stripper leading to overheating from steam and damage to the stripper, loss of containment of steam, personnel injury",
+            "E23": "6. LV 20 fails open",
+            "F23": "6.1.",
+            "G23": "9. Wastewater Stripper (T-7401)",
+            "H23": "Medium "
+          }
+        }
+      ]
+    },
+    {
+      "number": 16,
+      "rowStart": 24,
+      "rowEnd": 25,
+      "areaEquipment": "V-7406",
+      "recommendationText": "Consider a low level or flow cutoff from the 1st Stripper to cut off pumps P-7406A/B",
+      "node": "10. 1st Stripper V-7406",
+      "scenarios": [
+        {
+          "row": 24,
+          "event": "3.1. Valve is not opened after maintenance (100x)",
+          "cause": "3. Manual valve closed at the discharge of the P-7406 A and B outlet of the reactor",
+          "consequence": "3.1.1. Pump deadheads into valve leading to loss of containment of rubber and cyclohexane potentially causing a fire and personnel injury.",
+          "risk": "medium",
+          "riskSource": "Medium ",
+          "areaEquipment": "V-7406",
+          "node": "10. 1st Stripper V-7406",
+          "cells": {
+            "A24": 16,
+            "B24": "V-7406",
+            "C24": "Consider a low level or flow cutoff from the 1st Stripper to cut off pumps P-7406A/B",
+            "D24": "3.1.1. Pump deadheads into valve leading to loss of containment of rubber and cyclohexane potentially causing a fire and personnel injury.",
+            "E24": "3. Manual valve closed at the discharge of the P-7406 A and B outlet of the reactor",
+            "F24": "3.1. Valve is not opened after maintenance (100x)",
+            "G24": "10. 1st Stripper V-7406",
+            "H24": "Medium "
+          }
+        },
+        {
+          "row": 25,
+          "event": "4.1. Valve is not opened after maintenance (100x)",
+          "cause": "4. Manual valve closed at bottom of V-7406 and at the suction of the P-7406 A or B outlet of the reactor",
+          "consequence": "4.1.1. Pump cavitates from closed suction valve leading to loss of containment of rubber and cyclohexane potentially causing a fire and personnel injury.",
+          "risk": "medium",
+          "riskSource": "Medium ",
+          "areaEquipment": "V-7406",
+          "node": "10. 1st Stripper V-7406",
+          "cells": {
+            "D25": "4.1.1. Pump cavitates from closed suction valve leading to loss of containment of rubber and cyclohexane potentially causing a fire and personnel injury.",
+            "E25": "4. Manual valve closed at bottom of V-7406 and at the suction of the P-7406 A or B outlet of the reactor",
+            "F25": "4.1. Valve is not opened after maintenance (100x)",
+            "H25": "Medium "
+          }
+        }
+      ]
+    },
+    {
+      "number": 17,
+      "rowStart": 26,
+      "rowEnd": 27,
+      "areaEquipment": "V-7407",
+      "recommendationText": "Consider a low level or flow cutoff from the 2nd Stripper to cut off pumps P-7407",
+      "node": "11. 2nd Stripper V-7407",
+      "scenarios": [
+        {
+          "row": 26,
+          "event": "2.1. Valve is not opened after maintenance (100x)",
+          "cause": "2. Manual valve closed at the discharge of the P-7407 outlet of the reactor",
+          "consequence": "2.1.1. Pump deadheads into valve leading to loss of containment of rubber and cyclohexane potentially causing a fire and personnel injury.",
+          "risk": "medium",
+          "riskSource": "Medium ",
+          "areaEquipment": "V-7407",
+          "node": "11. 2nd Stripper V-7407",
+          "cells": {
+            "A26": 17,
+            "B26": "V-7407",
+            "C26": "Consider a low level or flow cutoff from the 2nd Stripper to cut off pumps P-7407",
+            "D26": "2.1.1. Pump deadheads into valve leading to loss of containment of rubber and cyclohexane potentially causing a fire and personnel injury.",
+            "E26": "2. Manual valve closed at the discharge of the P-7407 outlet of the reactor",
+            "F26": "2.1. Valve is not opened after maintenance (100x)",
+            "G26": "11. 2nd Stripper V-7407",
+            "H26": "Medium "
+          }
+        },
+        {
+          "row": 27,
+          "event": "3.1. Valve is not opened after maintenance (100x)",
+          "cause": "3. Manual valve closed at bottom of V-7407 and at the suction of the P-7407 outlet of the reactor",
+          "consequence": "3.1.1. Pump cavitates from closed suction valve leading to loss of containment of rubber and cyclohexane potentially causing a fire and personnel injury.",
+          "risk": "medium",
+          "riskSource": "Medium ",
+          "areaEquipment": "V-7407",
+          "node": "11. 2nd Stripper V-7407",
+          "cells": {
+            "D27": "3.1.1. Pump cavitates from closed suction valve leading to loss of containment of rubber and cyclohexane potentially causing a fire and personnel injury.",
+            "E27": "3. Manual valve closed at bottom of V-7407 and at the suction of the P-7407 outlet of the reactor",
+            "F27": "3.1. Valve is not opened after maintenance (100x)",
+            "H27": "Medium "
+          }
+        }
+      ]
+    },
+    {
+      "number": 18,
+      "rowStart": 28,
+      "rowEnd": 29,
+      "areaEquipment": "V-7408",
+      "recommendationText": "Consider a low level or flow cutoff from the 2nd Stripper to cut off pumps P-7408/9B",
+      "node": "12. 3rd Stripper V-7408",
+      "scenarios": [
+        {
+          "row": 28,
+          "event": "2.1. Valve is not opened after maintenance (100x)",
+          "cause": "2. Manual valve closed at the discharge of the P-7408/9A outlet of the reactor",
+          "consequence": "2.1.1. Pump deadheads into valve leading to loss of containment of rubber and cyclohexane potentially causing a fire and personnel injury.",
+          "risk": "medium",
+          "riskSource": "Medium ",
+          "areaEquipment": "V-7408",
+          "node": "12. 3rd Stripper V-7408",
+          "cells": {
+            "A28": 18,
+            "B28": "V-7408",
+            "C28": "Consider a low level or flow cutoff from the 2nd Stripper to cut off pumps P-7408/9B",
+            "D28": "2.1.1. Pump deadheads into valve leading to loss of containment of rubber and cyclohexane potentially causing a fire and personnel injury.",
+            "E28": "2. Manual valve closed at the discharge of the P-7408/9A outlet of the reactor",
+            "F28": "2.1. Valve is not opened after maintenance (100x)",
+            "G28": "12. 3rd Stripper V-7408",
+            "H28": "Medium "
+          }
+        },
+        {
+          "row": 29,
+          "event": "3.1. Valve is not opened after maintenance (100x)",
+          "cause": "3. Manual valve closed at bottom of V-7408 and at the suction of the P-7408/9A outlet of the reactor",
+          "consequence": "3.1.1. Pump cavitates from closed suction valve leading to loss of containment of rubber and cyclohexane potentially causing a fire and personnel injury.",
+          "risk": "medium",
+          "riskSource": "Medium ",
+          "areaEquipment": "V-7408",
+          "node": "12. 3rd Stripper V-7408",
+          "cells": {
+            "D29": "3.1.1. Pump cavitates from closed suction valve leading to loss of containment of rubber and cyclohexane potentially causing a fire and personnel injury.",
+            "E29": "3. Manual valve closed at bottom of V-7408 and at the suction of the P-7408/9A outlet of the reactor",
+            "F29": "3.1. Valve is not opened after maintenance (100x)",
+            "H29": "Medium "
+          }
+        }
+      ]
+    },
+    {
+      "number": 19,
+      "rowStart": 30,
+      "rowEnd": 30,
+      "areaEquipment": "V-7601",
+      "recommendationText": "Consider a low level or flow cutoff from the Condensate Collection Tank to cut off pumps P-7601A/B",
+      "node": "16. Condensate Collection Tank (V-7601)",
+      "scenarios": [
+        {
+          "row": 30,
+          "event": "5.1. Control valve failure",
+          "cause": "5. LV60103 fails open",
+          "consequence": "5.1.2. Cavitate P-7601 A/B leading to pump damage and possible loss of containment of hot condensate leading to personnel injury",
+          "risk": "medium",
+          "riskSource": "Medium ",
+          "areaEquipment": "V-7601",
+          "node": "16. Condensate Collection Tank (V-7601)",
+          "cells": {
+            "A30": 19,
+            "B30": "V-7601",
+            "C30": "Consider a low level or flow cutoff from the Condensate Collection Tank to cut off pumps P-7601A/B",
+            "D30": "5.1.2. Cavitate P-7601 A/B leading to pump damage and possible loss of containment of hot condensate leading to personnel injury",
+            "E30": "5. LV60103 fails open",
+            "F30": "5.1. Control valve failure",
+            "G30": "16. Condensate Collection Tank (V-7601)",
+            "H30": "Medium "
+          }
+        }
+      ]
+    },
+    {
+      "number": 20,
+      "rowStart": 31,
+      "rowEnd": 31,
+      "areaEquipment": "V-7603",
+      "recommendationText": "Install a vacuum breaker on the Deaerator V/T-7603 instead of using a check valve since the deaerator is a coded vessel.",
+      "node": "31. Deaerator (V-7603)",
+      "scenarios": [
+        {
+          "row": 31,
+          "event": "2.1. Maintenance Event",
+          "cause": "2. Sudden cooling of deaerator creates a vacuum on the Deaerator",
+          "consequence": "2.1.1. Pressure loss on Deaerator leading to loss of containment of hot water burning personnel",
+          "risk": "medium",
+          "riskSource": "Medium ",
+          "areaEquipment": "V-7603",
+          "node": "31. Deaerator (V-7603)",
+          "cells": {
+            "A31": 20,
+            "B31": "V-7603",
+            "C31": "Install a vacuum breaker on the Deaerator V/T-7603 instead of using a check valve since the deaerator is a coded vessel.",
+            "D31": "2.1.1. Pressure loss on Deaerator leading to loss of containment of hot water burning personnel",
+            "E31": "2. Sudden cooling of deaerator creates a vacuum on the Deaerator",
+            "F31": "2.1. Maintenance Event",
+            "G31": "31. Deaerator (V-7603)",
+            "H31": "Medium "
+          }
+        }
+      ]
+    }
+  ],
+  "trimmedValues": 23,
+  "notes": [
+    "Generated by app.safety.psm.pha_import from the workbook; review before applying.",
+    "Leading and trailing spaces were trimmed from working values; each scenario keeps its row's raw cells."
+  ]
+}

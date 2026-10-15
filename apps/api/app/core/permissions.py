@@ -5,9 +5,10 @@ permissions are the union of the permissions of their active roles; nothing is
 implied by a name, so ``qualityCost.edit`` does not include ``qualityCost.view``
 unless a role grants both.
 
-Persistent copies live in ``core.permissions`` (seeded by migration 0013); a
-test keeps the two in step. Groups for features not built yet (attachments,
-comments, Safety actions and investigations) are defined so roles can hold them
+Persistent copies live in ``core.permissions`` (seeded by migration 0013;
+Process Safety Management's ``psm.*`` by 0015); a test keeps them in step.
+Groups for features not built yet (attachments, comments, Safety actions and
+investigations) are defined so roles can hold them
 when the features arrive; no endpoint uses them today.
 """
 
@@ -129,6 +130,18 @@ class Permission(StrEnum):
     SAFETY_INVESTIGATION_CLOSE = "safetyInvestigation.close"
     SAFETY_INVESTIGATION_REOPEN = "safetyInvestigation.reopen"
     SAFETY_INVESTIGATION_EXPORT = "safetyInvestigation.export"
+
+    PSM_VIEW = "psm.view"
+    PSM_MANAGE_STUDIES = "psm.manageStudies"
+    PSM_EDIT_RECOMMENDATIONS = "psm.editRecommendations"
+    PSM_DECIDE_DISPOSITION = "psm.decideDisposition"
+    PSM_MANAGE_ACTIONS = "psm.manageActions"
+    PSM_REQUEST_CLOSURE = "psm.requestClosure"
+    PSM_VERIFY_CLOSURE = "psm.verifyClosure"
+    PSM_REOPEN = "psm.reopen"
+    PSM_ADMIN = "psm.admin"
+    PSM_IMPORT = "psm.import"
+    PSM_EXPORT = "psm.export"
 
     QUALITY_DASHBOARD_VIEW = "qualityDashboard.view"
     SAFETY_DASHBOARD_VIEW = "safetyDashboard.view"
