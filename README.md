@@ -1570,6 +1570,14 @@ uv run python -m app.safety.records.detail_import plan  import_templates/safety_
 uv run python -m app.safety.records.detail_import apply import_templates/safety_incident_details_2026_lcy_ehs.mapping.json  # audited as legacy-import
 ```
 
+The API image does not contain `import_templates`; in the deployed stack,
+mount it read-only into a one-off container (from the repository root):
+
+```bash
+docker compose run --rm -v "$PWD/apps/api/import_templates:/app/import_templates:ro" \
+  api python -m app.safety.records.detail_import plan import_templates/safety_incident_details_2026_lcy_ehs.mapping.json
+```
+
 `apply` only fills values not yet recorded; a different stored value is a
 conflict and blocks the apply, as do a missing record or an unknown code.
 Then `python -m app.safety.reconcile --details <mapping.json>` confirms the
@@ -2192,28 +2200,79 @@ PSM administrators with `psm.import` can do the same from Settings > Import
 action. The import is idempotent: it adds only what is missing and never
 overwrites stored values; differences are listed in the plan.
 
-### Email notifications
+### Email notifications (legacy PSM SMTP)
 
-Assignment, due-date and status changes (and, if enabled, comments) queue a
-notice in `psm_notifications` inside the same transaction; delivery happens
-afterwards, so a mail failure never blocks or undoes the change. A notice is
-marked sent only when the mail server accepts it; failures are retried and
-then shown as failed on the action. Without a configured mail server,
-notices stay queued and the UI says "Email is not configured; not sent".
-
-Configure on the server only (see `.env.example`): `SMTP_HOST`, `SMTP_PORT`,
-`SMTP_SECURITY` (`starttls`, `tls` or `none`), `SMTP_USERNAME`,
-`SMTP_PASSWORD`, `SMTP_FROM`, `APP_PUBLIC_URL`. Scheduled jobs:
+Assignment, due-date and status changes (and, if enabled, comments) still queue a
+notice in `safety.psm_notifications` inside the same transaction when no
+**enabled** shared workflow exists for that event. Delivery happens afterwards,
+so a mail failure never blocks or undoes the change. Configure SMTP on the
+server only (see `.env.example`): `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY`,
+`SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`, `APP_PUBLIC_URL`.
 
 ```bash
 uv run python -m app.safety.psm.notifications remind   # queue due-soon and overdue reminders
 uv run python -m app.safety.psm.notifications deliver  # send queued notices
 ```
 
+### Shared Notifications platform (Resend)
+
+Platform-wide email lives in the PostgreSQL schema `notifications` (migration
+`0018`). Business modules call `publish_notification_event(...)` in the same
+SQLAlchemy session as the business write: the event and outbox rows commit or
+roll back together. Resend is contacted only by the worker / outbox processor,
+never by module code.
+
+**First integration:** `psm.action.assigned` and `psm.action.owner_changed`
+always publish into the shared system. If any **enabled** shared workflow exists
+for that event type, the legacy `psm_notifications` enqueue is skipped for that
+event. Seeded workflows start **disabled**. Other PSM events remain on SMTP
+until migrated.
+
+**Worker CLI** (cron-friendly; SKIP LOCKED claim + retries):
+
+```bash
+cd apps/api
+uv run python -m app.notifications.worker process --limit 20
+```
+
+**Admin UI:** Administration → Email Management (`/admin/email`), covering
+overview, templates, workflows, delivery log, test center, and settings.
+Permissions are `notifications.*` (seeded onto ADMIN; view grants for safety
+admins where appropriate).
+
+**Configuration** (server env only — never `NEXT_PUBLIC` / `VITE` / frontend):
+
+| Variable | Purpose |
+|----------|---------|
+| `EMAIL_PROVIDER` | `none` or `resend` |
+| `EMAIL_ENABLED` | Master switch |
+| `EMAIL_DELIVERY_MODE` | `disabled` \| `redirect` \| `live` (invalid → `disabled`) |
+| `EMAIL_REDIRECT_TO` | Required for redirect mode |
+| `EMAIL_FROM_NAME` / `EMAIL_FROM_ADDRESS` / `EMAIL_REPLY_TO` | Envelope |
+| `RESEND_API_KEY` | SecretStr; never logged or returned by the API |
+| `APP_PUBLIC_URL` | Links in templates (reuse; do not add a second base URL) |
+
+Modes: `disabled` records deliveries without sending; `redirect` sends only to
+`EMAIL_REDIRECT_TO`; `live` requires full config and never silently falls back.
+Production + `live` + missing config fails `/api/v1/health/ready` with 503.
+
+**Enable a workflow safely:** publish a template revision → set mode to
+`redirect` in a non-production environment → enable the workflow → run the
+worker. Rollback: disable the workflow (legacy PSM SMTP resumes for those two
+events) or set `EMAIL_DELIVERY_MODE=disabled` / emergency pause in Settings.
+
+**Registering a new event:** add the code and variables in
+`app/notifications/registry.py`, seed the event type (and optional template /
+disabled workflow) in a migration, then call `publish_notification_event` from
+the module’s existing transaction.
+
 ### Limitations
 
-- Email is off until SMTP is configured; nothing schedules `remind` or
-  `deliver` yet (run them from cron or a scheduled task).
+- Shared email is off until configured; nothing schedules the worker yet (run
+  from cron or a scheduled task). Do not enable `live` in production without
+  an explicit ops decision.
+- Resend webhooks (delivered / bounced) are not processed yet.
+- Remaining PSM SMTP events (due-soon, closure, etc.) are not migrated yet.
 - Evidence files (10 MB each) are stored in PostgreSQL.
 - Owners without a platform account are stored by name and email; they do not
   resolve through the user directory.

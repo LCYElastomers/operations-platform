@@ -36,6 +36,16 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-}
       APP_PUBLIC_URL: ${APP_PUBLIC_URL:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-none}
+      EMAIL_ENABLED: ${EMAIL_ENABLED:-false}
+      EMAIL_DELIVERY_MODE: ${EMAIL_DELIVERY_MODE:-disabled}
+      EMAIL_REDIRECT_TO: ${EMAIL_REDIRECT_TO:-}
+      EMAIL_FROM_NAME: ${EMAIL_FROM_NAME:-}
+      EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:-}
+      EMAIL_REPLY_TO: ${EMAIL_REPLY_TO:-}
+      EMAIL_OUTBOX_LOCK_SECONDS: ${EMAIL_OUTBOX_LOCK_SECONDS:-300}
+      EMAIL_OUTBOX_MAX_ATTEMPTS: ${EMAIL_OUTBOX_MAX_ATTEMPTS:-5}
     extra_hosts:
       # Lets the API reach the host-managed PostgreSQL server.
       - "host.docker.internal:host-gateway"

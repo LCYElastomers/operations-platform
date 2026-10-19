@@ -84,9 +84,10 @@ def test_module_roles_stay_in_their_module() -> None:
         "nearMiss",
         "safetyDashboard",
         "psm",
+        "notifications",
     }
     assert not safety & {"quality", "qualityCost", "car", "qualityDashboard"}
-    assert psm == {"app", "psm"}
+    assert psm == {"app", "psm", "notifications"}
 
 
 def test_quality_user_cannot_approve_or_close_cars() -> None:
@@ -109,18 +110,27 @@ def test_contributor_has_no_module_access() -> None:
 
 
 def test_migration_seed_matches_the_catalog_and_roles() -> None:
-    """0013 seeds the catalog and roles; 0015 adds ``psm.*`` and PSM_ADMIN."""
-    migration, psm = _migration(), _migration(PSM_MIGRATION)
-    seeded = (*migration.PERMISSIONS, *psm.PERMISSIONS)
+    """0013 seeds the catalog and roles; 0015 adds ``psm.*``; 0018 adds ``notifications.*``."""
+    notifications_migration = next(VERSIONS.glob("*-0018_notifications_email_platform.py"))
+    migration, psm, notifications = (
+        _migration(),
+        _migration(PSM_MIGRATION),
+        _migration(notifications_migration),
+    )
+    seeded = (*migration.PERMISSIONS, *psm.PERMISSIONS, *notifications.PERMISSIONS)
     assert set(seeded) == {p.value for p in Permission}
     assert len(seeded) == len(set(seeded))
-    assert set(migration.MODULE_LABELS) | {"psm"} == {p.value.split(".")[0] for p in Permission}
+    assert set(migration.MODULE_LABELS) | {"psm"} | set(notifications.MODULE_LABELS) == {
+        p.value.split(".")[0] for p in Permission
+    }
     roles = [*migration.ROLES, psm.NEW_ROLE]
     assert {code for code, _, _ in roles} == set(ROLES)
     grants = {code: set(codes) for code, codes in migration.ROLE_PERMISSIONS.items()}
     for code, codes in psm.ROLE_GRANTS.items():
         grants[code] |= set(codes)
     grants[psm.NEW_ROLE[0]] = set(psm.NEW_ROLE_PERMISSIONS)
+    for code, codes in notifications.ROLE_GRANTS.items():
+        grants[code] |= set(codes)
     for code, name, description in roles:
         assert (name, description) == (ROLES[code].name, ROLES[code].description)
         assert grants[code] == {p.value for p in ROLES[code].permissions}, code

@@ -29,6 +29,12 @@ const requiredRoutes = [
   "/system/data-sources",
   "/system/sync",
   "/system/audit",
+  "/admin/email",
+  "/admin/email/templates",
+  "/admin/email/workflows",
+  "/admin/email/deliveries",
+  "/admin/email/test",
+  "/admin/email/settings",
 ];
 
 describe("navigation config", () => {
@@ -171,6 +177,11 @@ describe("navigation config", () => {
     const ids = moduleItems.map((item) => item.id);
     expect(ids).toContain("quality");
     expect(ids).toContain("mechanical-integrity");
+  });
+
+  it("nests Email Management under Administration", () => {
+    const trail = findNavTrail(navigation, "/admin/email/templates");
+    expect(trail.map((item) => item.label)).toEqual(["Email Management", "Templates"]);
   });
 
   it("uses unique ids", () => {

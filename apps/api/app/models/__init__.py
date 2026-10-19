@@ -15,6 +15,18 @@ from app.auth.models import (
 )
 from app.db.base import Base
 from app.ingestion.models import IngestionBatch
+from app.notifications.models import (
+    EmailDelivery,
+    EmailDeliveryAttempt,
+    EmailTemplate,
+    EmailTemplateRevision,
+    NotificationEvent,
+    NotificationEventType,
+    NotificationOutbox,
+    NotificationSettings,
+    NotificationWorkflow,
+    WorkflowRecipientRule,
+)
 from app.quality.car.models import Car, CarAction, CarApproval, CarReference, CarWhyStep
 from app.quality.cost.models import CostMonthlyFact, CostRecord, CostRecordReference
 from app.quality.moisture.models import FinishingMeasurement
@@ -56,6 +68,10 @@ __all__ = [
     "CarWhyStep",
     "ContactSupervisor",
     "CostMonthlyFact",
+    "EmailDelivery",
+    "EmailDeliveryAttempt",
+    "EmailTemplate",
+    "EmailTemplateRevision",
     "CostRecord",
     "CostRecordReference",
     "FinishingMeasurement",
@@ -65,6 +81,11 @@ __all__ = [
     "MetricCategory",
     "MetricSection",
     "MonthlyMetricValue",
+    "NotificationEvent",
+    "NotificationEventType",
+    "NotificationOutbox",
+    "NotificationSettings",
+    "NotificationWorkflow",
     "Observation",
     "ObservationCategory",
     "PasswordToken",
@@ -91,4 +112,5 @@ __all__ = [
     "TrirAnnualFact",
     "User",
     "UserRole",
+    "WorkflowRecipientRule",
 ]

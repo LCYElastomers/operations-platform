@@ -35,6 +35,14 @@ class Permission(StrEnum):
 
     AUDIT_VIEW = "audit.view"
 
+    NOTIFICATIONS_VIEW = "notifications.view"
+    NOTIFICATIONS_TEMPLATES_MANAGE = "notifications.templates.manage"
+    NOTIFICATIONS_WORKFLOWS_MANAGE = "notifications.workflows.manage"
+    NOTIFICATIONS_DELIVERY_VIEW = "notifications.delivery.view"
+    NOTIFICATIONS_DELIVERY_RETRY = "notifications.delivery.retry"
+    NOTIFICATIONS_TEST_SEND = "notifications.test.send"
+    NOTIFICATIONS_SETTINGS_MANAGE = "notifications.settings.manage"
+
     QUALITY_VIEW = "quality.view"
     QUALITY_ADMIN = "quality.admin"
 

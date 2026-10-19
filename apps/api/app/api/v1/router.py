@@ -8,6 +8,7 @@ from app.quality.car import router as quality_cars
 from app.quality.cost import router as quality_cost
 from app.quality.moisture import ingestion_router as moisture_ingestion
 from app.quality.moisture import router as moisture
+from app.notifications import router as notifications
 from app.reports import router as reports
 from app.safety import router as safety
 from app.safety.observations import router as safety_observations
@@ -20,6 +21,7 @@ api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(health.router)
 api_router.include_router(auth.router)
 api_router.include_router(admin_router.router)
+api_router.include_router(notifications.router)
 api_router.include_router(admin_router.directory_router)
 api_router.include_router(assignments.router)
 api_router.include_router(moisture.router)

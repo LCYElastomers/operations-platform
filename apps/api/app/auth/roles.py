@@ -64,6 +64,8 @@ QUALITY_USER = (
     | _COMMENTS_USER
 )
 
+_NOTIFICATIONS_VIEW = {P.NOTIFICATIONS_VIEW, P.NOTIFICATIONS_DELIVERY_VIEW}
+
 SAFETY_ADMIN = (
     {P.APP_VIEW, P.SAFETY_VIEW, P.SAFETY_ADMIN, P.SAFETY_DASHBOARD_VIEW}
     | _group("safetyRecord")
@@ -73,6 +75,7 @@ SAFETY_ADMIN = (
     | _group("safetyAction")
     | _group("safetyInvestigation")
     | _group("psm")
+    | _NOTIFICATIONS_VIEW
     | _ASSIGNMENTS_ALL
     | _ATTACHMENTS_ADMIN
     | _COMMENTS_ADMIN
@@ -115,7 +118,7 @@ SAFETY_USER = (
 )
 
 # Runs the whole PSM workflow, including for action owners who have no account.
-PSM_ADMIN = {P.APP_VIEW} | _group("psm")
+PSM_ADMIN = {P.APP_VIEW} | _group("psm") | _NOTIFICATIONS_VIEW
 
 CONTRIBUTOR = {P.APP_VIEW} | _ASSIGNMENTS_OWN | _ATTACHMENTS_USER | _COMMENTS_USER
 

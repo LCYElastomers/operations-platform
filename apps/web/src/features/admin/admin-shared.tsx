@@ -113,6 +113,7 @@ const MODULE_LABELS: Record<string, string> = {
   assignments: "Assignments",
   attachments: "Attachments",
   comments: "Comments",
+  notifications: "Email",
 };
 
 export function permissionGroup(code: string): string {

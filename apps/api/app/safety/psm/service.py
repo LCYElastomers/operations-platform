@@ -1204,8 +1204,46 @@ def _notify(
     event: str,
     detail: str | None,
     base_url: str | None,
+    actor: Actor | None = None,
 ) -> None:
     store.flush()
+    # Shared Notifications platform (transactional event + optional outbox).
+    # When an enabled shared workflow exists for this event, skip the legacy
+    # SMTP outbox so the owner is not emailed twice.
+    from app.notifications.publisher import has_enabled_workflow, publish_notification_event
+    from app.notifications.registry import PSM_LEGACY_TO_CODE
+
+    shared_code = PSM_LEGACY_TO_CODE.get(event)
+    if shared_code is not None:
+        base = (base_url or "").rstrip("/")
+        action_url = f"{base}/safety/psm/actions/{action.id}" if base else ""
+        payload = {
+            "action.reference": action.action_number,
+            "action.title": action.title,
+            "action.owner_name": action.owner_name,
+            "action.due_date": action.due_date.isoformat() if action.due_date else None,
+            "action.status": action.status,
+            "action.url": action_url,
+            "recommendation.reference": rec.display_id,
+            "owner_email": action.owner_email,
+            "owner_name": action.owner_name,
+            "owner_user_id": str(action.owner_user_id) if action.owner_user_id else None,
+        }
+        if detail:
+            payload["detail"] = detail
+        publish_notification_event(
+            store.session,
+            event_type_code=shared_code,
+            entity_type="safety.psm_action",
+            entity_id=str(action.id),
+            entity_reference=action.action_number,
+            payload=payload,
+            actor_user_id=actor.user_id if actor is not None else None,
+            idempotency_key=f"{shared_code}:{action.id}:{action.version}:{event}",
+            occurred_at=action.updated_at,
+        )
+        if has_enabled_workflow(store.session, shared_code):
+            return
     notifications.enqueue(
         store.session,
         action=action,
@@ -1342,7 +1380,7 @@ def accept(
             actor_id=actor.actor_id, change_set_id=change_set, at=actor.now, changes=changes
         )
         if action.owner_name is not None:
-            _notify(store, action, rec, "action_assigned", None, base_url)
+            _notify(store, action, rec, "action_assigned", None, base_url, actor=actor)
 
     _run(store, work)
 
@@ -1570,7 +1608,7 @@ def update_action(
             actor_id=actor.actor_id, change_set_id=change_set, at=actor.now, changes=changes
         )
         for event, detail in notices:
-            _notify(store, action, rec, event, detail, base_url)
+            _notify(store, action, rec, event, detail, base_url, actor=actor)
 
     _run(store, work)
 
@@ -1624,6 +1662,7 @@ def change_status(
             "status_changed",
             f"Status: {ACTION_STATUSES[request.status]}",
             base_url,
+            actor=actor,
         )
 
     _run(store, work)
@@ -1703,7 +1742,7 @@ def request_closure(
                 )
             ],
         )
-        _notify(store, action, rec, "closure_requested", None, base_url)
+        _notify(store, action, rec, "closure_requested", None, base_url, actor=actor)
 
     _run(store, work)
 
@@ -1758,7 +1797,7 @@ def approve_closure(
                 ),
             ],
         )
-        _notify(store, action, rec, "closure_approved", None, base_url)
+        _notify(store, action, rec, "closure_approved", None, base_url, actor=actor)
 
     _run(store, work)
 
@@ -1805,7 +1844,7 @@ def return_closure(
                 )
             ],
         )
-        _notify(store, action, rec, "closure_returned", f"Reason: {request.reason}", base_url)
+        _notify(store, action, rec, "closure_returned", f"Reason: {request.reason}", base_url, actor=actor)
 
     _run(store, work)
 
@@ -1854,7 +1893,7 @@ def reopen(
                 )
             ],
         )
-        _notify(store, action, rec, "reopened", f"Reason: {request.reason}", base_url)
+        _notify(store, action, rec, "reopened", f"Reason: {request.reason}", base_url, actor=actor)
 
     _run(store, work)
 
@@ -1885,7 +1924,7 @@ def comment(
                 )
             ],
         )
-        _notify(store, action, rec, "comment_added", request.body, base_url)
+        _notify(store, action, rec, "comment_added", request.body, base_url, actor=actor)
 
     _run(store, work)
 

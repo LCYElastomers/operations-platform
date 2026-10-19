@@ -91,23 +91,91 @@ class Settings(BaseSettings):
     # The address users open the application at, for links in emails.
     app_public_url: Annotated[str, Field(max_length=300)] | None = None
 
-    @field_validator("smtp_host", "smtp_username", "smtp_from", "app_public_url", mode="before")
+    # Shared Notifications / Email Management (Resend). Default is disabled:
+    # events and outbox rows may still be written; the provider is never called
+    # until EMAIL_ENABLED and a valid EMAIL_DELIVERY_MODE allow it. The API key
+    # is a secret and is never logged, returned by an API, or stored in PostgreSQL.
+    resend_api_key: SecretStr | None = None
+    email_provider: Literal["none", "resend"] = "none"
+    email_enabled: bool = False
+    # Invalid or missing values are treated as disabled (never silently "live").
+    email_delivery_mode: Literal["disabled", "redirect", "live"] = "disabled"
+    email_redirect_to: Annotated[str, Field(max_length=254)] | None = None
+    email_from_name: Annotated[str, Field(max_length=200)] | None = None
+    email_from_address: Annotated[str, Field(max_length=254)] | None = None
+    email_reply_to: Annotated[str, Field(max_length=254)] | None = None
+    # Worker: abandon a claimed outbox row after this many seconds.
+    email_outbox_lock_seconds: Annotated[int, Field(ge=30, le=3600)] = 300
+    email_outbox_max_attempts: Annotated[int, Field(ge=1, le=20)] = 5
+
+    @field_validator(
+        "smtp_host",
+        "smtp_username",
+        "smtp_from",
+        "app_public_url",
+        "email_redirect_to",
+        "email_from_name",
+        "email_from_address",
+        "email_reply_to",
+        mode="before",
+    )
     @classmethod
     def _blank_is_unset(cls, value: object) -> object:
         if isinstance(value, str) and not value.strip():
             return None
         return value.strip() if isinstance(value, str) else value
 
-    @field_validator("smtp_password", mode="before")
+    @field_validator("smtp_password", "resend_api_key", mode="before")
     @classmethod
     def _blank_password_is_unset(cls, value: object) -> object:
         if isinstance(value, str) and not value:
             return None
         return value
 
+    @field_validator("email_delivery_mode", mode="before")
+    @classmethod
+    def _invalid_delivery_mode_is_disabled(cls, value: object) -> object:
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return "disabled"
+        if isinstance(value, str) and value.strip().lower() not in (
+            "disabled",
+            "redirect",
+            "live",
+        ):
+            return "disabled"
+        return value.strip().lower() if isinstance(value, str) else value
+
     @property
     def mail_enabled(self) -> bool:
         return self.smtp_host is not None and self.smtp_from is not None
+
+    @property
+    def resend_configured(self) -> bool:
+        return self.resend_api_key is not None and bool(
+            self.resend_api_key.get_secret_value().strip()
+        )
+
+    @property
+    def email_live_ready(self) -> bool:
+        """True when live delivery has every required non-secret and secret setting."""
+        return (
+            self.email_enabled
+            and self.email_delivery_mode == "live"
+            and self.email_provider == "resend"
+            and self.resend_configured
+            and self.email_from_address is not None
+        )
+
+    @property
+    def email_redirect_ready(self) -> bool:
+        return (
+            self.email_enabled
+            and self.email_delivery_mode == "redirect"
+            and self.email_provider == "resend"
+            and self.resend_configured
+            and self.email_from_address is not None
+            and self.email_redirect_to is not None
+        )
 
     @field_validator("database_url", mode="before")
     @classmethod
