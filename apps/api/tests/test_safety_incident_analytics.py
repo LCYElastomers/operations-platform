@@ -138,11 +138,18 @@ def test_approved_2026_totals_through_september() -> None:
         "psif": 5,
         "pit": 9,
         "combined_damage": 14,
+        "first_aid": 5,
+        "lost_time_injury": None,
+        "fire": 1,
     }
     assert result.property_damage.total == 6
     assert result.equipment_damage.total == 8
     assert result.combined_damage.total == 14
     assert result.pit.total == 9
+    by_code = {row.code: row.total for row in result.classifications}
+    assert by_code["first_aid"] == kpis(result)["first_aid"] == 5
+    assert by_code["lost_time_injury"] == kpis(result)["lost_time_injury"]
+    assert by_code["fire"] == kpis(result)["fire"] == 1
 
 
 def test_incident_may_is_the_approved_platform_value() -> None:
@@ -212,6 +219,29 @@ def test_approved_lopc_is_14_not_28() -> None:
     spill = next(row for row in result.classifications if row.code == "spill_release")
     assert (result.lopc.total, spill.total) == (14, 14)
     assert kpis(result)["lopc"] == 14
+
+
+def test_classification_kpis_match_the_classification_series() -> None:
+    result = load(
+        ReadOnlyRepository(
+            cells(
+                2026,
+                incident_classification__first_aid={1: 2, 2: 0},
+                incident_classification__lost_time_injury={1: 1},
+                incident_classification__fire={2: 3},
+            )
+        ),
+        through=2,
+    )
+    by_code = {row.code: row for row in result.classifications}
+    by_key = {kpi.key: kpi for kpi in result.kpis}
+    for code in ("first_aid", "lost_time_injury", "fire"):
+        assert by_key[code].value == by_code[code].total
+        assert by_key[code].months_reported == by_code[code].months_reported
+        assert by_key[code].complete == by_code[code].complete
+    assert by_key["first_aid"].value == 2
+    assert by_key["lost_time_injury"].value == 1
+    assert by_key["fire"].value == 3
 
 
 def test_pit_is_the_pit_accident_classification_and_the_pit_section_is_not_read() -> None:
@@ -404,6 +434,9 @@ def test_unreported_months_are_null_and_reported_zeros_are_zero() -> None:
         "psif": 0,
         "pit": None,
         "combined_damage": None,
+        "first_aid": None,
+        "lost_time_injury": None,
+        "fire": None,
     }
 
 
@@ -446,7 +479,13 @@ def test_an_empty_year_is_null_and_never_borrows_2026() -> None:
     assert result.available_years == [2027, 2026]
     assert all(kpi.value is None and kpi.months_reported == 0 for kpi in result.kpis)
     assert all(kpi.complete is False for kpi in result.kpis)
-    assert [kpi.key for kpi in result.kpis][-2:] == ["pit", "combined_damage"]
+    assert [kpi.key for kpi in result.kpis][-5:] == [
+        "pit",
+        "combined_damage",
+        "first_aid",
+        "lost_time_injury",
+        "fire",
+    ]
     assert [(p.value, p.complete) for p in damage_kpi(result).parts] == [
         (None, False),
         (None, False),
@@ -628,8 +667,14 @@ def test_get_returns_typed_analytics(viewer: TestClient) -> None:
         "psif",
         "pit",
         "combined_damage",
+        "first_aid",
+        "lost_time_injury",
+        "fire",
     ]
     assert data["kpis"][4]["value"] == 9
+    assert data["kpis"][6]["value"] == 5
+    assert data["kpis"][7]["value"] is None
+    assert data["kpis"][8]["value"] == 1
     damage = data["kpis"][5]
     assert (damage["value"], damage["monthsReported"], damage["complete"]) == (14, 1, False)
     assert [(p["code"], p["value"]) for p in damage["parts"]] == [

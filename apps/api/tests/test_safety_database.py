@@ -290,6 +290,9 @@ def test_analytics_read_the_seeded_definitions_and_write_nothing(
         # equipment 2; the stale combined section's 1 is not read.
         "pit": 1,
         "combined_damage": 3,
+        "first_aid": None,
+        "lost_time_injury": None,
+        "fire": None,
     }
     assert (result.pit.code, result.pit.total) == ("pit_accident", 1)
     assert result.combined_damage.values == [3, None]

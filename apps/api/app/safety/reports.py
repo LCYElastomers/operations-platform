@@ -52,6 +52,9 @@ KPI_LABELS = {
     "psif": "PSIF YTD",
     "pit": "PIT Incidents YTD",
     "combined_damage": "Property & Equipment Damage YTD",
+    "first_aid": "First Aid YTD",
+    "lost_time_injury": "Lost Time Injuries YTD",
+    "fire": "Fire YTD",
 }
 MEASURE_LABELS = {
     "trir": "TRIR",

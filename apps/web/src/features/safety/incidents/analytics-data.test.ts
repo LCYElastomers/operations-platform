@@ -191,7 +191,7 @@ describe("KPI captions", () => {
     ).toBe("2028 has not started");
   });
 
-  it("labels the six YTD cards", () => {
+  it("labels the nine YTD cards", () => {
     expect(Object.values(KPI_LABELS)).toEqual([
       "Incidents YTD",
       "Near Misses YTD",
@@ -199,6 +199,9 @@ describe("KPI captions", () => {
       "PSIF YTD",
       "PIT Incidents YTD",
       "Property & Equipment Damage YTD",
+      "First Aid YTD",
+      "Lost Time Injuries YTD",
+      "Fire YTD",
     ]);
   });
 });

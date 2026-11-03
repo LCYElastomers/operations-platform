@@ -2,8 +2,11 @@
 
 import {
   AlertTriangle,
+  Bandage,
   ChartColumn,
+  Clock,
   Droplet,
+  Flame,
   Forklift,
   OctagonAlert,
   Siren,
@@ -94,7 +97,11 @@ const KPI_ICONS: Record<AnalyticsKpi["key"], React.ComponentType<{ className?: s
   psif: OctagonAlert,
   pit: Forklift,
   combined_damage: Wrench,
+  first_aid: Bandage,
+  lost_time_injury: Clock,
+  fire: Flame,
 };
+/** Overview order: three rows of three (xl), matching the analytics KPI list. */
 const KPI_KEYS = Object.keys(KPI_ICONS) as AnalyticsKpi["key"][];
 
 const CHART_HEIGHT = 300;

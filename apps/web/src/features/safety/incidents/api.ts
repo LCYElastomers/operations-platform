@@ -92,7 +92,16 @@ export type AnalyticsKpiPart = {
 };
 
 export type AnalyticsKpi = {
-  key: "incidents" | "near_misses" | "lopc" | "psif" | "pit" | "combined_damage";
+  key:
+    | "incidents"
+    | "near_misses"
+    | "lopc"
+    | "psif"
+    | "pit"
+    | "combined_damage"
+    | "first_aid"
+    | "lost_time_injury"
+    | "fire";
   value: number | null;
   /** For a combined KPI, the months every part reported. */
   monthsReported: number;

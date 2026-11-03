@@ -34,6 +34,9 @@ export const KPI_LABELS: Record<AnalyticsKpi["key"], string> = {
   psif: "PSIF YTD",
   pit: "PIT Incidents YTD",
   combined_damage: "Property & Equipment Damage YTD",
+  first_aid: "First Aid YTD",
+  lost_time_injury: "Lost Time Injuries YTD",
+  fire: "Fire YTD",
 };
 
 /** Short names for the parts of the combined damage KPI, e.g. "6 property". */

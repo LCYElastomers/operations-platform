@@ -93,7 +93,21 @@ function series(values: (number | null)[], overrides: Partial<AnalyticsSeries> =
 function analytics(
   year: number,
   through: number | null,
-  values: Partial<Record<"incidents" | "nearMisses" | "lopc" | "psif" | "pit" | "property" | "equipment", (number | null)[]>> = {},
+  values: Partial<
+    Record<
+      | "incidents"
+      | "nearMisses"
+      | "lopc"
+      | "psif"
+      | "pit"
+      | "property"
+      | "equipment"
+      | "firstAid"
+      | "lostTime"
+      | "fire",
+      (number | null)[]
+    >
+  > = {},
   extras: Partial<IncidentAnalyticsResponse> = {},
 ): IncidentAnalyticsResponse {
   const months = through ?? 0;
@@ -103,6 +117,9 @@ function analytics(
   const lopc = series(of("lopc"), { section: "lopc", code: "lopc", name: "LOPC" });
   const psif = series(of("psif"), { section: "psif", code: "psif", name: "PSIF" });
   const pit = series(of("pit"), { code: "pit_accident", name: "PIT Accident" });
+  const firstAid = series(of("firstAid"), { code: "first_aid", name: "First Aid" });
+  const lostTime = series(of("lostTime"), { code: "lost_time_injury", name: "Lost Time Injury" });
+  const fire = series(of("fire"), { code: "fire", name: "Fire" });
   const propertyDamage = series(of("property"), { code: "property_damage", name: "Property Damage" });
   const equipmentDamage = series(of("equipment"), {
     code: "equipment_damage_failure",
@@ -143,16 +160,14 @@ function analytics(
       kpi("psif", psif),
       kpi("pit", pit),
       kpi("combined_damage", combinedDamage, [propertyDamage, equipmentDamage]),
+      kpi("first_aid", firstAid),
+      kpi("lost_time_injury", lostTime),
+      kpi("fire", fire),
     ],
     incidents,
     nearMisses,
-    classifications: [
-      series(Array.from({ length: months }, () => null), { code: "first_aid", name: "First Aid" }),
-      pit,
-      propertyDamage,
-      equipmentDamage,
-      psif,
-    ],
+    // Same series objects as the classification KPIs (single source in the fixture).
+    classifications: [firstAid, lostTime, fire, pit, propertyDamage, equipmentDamage, psif],
     lopc,
     psif,
     pit,
@@ -390,7 +405,7 @@ describe("Incident & Near Miss Dashboard", () => {
     expect(damage.querySelector("ol")!.textContent).toBe("Jan: 1/0Feb: 2/unreported");
   });
 
-  it("shows six YTD cards, with PIT 9 and damage 14 as 6 property · 8 equipment", async () => {
+  it("shows nine YTD cards in three rows of three, with classification KPIs matching the chart", async () => {
     // Test fixture: the approved 2026 monthly values, January–September.
     stubApi(() =>
       ok(
@@ -402,6 +417,9 @@ describe("Incident & Near Miss Dashboard", () => {
           pit: [null, 1, null, 3, 1, 2, 1, null, 1],
           property: [1, 1, null, null, 2, null, 2, null, null],
           equipment: [0, null, 1, 4, null, 2, null, null, 1],
+          firstAid: [1, null, 1, 2, null, null, null, null, 1],
+          lostTime: [null, null, null, null, null, null, null, null, null],
+          fire: [null, null, 1, null, null, null, null, null, null],
         }),
       ),
     );
@@ -414,7 +432,12 @@ describe("Incident & Near Miss Dashboard", () => {
       "PSIF YTD",
       "PIT Incidents YTD",
       "Property & Equipment Damage YTD",
+      "First Aid YTD",
+      "Lost Time Injuries YTD",
+      "Fire YTD",
     ]);
+    expect(kpiSection().className).toContain("xl:grid-cols-3");
+    expect(kpiSection().children).toHaveLength(9);
     expect(card("Incidents YTD")).toBe("Incidents YTD41Jan–Sep 2026 · all 9 months reported");
     expect(card("Near Misses YTD")).toBe("Near Misses YTD31Jan–Sep 2026 · 7 of 9 months reported");
     expect(card("LOPC YTD")).toBe("LOPC YTD14Jan–Sep 2026 · 8 of 9 months reported");
@@ -423,6 +446,17 @@ describe("Incident & Near Miss Dashboard", () => {
     expect(card("Property & Equipment Damage YTD")).toBe(
       "Property & Equipment Damage YTD146 property · 8 equipment · Jan–Sep 2026, partial, both reported in 1 of 9 months",
     );
+    expect(card("First Aid YTD")).toBe("First Aid YTD5Jan–Sep 2026 · 4 of 9 months reported");
+    expect(card("Lost Time Injuries YTD")).toBe("Lost Time Injuries YTD—No dataNo months reported, Jan–Sep 2026");
+    expect(card("Fire YTD")).toBe("Fire YTD1Jan–Sep 2026 · 1 of 9 months reported");
+    // Cards and Classification table share the same series totals (fixture + API contract).
+    const classificationRows = [...chart("Incident Classification").querySelectorAll("tbody tr")];
+    const classificationCount = (name: string) =>
+      classificationRows.find((row) => row.querySelector("th")?.textContent === name)!.querySelector("td")!
+        .textContent;
+    expect(classificationCount("First Aid")).toBe("5");
+    expect(classificationCount("Lost Time Injury")).toBe("Not reported");
+    expect(classificationCount("Fire")).toBe("1");
     expect([...container.querySelectorAll("[data-chart]")].map((c) => c.getAttribute("data-chart"))).toEqual([
       "Incidents vs Near Misses by Month",
       "Incidents vs Prior Year by Month (2026 vs 2025)",
@@ -449,13 +483,17 @@ describe("Incident & Near Miss Dashboard", () => {
   });
 
   it("shows a complete damage total, a reported zero and an unreported component", async () => {
-    stubApi(() => ok(analytics(2026, 2, { property: [1, 2], equipment: [0, 0], pit: [0, 0] })));
+    stubApi(() =>
+      ok(analytics(2026, 2, { property: [1, 2], equipment: [0, 0], pit: [0, 0], firstAid: [0, 0], fire: [0, null] })),
+    );
     await render("2026-02-10T15:00:00Z");
 
     expect(card("Property & Equipment Damage YTD")).toBe(
       "Property & Equipment Damage YTD33 property · 0 equipment · Jan–Feb 2026, all 2 months reported",
     );
     expect(card("PIT Incidents YTD")).toBe("PIT Incidents YTD0Jan–Feb 2026 · all 2 months reported");
+    expect(card("First Aid YTD")).toBe("First Aid YTD0Jan–Feb 2026 · all 2 months reported");
+    expect(card("Fire YTD")).toBe("Fire YTD0Jan–Feb 2026 · 1 of 2 months reported");
 
     await act(async () => root?.unmount());
     root = null;
@@ -467,6 +505,35 @@ describe("Incident & Near Miss Dashboard", () => {
       "Property & Equipment Damage YTD44 property · equipment not reported · Jan–Feb 2026, partial, both reported in 0 of 2 months",
     );
     expect(card("PIT Incidents YTD")).toBe("PIT Incidents YTD—No dataNo months reported, Jan–Feb 2026");
+  });
+
+  it("refreshes the classification YTD cards when the reporting year changes", async () => {
+    stubApi((url) => {
+      const year = Number(url.searchParams.get("year"));
+      return ok(
+        analytics(
+          year,
+          1,
+          {
+            firstAid: year === 2026 ? [2] : [7],
+            lostTime: year === 2026 ? [1] : [0],
+            fire: year === 2026 ? [3] : [null],
+          },
+          { availableYears: [2027, 2026] },
+        ),
+      );
+    });
+    await render("2027-01-15T15:00:00Z");
+
+    expect(select("Reporting year").value).toBe("2027");
+    expect(card("First Aid YTD")).toContain("7");
+    expect(card("Lost Time Injuries YTD")).toBe("Lost Time Injuries YTD0Jan 2027 · reported");
+    expect(card("Fire YTD")).toBe("Fire YTD—No dataNo months reported, Jan 2027");
+
+    await choose(select("Reporting year"), 2026);
+    expect(card("First Aid YTD")).toContain("2");
+    expect(card("Lost Time Injuries YTD")).toContain("1");
+    expect(card("Fire YTD")).toContain("3");
   });
 
   it("titles the PIT chart and gives every chart a data table alternative", async () => {
@@ -1207,7 +1274,7 @@ describe("Event Experience", () => {
       "Behavior",
       "Event Experience",
     ]);
-    expect(cardLabels()).toHaveLength(6);
+    expect(cardLabels()).toHaveLength(9);
     expect(chart("Incident Classification")).not.toBeNull();
     await openTab("Area");
     expect(chart("Incidents by Area")).not.toBeNull();

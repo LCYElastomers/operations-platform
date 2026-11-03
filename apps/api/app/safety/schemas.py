@@ -103,7 +103,17 @@ class AnalyticsSeriesOut(CamelModel):
     complete: bool = Field(description="Every month January..through month is reported.")
 
 
-AnalyticsKpiKey = Literal["incidents", "near_misses", "lopc", "psif", "pit", "combined_damage"]
+AnalyticsKpiKey = Literal[
+    "incidents",
+    "near_misses",
+    "lopc",
+    "psif",
+    "pit",
+    "combined_damage",
+    "first_aid",
+    "lost_time_injury",
+    "fire",
+]
 
 
 class AnalyticsKpiPartOut(CamelModel):

@@ -77,6 +77,8 @@ PROPERTY_DAMAGE = (CLASSIFICATION, "property_damage")
 EQUIPMENT_DAMAGE = (CLASSIFICATION, "equipment_damage_failure")
 COMBINED_DAMAGE_CODE = "property_damage+equipment_damage_failure"
 FIRST_AID = (CLASSIFICATION, "first_aid")
+LOST_TIME_INJURY = (CLASSIFICATION, "lost_time_injury")
+FIRE = (CLASSIFICATION, "fire")
 RECORDABLE_INJURY = (CLASSIFICATION, "recordable_injury")
 
 INCIDENTS_BY_AREA = "incidents_by_area"
@@ -312,6 +314,9 @@ def build_analytics(
     property_damage = series(PROPERTY_DAMAGE)
     equipment_damage = series(EQUIPMENT_DAMAGE)
     combined_damage = _combined("Combined Damage", property_damage, equipment_damage)
+    first_aid = series(FIRST_AID)
+    lost_time_injury = series(LOST_TIME_INJURY)
+    fire = series(FIRE)
     incidents, near_misses, lopc, psif, pit = (
         series(INCIDENTS),
         series(NEAR_MISSES),
@@ -334,7 +339,7 @@ def build_analytics(
     body_part = _breakdown(BODY_PART, sections, stored, months, is_tag=True)
     injuries = [
         total(pair)
-        for pair in zip(series(FIRST_AID).values, series(RECORDABLE_INJURY).values, strict=True)
+        for pair in zip(first_aid.values, series(RECORDABLE_INJURY).values, strict=True)
     ]
     incident_category = definitions.get(INCIDENTS)
     incident_year = [
@@ -360,6 +365,10 @@ def build_analytics(
                 through_month,
                 parts=(property_damage, equipment_damage),
             ),
+            # Same classification series as the Incident Classification table / chart.
+            _kpi("first_aid", first_aid, through_month),
+            _kpi("lost_time_injury", lost_time_injury, through_month),
+            _kpi("fire", fire, through_month),
         ],
         incidents=incidents,
         near_misses=near_misses,
