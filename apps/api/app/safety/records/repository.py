@@ -14,10 +14,11 @@ from app.audit.models import AuditEvent
 from app.audit.recorder import AuditChange, record_changes
 from app.auth import people
 from app.safety.models import Area, MetricCategory, MetricSection, MonthlyMetricValue
-from app.safety.records import categories
+from app.safety.records import aggregation, categories
 from app.safety.records.detail_models import IncidentDetailCode, IncidentRecordClassification
 from app.safety.records.details import LOPC_CONTRIBUTING_FACTOR, SPECS, DetailSpec
 from app.safety.records.models import NUMBER_INDEX, IncidentRecord
+from app.safety.records.tags import TAGS, TagSpec
 
 INCIDENTS_METRIC_SET = "incidents"
 CLASSIFICATION_SECTION = "incident_classification"
@@ -47,6 +48,8 @@ class RecordExtras:
 
     classifications: tuple[tuple[int, str, str], ...] = ()
     details: dict[str, dict[str, Any]] | None = None
+    # Tag kind (tags.TagSpec.kind) -> category ids.
+    tags: dict[str, tuple[int, ...]] | None = None
 
 
 NO_EXTRAS = RecordExtras()
@@ -145,9 +148,25 @@ class RecordRepository:
                 values = {column: getattr(row, column) for column in spec.columns}
                 values |= {"updated_at": row.updated_at, "updated_by": row.updated_by}
                 details.setdefault(row.incident_record_id, {})[spec.kind] = values
+        tags: dict[int, dict[str, tuple[int, ...]]] = {}
+        for tag in TAGS:
+            record_column = tag.model.incident_record_id
+            category_column = getattr(tag.model, tag.column)
+            found: dict[int, list[int]] = {}
+            for record_id, category_id in self._session.execute(
+                select(record_column, category_column)
+                .join(c, c.id == category_column)
+                .where(record_column.in_(record_ids))
+                .order_by(record_column, c.display_order, c.id)
+            ).all():
+                found.setdefault(record_id, []).append(category_id)
+            for record_id, ids in found.items():
+                tags.setdefault(record_id, {})[tag.kind] = tuple(ids)
         return {
-            record_id: RecordExtras(tuple(further.get(record_id, ())), details.get(record_id))
-            for record_id in set(further) | set(details)
+            record_id: RecordExtras(
+                tuple(further.get(record_id, ())), details.get(record_id), tags.get(record_id)
+            )
+            for record_id in set(further) | set(details) | set(tags)
         }
 
     def lock(self, record_id: int) -> IncidentRecord | None:
@@ -249,6 +268,27 @@ class RecordRepository:
             .order_by(c.display_order, c.id)
         ).all()
         return [Option(*row) for row in rows]
+
+    def tag_options(self, tag: TagSpec) -> list[Option]:
+        """The categories a record tag can reference, in display order."""
+        c, s = MetricCategory, MetricSection
+        rows = self._session.execute(
+            select(c.id, c.code, c.name, c.active)
+            .join(s, s.id == c.section_id)
+            .where(s.metric_set == INCIDENTS_METRIC_SET, s.code == tag.section)
+            .order_by(c.display_order, c.id)
+        ).all()
+        return [Option(*row) for row in rows]
+
+    def tag_ids(self, tag: TagSpec, record_id: int) -> list[int]:
+        column = getattr(tag.model, tag.column)
+        return list(
+            self._session.scalars(
+                select(column)
+                .where(tag.model.incident_record_id == record_id)
+                .order_by(tag.model.id)
+            )
+        )
 
     def detail_codes(self) -> dict[str, list[tuple[str, str, bool]]]:
         """Taxonomy -> (code, name, active) in display order, including the LOPC
@@ -395,6 +435,44 @@ class RecordRepository:
                     for category_id in add
                 ],
             )
+
+    def set_tags(
+        self,
+        tag: TagSpec,
+        record_id: int,
+        add: Sequence[int],
+        remove: Sequence[int],
+        *,
+        actor_id: str,
+        at: dt.datetime,
+    ) -> None:
+        model = tag.model
+        column = getattr(model, tag.column)
+        if remove:
+            self._session.execute(
+                delete(model).where(model.incident_record_id == record_id, column.in_(remove))
+            )
+        if add:
+            self._session.execute(
+                insert(model),
+                [
+                    {
+                        "incident_record_id": record_id,
+                        tag.column: category_id,
+                        "created_at": at,
+                        "created_by": actor_id,
+                    }
+                    for category_id in add
+                ],
+            )
+
+    def rebuild_derived(
+        self, months: Iterable[tuple[int, int]], *, actor_id: str, at: dt.datetime
+    ) -> None:
+        """Rebuild the derived monthly values of the months from their active records,
+        in the current transaction (see ``aggregation``)."""
+        self._session.flush()
+        aggregation.rebuild_months(self._session, months, actor_id=actor_id, at=at)
 
     def detail(self, spec: DetailSpec, record_id: int) -> dict[str, Any] | None:
         row = self._session.scalar(

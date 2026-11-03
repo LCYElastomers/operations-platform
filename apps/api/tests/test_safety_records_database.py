@@ -20,7 +20,6 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.orm import Session
 
 from app.audit.models import AuditEvent
-from app.safety import service as metrics_service
 from app.safety.records import legacy_import as records_import
 from app.safety.records import narratives, service
 from app.safety.records.models import IncidentRecord
@@ -32,8 +31,8 @@ from app.safety.records.schemas import (
     RecordUpdate,
     VoidRequest,
 )
+from app.safety.records.tags import BODY_PARTS, INJURY_CAUSES
 from app.safety.repository import DatabaseSafetyMetricsRepository
-from app.safety.schemas import CellChange
 from app.safety.trir import legacy_import as trir_import
 from app.safety.trir.models import TrirAnnualFact
 from app.safety.trir.repository import TrirRepository
@@ -101,6 +100,11 @@ def create(repository: RecordRepository, **overrides: Any) -> int:
         "description": "ZZ test: operator slipped on wet grating.",
         **overrides,
     }
+    first_aid = next(o.id for o in repository.classifications() if o.code == "first_aid")
+    if data.get("classificationCategoryId") == first_aid:
+        # A First Aid record needs an injury cause and a body part (migration 0019).
+        data.setdefault("injuryCauseCategoryIds", [repository.tag_options(INJURY_CAUSES)[0].id])
+        data.setdefault("bodyPartCategoryIds", [repository.tag_options(BODY_PARTS)[0].id])
     return service.create(repository, RecordCreate.model_validate(data), ACTOR).record.id
 
 
@@ -477,48 +481,39 @@ def test_month_and_through_filters(repository: RecordRepository) -> None:
     assert ids(event_type="near_miss") >= {march} and january not in ids(event_type="near_miss")
 
 
-def test_reconciliation_compares_totals_with_active_records(
+def test_records_rebuild_the_derived_totals_from_active_records(
     session: Session, repository: RecordRepository
 ) -> None:
     metrics = DatabaseSafetyMetricsRepository(session)
-    metrics.commit = session.flush  # type: ignore[method-assign]
     totals = next(s for s in metrics.sections("incidents") if s.code == "incident_near_miss_totals")
     incident = next(c.id for c in totals.categories if c.code == "incident")
     near_miss = next(c.id for c in totals.categories if c.code == "near_miss")
-    metrics_service.save_changes(
-        metrics,
-        metric_set="incidents",
-        year=2003,
-        changes=[
-            CellChange(category_id=incident, month=1, value=2, previous_value=None),
-            CellChange(category_id=incident, month=2, value=0, previous_value=None),
-            CellChange(category_id=near_miss, month=1, value=1, previous_value=None),
-        ],
-        actor_id="db-records-tester",
-        now=NOW,
-    )
     create(repository, incidentDate="2003-01-03")
+    create(repository, incidentDate="2003-01-20")
     create(repository, incidentDate="2003-02-03")
-    create(repository, incidentDate="2003-03-03")
     voided = create(repository, incidentDate="2003-01-04", eventType="near_miss")
+
+    values = metrics.values([incident, near_miss], 2003)
+    assert values[(incident, 1)] == 2 and values[(near_miss, 1)] == 1
+    assert values[(incident, 2)] == 1 and values[(near_miss, 2)] == 0
+    assert (incident, 3) not in values, "months without a record change are not touched"
+
     service.void(repository, voided, VoidRequest(version=1, reason="duplicate"), ACTOR)
     before = session.scalar(select(func.count()).select_from(IncidentRecord))
+    values = metrics.values([incident, near_miss], 2003)
+    assert values[(incident, 1)] == 2 and values[(near_miss, 1)] == 0
 
+    # Totals now follow the records, so reconciliation reports no gap; reading never writes.
     result = service.reconciliation(
         repository, 2003, {"can_edit": True, "can_manage": False, "can_view_history": False}
     )
-
     state = {
         (m.event_type, m.month): (m.monthly_total, m.documented, m.state) for m in result.months
     }
-    assert state[("incident", 1)] == (2, 1, "records_missing")
-    assert state[("incident", 2)] == (0, 1, "explicit_zero_with_records")
-    assert state[("incident", 3)] == (None, 1, "total_unreported_with_records")
-    assert state[("incident", 4)] == (None, 0, "no_total_and_no_records")
-    assert state[("near_miss", 1)] == (1, 0, "records_missing")
-    # Reading never writes, and records never change the totals.
+    assert state[("incident", 1)] == (2, 2, "reconciled")
+    assert state[("near_miss", 1)] == (0, 0, "reconciled")
+    assert state[("incident", 3)] == (None, 0, "no_total_and_no_records")
     assert session.scalar(select(func.count()).select_from(IncidentRecord)) == before
-    assert metrics.values([incident], 2003)[(incident, 1)] == 2
 
 
 # Narrative import ------------------------------------------------------------------

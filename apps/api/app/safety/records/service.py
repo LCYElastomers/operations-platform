@@ -5,13 +5,18 @@ Every change is audited as ``safety.incident_record`` with key
 change. ``version`` guards each change: a request carrying a stale version is
 refused with the current record, and nothing is written.
 
-Records never change the monthly totals, and saving a monthly total never
-creates or removes records. Reconciliation compares the two and only warns.
+Individual records are the source of truth for the derived monthly values (the
+Incident and Near Miss totals and their breakdowns). After every create, edit,
+void or reclassification, the derived ``monthly_metric_values`` of each affected
+month are rebuilt from the active records only (``aggregation``), in the same
+transaction as the record change. Derived values are never typed, so saving a
+monthly value never creates or removes records.
 
-A record's further classifications and details (``details``) are written in
-the record's transaction and audited as ``safety.incident_record_detail`` with
-key ``incident-records/<id>/<kind>``. Any change to them is a change to the
-record: it needs the current ``version`` and increments it.
+A record's further classifications, tags (injury causes, body parts, event
+causes) and details (``details``) are written in the record's transaction and
+audited as ``safety.incident_record_detail`` with key
+``incident-records/<id>/<kind>``. Any change to them is a change to the record:
+it needs the current ``version`` and increments it.
 """
 
 import calendar
@@ -22,7 +27,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from app.audit.recorder import AuditAction, AuditChange
-from app.safety.records import details
+from app.safety.records import details, tags
+from app.safety.records.aggregation import FIRST_AID
 from app.safety.records.details import BY_KIND, SPECS, DetailRuleError
 from app.safety.records.models import EARLIEST_INCIDENT_DATE, IncidentRecord
 from app.safety.records.numbers import InvalidIncidentNumberError, normalize_incident_number
@@ -110,11 +116,15 @@ class Actor:
 def record_out(row: RecordRow) -> RecordOut:
     r = row.record
     stored = row.extras.details or {}
+    stored_tags = row.extras.tags or {}
     return RecordOut(
         additional_classifications=[
             ClassificationRef(id=i, code=code, name=name)
             for i, code, name in row.extras.classifications
         ],
+        injury_cause_category_ids=list(stored_tags.get(tags.INJURY_CAUSES.kind, ())),
+        body_part_category_ids=list(stored_tags.get(tags.BODY_PARTS.kind, ())),
+        event_cause_category_ids=list(stored_tags.get(tags.EVENT_CAUSES.kind, ())),
         **{
             spec.field: spec.out.model_validate(stored[spec.kind])
             for spec in SPECS
@@ -278,6 +288,8 @@ class DetailPlan:
     changes: dict[str, tuple[dict[str, Any] | None, dict[str, Any] | None]] = field(
         default_factory=dict
     )
+    # tag kind -> (before, after) category ids; only tags that change.
+    tag_changes: dict[str, tuple[list[int], list[int]]] = field(default_factory=dict)
 
     @property
     def classifications_change(self) -> bool:
@@ -285,7 +297,7 @@ class DetailPlan:
 
     @property
     def empty(self) -> bool:
-        return not self.changes and not self.classifications_change
+        return not self.changes and not self.classifications_change and not self.tag_changes
 
 
 def _further(
@@ -311,20 +323,74 @@ def _further(
     return chosen
 
 
+def _plan_tags(
+    repository: RecordRepository,
+    request: RecordDetailFields,
+    plan: DetailPlan,
+    *,
+    record_id: int | None,
+    first_aid: bool,
+    strict: bool,
+) -> None:
+    """Validate the request's tags (injury causes, body parts, event causes) and add
+    the ones that change to ``plan``. Injury causes and body parts belong to First Aid
+    records: a First Aid record needs at least one of each, and stored ones are cleared
+    when the record is no longer First Aid. ``strict`` False (reviewed imports) does not
+    demand them."""
+    for tag in tags.TAGS:
+        before = repository.tag_ids(tag, record_id) if record_id else []
+        given: list[int] | None = getattr(request, tag.field)
+        if tag.first_aid_only and not first_aid:
+            if given:
+                raise RecordRuleError(
+                    "tag_needs_first_aid",
+                    f"{tag.label} applies only to First Aid records.",
+                    field=tag.wire_field,
+                )
+            after: list[int] = []
+        elif given is None:
+            after = before
+        else:
+            options = repository.tag_options(tag)
+            after = []
+            for category_id in given:
+                option = _option(options, category_id)
+                if option is None or not (option.active or category_id in before):
+                    raise RecordRuleError(
+                        "invalid_tag",
+                        f"Choose active {tag.label} values.",
+                        field=tag.wire_field,
+                    )
+                if category_id not in after:
+                    after.append(category_id)
+        if tag.first_aid_only and first_aid and strict and not after:
+            raise RecordRuleError(
+                "first_aid_needs_tags",
+                f"A First Aid record needs at least one {tag.label}.",
+                field=tag.wire_field,
+            )
+        if set(before) != set(after):
+            plan.tag_changes[tag.kind] = (before, after)
+
+
 def _plan_details(
     repository: RecordRepository,
     request: RecordDetailFields,
     *,
     record_id: int | None,
     primary_id: int | None,
+    strict: bool = True,
 ) -> DetailPlan:
-    """Validate the request's classifications and details against the rules in
-    ``details``. Nothing is written."""
+    """Validate the request's classifications, tags and details against the rules in
+    ``details`` and ``tags``. Nothing is written."""
     current = repository.further_classification_ids(record_id) if record_id else []
     further = _further(repository, request, primary_id, current)
     by_id = {o.id: o.code for o in repository.classifications()}
     codes = {by_id[i] for i in (primary_id, *further) if i is not None and i in by_id}
     plan = DetailPlan(further_before=current, further_after=further)
+    _plan_tags(
+        repository, request, plan, record_id=record_id, first_aid=FIRST_AID in codes, strict=strict
+    )
     taxonomies: dict[str, list[tuple[str, str, bool]]] | None = None
     for spec in SPECS:
         stored = repository.detail(spec, record_id) if record_id else None
@@ -385,6 +451,25 @@ def _write_details(
                 entity_key=details.detail_entity_key(record_id, "classifications"),
                 old_value={"classification_category_ids": sorted(before)} if before else None,
                 new_value={"classification_category_ids": sorted(after)},
+            )
+        )
+    for kind, (before, after) in plan.tag_changes.items():
+        tag = tags.BY_KIND[kind]
+        repository.set_tags(
+            tag,
+            record_id,
+            add=[i for i in after if i not in before],
+            remove=[i for i in before if i not in after],
+            actor_id=actor.actor_id,
+            at=actor.now,
+        )
+        changes.append(
+            AuditChange(
+                action=("update" if before else "create") if after else "delete",
+                entity_type=details.DETAIL_ENTITY_TYPE,
+                entity_key=details.detail_entity_key(record_id, kind),
+                old_value=tags.audit_value(before) if before else None,
+                new_value=tags.audit_value(after) if after else None,
             )
         )
     for kind, (stored, after) in plan.changes.items():
@@ -456,6 +541,18 @@ def _log(event: str, record_id: int, actor: Actor, change_set: uuid.UUID) -> Non
     )
 
 
+def _month(day: dt.date) -> tuple[int, int]:
+    return (day.year, day.month)
+
+
+def _rebuild(
+    repository: RecordRepository, months: list[tuple[int, int]], actor: Actor
+) -> None:
+    """Rebuild the derived monthly values of the months from the active records, in the
+    record's transaction."""
+    repository.rebuild_derived(months, actor_id=actor.actor_id, at=actor.now)
+
+
 def _audited_insert(
     repository: RecordRepository, values: dict[str, Any], actor: Actor, change_set: uuid.UUID
 ) -> int:
@@ -486,14 +583,20 @@ def create(
     source_reference: str | None = None,
     status: str = "active",
     status_reason: str | None = None,
+    strict: bool = True,
 ) -> RecordRow:
-    """Create a record. ``source``, ``source_reference`` and an inactive status
-    are set only by the reviewed legacy import."""
+    """Create a record and rebuild its month's derived values. ``source``,
+    ``source_reference``, an inactive status and ``strict`` False (First Aid without
+    injury cause and body part) are set only by the reviewed legacy import."""
     change_set = uuid.uuid4()
     try:
         values = _validated(repository, request, request, today=site_today(actor.now))
         plan = _plan_details(
-            repository, request, record_id=None, primary_id=values["classification_category_id"]
+            repository,
+            request,
+            record_id=None,
+            primary_id=values["classification_category_id"],
+            strict=strict,
         )
         values |= {
             "event_type": request.event_type,
@@ -510,6 +613,7 @@ def create(
                 at=actor.now,
                 changes=_write_details(repository, record_id, plan, actor),
             )
+        _rebuild(repository, [_month(values["incident_date"])], actor)
         repository.commit()
     except Exception:
         repository.rollback()
@@ -521,10 +625,17 @@ def create(
 
 
 def update(
-    repository: RecordRepository, record_id: int, request: RecordUpdate, actor: Actor
+    repository: RecordRepository,
+    record_id: int,
+    request: RecordUpdate,
+    actor: Actor,
+    *,
+    strict: bool = True,
 ) -> RecordRow:
-    """Edit an active record's fields, further classifications and details, all in
-    one transaction. Unchanged values write nothing."""
+    """Edit an active record's fields, further classifications, tags and details, all
+    in one transaction, and rebuild the derived values of its month (both months when
+    the date moves). Unchanged values write nothing. ``strict`` False (reviewed
+    imports) does not demand injury causes and body parts of a First Aid record."""
     change_set = uuid.uuid4()
     try:
         record = _locked_active(repository, record_id, request.version)
@@ -532,11 +643,13 @@ def update(
             repository, request, request, today=site_today(actor.now), current=record
         )
         changed = {k: v for k, v in values.items() if getattr(record, k) != v}
+        old_month = _month(record.incident_date)
         plan = _plan_details(
             repository,
             request,
             record_id=record_id,
             primary_id=values["classification_category_id"],
+            strict=strict,
         )
         if not changed and plan.empty:
             repository.rollback()
@@ -559,6 +672,7 @@ def update(
             at=actor.now,
             changes=[_change("update", record_id, before, audit_value(after)), *detail_changes],
         )
+        _rebuild(repository, [old_month, _month(values["incident_date"])], actor)
         repository.commit()
     except Exception:
         repository.rollback()
@@ -572,13 +686,15 @@ def update(
 def void(
     repository: RecordRepository, record_id: int, request: VoidRequest, actor: Actor
 ) -> RecordRow:
-    """Mark a record voided. It is kept and excluded from active counts."""
+    """Mark a record voided. It is kept, excluded from active counts, and its month's
+    derived values are rebuilt without it."""
     change_set = uuid.uuid4()
     reason = request.reason.strip()
     if not reason:
         raise RecordRuleError("blank_reason", "Enter the reason for voiding.", field="reason")
     try:
         record = _locked_active(repository, record_id, request.version)
+        month = _month(record.incident_date)
         before = audit_value(record)
         repository.update(
             record_id,
@@ -595,6 +711,7 @@ def void(
             at=actor.now,
             changes=[_change("update", record_id, before, audit_value(after))],
         )
+        _rebuild(repository, [month], actor)
         repository.commit()
     except Exception:
         repository.rollback()
@@ -615,13 +732,16 @@ def reclassify(
     source_reference: str | None = None,
 ) -> tuple[RecordRow, RecordRow]:
     """Reclassify a record as the other event type. The original is kept with
-    status ``reclassified`` and points at its active replacement."""
+    status ``reclassified`` and points at its active replacement. The original is no
+    longer counted and the replacement is, so the derived values of both months are
+    rebuilt (once per month when they are the same)."""
     change_set = uuid.uuid4()
     reason = request.reason.strip()
     if not reason:
         raise RecordRuleError("blank_reason", "Enter the reason for reclassifying.", field="reason")
     try:
         record = _locked_active(repository, record_id, request.version)
+        original_month = _month(record.incident_date)
         new_type = OTHER_TYPE[record.event_type]
         if request.replacement is not None:
             values = _validated(
@@ -670,6 +790,9 @@ def reclassify(
             at=actor.now,
             changes=[_change("update", record_id, before, audit_value(after))],
         )
+        created = repository.lock(replacement_id)
+        assert created is not None  # noqa: S101 - inserted or locked above
+        _rebuild(repository, [original_month, _month(created.incident_date)], actor)
         repository.commit()
     except Exception:
         repository.rollback()

@@ -74,6 +74,17 @@ export function useMonthRecords(year: number, today: string) {
   const [opened, setOpened] = useState<Opened>(null);
   const data: ReconciliationResponse | undefined = reconciliation.data;
 
+  const openMonth = (eventType: EventType, month: number, adding = false) => {
+    if (!data) return;
+    if (monthDateRange(year, month, today) === null) return;
+    const row = data.months.find((m) => m.eventType === eventType && m.month === month);
+    setOpened({
+      eventType,
+      month,
+      adding: adding && (row?.documented ?? 0) === 0 && data.canEdit,
+    });
+  };
+
   const subRow = (eventType: EventType) => {
     if (!data) return undefined;
     const cells = Array.from({ length: 12 }, (_, index) => {
@@ -85,7 +96,7 @@ export function useMonthRecords(year: number, today: string) {
           month={month}
           year={year}
           canEdit={data.canEdit}
-          onOpen={() => setOpened({ eventType, month: index + 1, adding: month.documented === 0 && data.canEdit })}
+          onOpen={() => openMonth(eventType, index + 1, month.documented === 0)}
         />
       );
     });
@@ -105,5 +116,5 @@ export function useMonthRecords(year: number, today: string) {
     />
   );
 
-  return { subRow, dialog };
+  return { subRow, openMonth, dialog };
 }

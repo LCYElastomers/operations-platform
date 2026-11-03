@@ -101,6 +101,32 @@ describe("record detail drafts", () => {
     expect(detailFieldsOf({ ...draft, additional: [] }, new Set(), record).additionalClassificationIds).toEqual([]);
   });
 
+  it("asks for injury causes and body parts only with First Aid, and event causes always", () => {
+    const withFirstAid = [...OPTIONS, { id: 5, code: "first_aid", name: "First Aid", active: true }];
+    const firstAid = classificationCodes(5, [], withFirstAid);
+    const draft = detailDraftOf(null);
+    expect(detailProblems(draft, firstAid)).toEqual({
+      injuryCauseCategoryIds: "Choose at least one injury cause.",
+      bodyPartCategoryIds: "Choose at least one body part.",
+    });
+    expect(detailProblems(draft, classificationCodes(1, [], withFirstAid))).toEqual({});
+
+    draft.injuryCauses = [21];
+    draft.bodyParts = [31];
+    draft.eventCauses = [41];
+    expect(detailProblems(draft, firstAid)).toEqual({});
+    expect(detailFieldsOf(draft, firstAid, null)).toMatchObject({
+      injuryCauseCategoryIds: [21],
+      bodyPartCategoryIds: [31],
+      eventCauseCategoryIds: [41],
+    });
+    // Without First Aid the stale tags are not sent (the API clears them); event causes still are.
+    const fields = detailFieldsOf(draft, classificationCodes(1, [], withFirstAid), null);
+    expect(fields.injuryCauseCategoryIds).toBeUndefined();
+    expect(fields.bodyPartCategoryIds).toBeUndefined();
+    expect(fields.eventCauseCategoryIds).toEqual([41]);
+  });
+
   it("checks pairs and numbers in shown sections only", () => {
     const draft = detailDraftOf(null);
     draft.lopc.estimatedQuantity = "1.2345";

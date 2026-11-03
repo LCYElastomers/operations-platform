@@ -4,6 +4,10 @@ YTD is the sum of a category's reported months, or null when nothing is
 reported. Unreported (null) is never treated as 0. Categories are never summed
 across a section: Incident and Near Miss are explicit source metrics, not the
 sum of Incident Classification.
+
+Incident & Near Miss values are derived from the individual records
+(``app.safety.records.aggregation``) and cannot be saved here; only Near-Miss
+Potential, which no record feeds, can.
 """
 
 import datetime as dt
@@ -13,6 +17,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
 from app.audit.recorder import AuditChange
+from app.safety.records.aggregation import DERIVED_SECTIONS, INCIDENTS_METRIC_SET
 from app.safety.repository import (
     CategoryDefinition,
     Cell,
@@ -39,6 +44,15 @@ class UnknownCategoryError(ValueError):
 
     def __init__(self, category_ids: Sequence[int]) -> None:
         super().__init__("unknown category")
+        self.category_ids = sorted(set(category_ids))
+
+
+class DerivedCategoryError(ValueError):
+    """A change referenced a category whose monthly values are computed from the
+    Incident and Near Miss records, so it cannot be typed."""
+
+    def __init__(self, category_ids: Sequence[int]) -> None:
+        super().__init__("derived category")
         self.category_ids = sorted(set(category_ids))
 
 
@@ -81,7 +95,13 @@ def build_metrics(
                 )
             )
         blocks.append(
-            MetricSectionBlock(id=section.id, code=section.code, name=section.name, categories=rows)
+            MetricSectionBlock(
+                id=section.id,
+                code=section.code,
+                name=section.name,
+                categories=rows,
+                derived=metric_set == INCIDENTS_METRIC_SET and section.code in DERIVED_SECTIONS,
+            )
         )
     return MonthlyMetricsResponse(
         metric_set=metric_set,
@@ -135,12 +155,18 @@ def save_changes(
     changes: Sequence[CellChange],
     actor_id: str,
     now: dt.datetime,
+    allow_derived: bool = False,
 ) -> SaveOutcome:
     """Apply cell changes atomically, with one audit event per changed cell.
 
     Changes that do not alter the stored value are ignored. If any cell's
     stored value differs from the client's ``previous_value``, nothing is
     written and ``EditConflictError`` lists the conflicting cells.
+
+    Incident & Near Miss values in the derived sections (``DERIVED_SECTIONS``) are
+    rebuilt from the individual records and cannot be changed here:
+    ``DerivedCategoryError`` lists the categories and nothing is written. Only the
+    reviewed historical import sets ``allow_derived``.
     """
     sections = repository.sections(metric_set)
     owners = {
@@ -149,6 +175,14 @@ def save_changes(
     unknown = [change.category_id for change in changes if change.category_id not in owners]
     if unknown:
         raise UnknownCategoryError(unknown)
+    if metric_set == INCIDENTS_METRIC_SET and not allow_derived:
+        derived = [
+            change.category_id
+            for change in changes
+            if owners[change.category_id][0].code in DERIVED_SECTIONS
+        ]
+        if derived:
+            raise DerivedCategoryError(derived)
 
     repository.lock_year(metric_set, year)
     current = repository.values(sorted({change.category_id for change in changes}), year)

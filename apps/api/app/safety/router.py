@@ -35,7 +35,7 @@ from app.safety.schemas import (
     SaveMonthlyMetricsRequest,
     SaveMonthlyMetricsResponse,
 )
-from app.safety.service import EditConflictError, UnknownCategoryError
+from app.safety.service import DerivedCategoryError, EditConflictError, UnknownCategoryError
 from app.safety.site_calendar import site_today
 
 router = APIRouter(prefix="/safety", tags=["safety"])
@@ -277,7 +277,10 @@ def save_incident_metrics(
     repository: Repository,
     request: SaveMonthlyMetricsRequest,
 ) -> SaveMonthlyMetricsResponse:
-    """Set or clear monthly cells. All changes are applied together or not at all."""
+    """Set or clear monthly cells. All changes are applied together or not at all.
+
+    Values derived from the Incident and Near Miss records are refused (422
+    ``derived_category``); only Near-Miss Potential can be saved here."""
     try:
         outcome = service.save_changes(
             repository,
@@ -295,6 +298,14 @@ def save_incident_metrics(
             status.HTTP_422_UNPROCESSABLE_CONTENT,
             "unknown_category",
             "One or more categories are not active Incident & Near Miss categories.",
+            categoryIds=error.category_ids,
+        ) from None
+    except DerivedCategoryError as error:
+        raise _error(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "derived_category",
+            "These values are calculated from the Incident and Near Miss records. "
+            "Add or edit the records instead. Nothing was saved.",
             categoryIds=error.category_ids,
         ) from None
     except EditConflictError as error:

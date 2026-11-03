@@ -110,6 +110,8 @@ function readOpenSections(): Record<string, boolean> {
   }
 }
 
+type OpenMonth = (eventType: EventType, month: number) => void;
+
 type SectionGridsProps = {
   sections: MetricSectionBlock[];
   draft: Draft;
@@ -117,10 +119,20 @@ type SectionGridsProps = {
   onCellChange: (rowId: string, column: number, text: string) => void;
   onCellRevert: (rowId: string, column: number) => void;
   recordRow?: RecordSubRow;
+  /** Opens the month's Incident / Near Miss records from a top-table total cell. */
+  openMonth?: OpenMonth;
 };
 
 /** Mounted only once data has loaded in the browser, so window is available. */
-function SectionGrids({ sections, draft, editable, onCellChange, onCellRevert, recordRow }: SectionGridsProps) {
+function SectionGrids({
+  sections,
+  draft,
+  editable,
+  onCellChange,
+  onCellRevert,
+  recordRow,
+  openMonth,
+}: SectionGridsProps) {
   const [compact] = useState(() => window.matchMedia(COMPACT_LAYOUT_QUERY).matches);
   const [chosen, setChosen] = useState(readOpenSections);
 
@@ -145,15 +157,26 @@ function SectionGrids({ sections, draft, editable, onCellChange, onCellRevert, r
   const grid = (section: MetricSectionBlock, title: string, breakdown: boolean) => {
     const rows = sectionRows(section, draft, recordRow);
     const monthly = draftMonthlyTotals(section, draft);
+    const activateTotals =
+      section.code === PRIMARY_SECTION_CODE && openMonth
+        ? (rowId: string, column: number) => {
+            const category = section.categories.find((c) => String(c.id) === rowId);
+            const eventType = category ? EVENT_CATEGORY_CODES[category.code] : undefined;
+            if (eventType) openMonth(eventType, column + 1);
+          }
+        : undefined;
     return (
       <MonthlyGrid
         key={section.id}
         title={title}
         columns={MONTH_LABELS}
         rows={rows}
-        editable={editable}
+        // Derived sections are rebuilt from the records; the top totals stay
+        // clickable via onCellActivate and the Records sub-row.
+        editable={editable && !section.derived}
         onCellChange={onCellChange}
         onCellRevert={onCellRevert}
+        onCellActivate={activateTotals}
         open={isOpen(section.code)}
         onOpenChange={(open) => setOpen(section.code, open)}
         summary={sectionSummary(rows)}
@@ -183,9 +206,9 @@ function SectionGrids({ sections, draft, editable, onCellChange, onCellRevert, r
               Breakdowns
             </h2>
             <p className="mt-0.5 max-w-4xl text-sm text-muted-foreground">
-              Supporting dimensions of the totals above, which stay authoritative. Each month is checked against
-              its total as you type; a difference is a warning only and nothing is filled in or distributed. Blank is
-              not reported; 0 is a reported zero.
+              Calculated from the individual Incident and Near Miss records and read-only here: add, edit, void or
+              reclassify a record to change a count. Near Miss Potential is still entered by hand. Blank is not
+              reported; 0 is a reported zero.
             </p>
           </div>
           {breakdowns.map(({ letter, section }) => grid(section, `${letter} · ${section.name}`, true))}
@@ -574,6 +597,7 @@ export function IncidentDataEntry({ title, description, siteToday }: IncidentDat
           onCellChange={setCell}
           onCellRevert={revertCell}
           recordRow={records.subRow}
+          openMonth={records.openMonth}
         />
       )}
       {records.dialog}

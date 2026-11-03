@@ -256,6 +256,7 @@ def _entry(repository: RecordRepository, entry: MappingEntry, plan: Plan, now: d
                 **changes,
             ),
             service.Actor(LEGACY_IMPORT_ACTOR, now),
+            strict=False,
         )
     except service.RecordRuleError as error:
         problems = plan.invalid_codes if error.error in CODE_ERRORS else plan.validation_failures

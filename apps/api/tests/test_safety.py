@@ -29,7 +29,7 @@ from app.safety.repository import (
 )
 from app.safety.router import safety_repository
 from app.safety.schemas import CellChange
-from app.safety.service import EditConflictError, UnknownCategoryError
+from app.safety.service import DerivedCategoryError, EditConflictError, UnknownCategoryError
 
 URL = "/api/v1/safety/incidents/metrics"
 NOW = dt.datetime(2026, 10, 6, 12, 0, tzinfo=dt.UTC)
@@ -51,6 +51,16 @@ SECTIONS = [
         categories=(
             CategoryDefinition(id=21, code="near_miss", name="Near Miss"),
             CategoryDefinition(id=22, code="incident", name="Incident"),
+        ),
+    ),
+    # Not derived from the records (no record feeds it): the one section that can be saved.
+    SectionDefinition(
+        id=3,
+        code="near_miss_potential",
+        name="Near-Miss Potential",
+        categories=(
+            CategoryDefinition(id=31, code="sif", name="SIF"),
+            CategoryDefinition(id=32, code="exposure", name="Exposure"),
         ),
     ),
 ]
@@ -124,7 +134,11 @@ def change(category_id: int, month: int, value: int | None, previous: int | None
     return CellChange(category_id=category_id, month=month, value=value, previous_value=previous)
 
 
-def save(repository: InMemoryRepository, *changes: CellChange) -> service.SaveOutcome:
+def save(
+    repository: InMemoryRepository, *changes: CellChange, allow_derived: bool = True
+) -> service.SaveOutcome:
+    # The mechanics (audit, conflicts) are section-independent: derived sections are
+    # allowed here and refused in the derived-section tests below.
     return service.save_changes(
         repository,
         metric_set="incidents",
@@ -132,6 +146,7 @@ def save(repository: InMemoryRepository, *changes: CellChange) -> service.SaveOu
         changes=list(changes),
         actor_id="tester",
         now=NOW,
+        allow_derived=allow_derived,
     )
 
 
@@ -151,7 +166,7 @@ def test_metrics_grid_has_twelve_months_and_calculated_ytd() -> None:
 
     metrics = service.load_metrics(repository, metric_set="incidents", year=2026, can_edit=False)
 
-    classification, totals = metrics.sections
+    classification, totals, _ = metrics.sections
     first_aid, recordable = classification.categories
     near_miss, incident = totals.categories
     assert first_aid.values == [2, None, 0] + [None] * 9
@@ -267,6 +282,45 @@ def test_unknown_category_is_rejected_before_locking() -> None:
     assert repository.locks == []
 
 
+def test_derived_categories_cannot_be_saved() -> None:
+    repository = InMemoryRepository({(31, 2026, 1): 1})
+
+    with pytest.raises(DerivedCategoryError) as error:
+        save(
+            repository,
+            change(31, 1, 2, 1),
+            change(11, 1, 5, None),
+            change(22, 1, 1, None),
+            allow_derived=False,
+        )
+
+    assert error.value.category_ids == [11, 22]
+    assert repository.locks == []
+    assert repository.pending == {}
+    assert repository.stored == {(31, 2026, 1): 1}
+
+
+def test_near_miss_potential_is_not_derived_and_can_be_saved() -> None:
+    repository = InMemoryRepository()
+
+    outcome = save(repository, change(31, 1, 2, None), allow_derived=False)
+
+    assert outcome.changed_cells == 1
+    assert repository.stored == {(31, 2026, 1): 2}
+
+
+def test_derived_sections_are_flagged_in_the_grid() -> None:
+    metrics = service.load_metrics(
+        InMemoryRepository(), metric_set="incidents", year=2026, can_edit=True
+    )
+
+    assert {s.code: s.derived for s in metrics.sections} == {
+        "incident_classification": True,
+        "incident_near_miss_totals": True,
+        "near_miss_potential": False,
+    }
+
+
 # API -----------------------------------------------------------------------------
 
 
@@ -275,7 +329,7 @@ principal = as_user
 
 @pytest.fixture
 def repository() -> InMemoryRepository:
-    return InMemoryRepository({(11, 2026, 1): 2})
+    return InMemoryRepository({(31, 2026, 1): 2})
 
 
 def make_client(repository: InMemoryRepository, user: UserPrincipal | None) -> Iterator[TestClient]:
@@ -304,7 +358,7 @@ def body(*changes: dict[str, Any], year: Any = 2026) -> dict[str, Any]:
 
 
 def cell(**overrides: Any) -> dict[str, Any]:
-    return {"categoryId": 11, "month": 1, "value": 3, "previousValue": 2, **overrides}
+    return {"categoryId": 31, "month": 1, "value": 3, "previousValue": 2, **overrides}
 
 
 def test_anonymous_requests_are_refused_by_default(repository: InMemoryRepository) -> None:
@@ -313,7 +367,7 @@ def test_anonymous_requests_are_refused_by_default(repository: InMemoryRepositor
         response = client.patch(URL, json=body(cell()))
         assert response.status_code == 401
         assert response.json()["detail"]["error"] == "authentication_required"
-    assert repository.stored == {(11, 2026, 1): 2}
+    assert repository.stored == {(31, 2026, 1): 2}
 
 
 def test_changes_are_attributed_to_the_session_user(
@@ -336,7 +390,7 @@ def test_viewer_reads_but_cannot_edit(viewer: TestClient, repository: InMemoryRe
         "error": "permission_denied",
         "message": "You do not have permission to perform this action.",
     }
-    assert repository.stored == {(11, 2026, 1): 2}
+    assert repository.stored == {(31, 2026, 1): 2}
 
 
 def test_get_returns_the_monthly_grid(editor: TestClient) -> None:
@@ -346,17 +400,18 @@ def test_get_returns_the_monthly_grid(editor: TestClient) -> None:
     data = response.json()
     assert data["canEdit"] is True
     assert data["year"] == 2026
-    first_aid = data["sections"][0]["categories"][0]
-    assert first_aid == {
-        "id": 11,
-        "code": "first_aid",
-        "name": "First Aid",
+    potential = data["sections"][2]["categories"][0]
+    assert potential == {
+        "id": 31,
+        "code": "sif",
+        "name": "SIF",
         "description": None,
         "areaKind": None,
         "values": [2] + [None] * 11,
         "ytd": 2,
     }
-    assert set(data["sections"][1]) == {"id", "code", "name", "categories"}
+    assert set(data["sections"][1]) == {"id", "code", "name", "categories", "derived"}
+    assert [s["derived"] for s in data["sections"]] == [True, True, False]
     assert data["sections"][1]["categories"][1]["ytd"] is None
 
 
@@ -373,15 +428,31 @@ def test_save_returns_the_refreshed_grid(
     editor: TestClient, repository: InMemoryRepository
 ) -> None:
     response = editor.patch(
-        URL, json=body(cell(), cell(categoryId=21, value=0, previousValue=None))
+        URL, json=body(cell(), cell(categoryId=32, value=0, previousValue=None))
     )
 
     assert response.status_code == 200
     data = response.json()
     assert data["changedCells"] == 2
-    assert data["metrics"]["sections"][0]["categories"][0]["values"][0] == 3
-    assert data["metrics"]["sections"][1]["categories"][0]["ytd"] == 0
-    assert repository.stored == {(11, 2026, 1): 3, (21, 2026, 1): 0}
+    assert data["metrics"]["sections"][2]["categories"][0]["values"][0] == 3
+    assert data["metrics"]["sections"][2]["categories"][1]["ytd"] == 0
+    assert repository.stored == {(31, 2026, 1): 3, (32, 2026, 1): 0}
+
+
+@pytest.mark.parametrize("category_id", [11, 21, 22])
+def test_save_rejects_derived_categories(
+    editor: TestClient, repository: InMemoryRepository, category_id: int
+) -> None:
+    response = editor.patch(
+        URL, json=body(cell(), cell(categoryId=category_id, previousValue=None))
+    )
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert detail["error"] == "derived_category"
+    assert detail["categoryIds"] == [category_id]
+    assert repository.stored == {(31, 2026, 1): 2}
+    assert repository.audit == []
 
 
 @pytest.mark.parametrize(
@@ -406,7 +477,7 @@ def test_save_rejects_invalid_cells(
     response = editor.patch(URL, json=body(bad))
 
     assert response.status_code == 422
-    assert repository.stored == {(11, 2026, 1): 2}
+    assert repository.stored == {(31, 2026, 1): 2}
 
 
 @pytest.mark.parametrize(
@@ -437,8 +508,8 @@ def test_save_reports_conflicts(editor: TestClient, repository: InMemoryReposito
     assert response.status_code == 409
     detail = response.json()["detail"]
     assert detail["error"] == "edit_conflict"
-    assert detail["conflicts"] == [{"categoryId": 11, "month": 1, "currentValue": 2}]
-    assert repository.stored == {(11, 2026, 1): 2}
+    assert detail["conflicts"] == [{"categoryId": 31, "month": 1, "currentValue": 2}]
+    assert repository.stored == {(31, 2026, 1): 2}
 
 
 def test_missing_database_is_reported_as_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:

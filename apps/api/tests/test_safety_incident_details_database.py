@@ -48,6 +48,7 @@ from app.safety.records.detail_models import (
 from app.safety.records.models import IncidentRecord
 from app.safety.records.repository import RecordRepository
 from app.safety.records.schemas import RecordCreate, RecordUpdate, VoidRequest
+from app.safety.records.tags import BODY_PARTS, INJURY_CAUSES
 
 pytestmark = requires_postgres
 
@@ -103,6 +104,14 @@ def class_id(repository: RecordRepository, code: str) -> int:
     return next(o.id for o in repository.classifications() if o.code == code)
 
 
+def with_first_aid_tags(repository: RecordRepository, data: dict[str, Any]) -> dict[str, Any]:
+    """A First Aid record needs an injury cause and a body part (migration 0019)."""
+    if data.get("classificationCategoryId") == class_id(repository, "first_aid"):
+        data.setdefault("injuryCauseCategoryIds", [repository.tag_options(INJURY_CAUSES)[0].id])
+        data.setdefault("bodyPartCategoryIds", [repository.tag_options(BODY_PARTS)[0].id])
+    return data
+
+
 def create(repository: RecordRepository, day: str = "2003-03-10", **overrides: Any) -> int:
     data: dict[str, Any] = {
         "eventType": "incident",
@@ -110,6 +119,7 @@ def create(repository: RecordRepository, day: str = "2003-03-10", **overrides: A
         "description": "ZZ test event.",
         **overrides,
     }
+    data = with_first_aid_tags(repository, data)
     return service.create(repository, RecordCreate.model_validate(data), ACTOR).record.id
 
 
@@ -132,6 +142,7 @@ def edit(repository: RecordRepository, record_id: int, **changes: Any) -> Any:
         "version": r.version,
         **changes,
     }
+    body = with_first_aid_tags(repository, body)
     return service.update(repository, record_id, RecordUpdate.model_validate(body), ACTOR)
 
 
@@ -142,7 +153,10 @@ def experience(session: Session, year: int, as_of: str, **kwargs: Any) -> dict[s
     return {c.code: c for c in result.categories}
 
 
-def monthly(session: Session, section: str, code: str, year: int, month: int, value: int) -> None:
+def monthly(
+    session: Session, section: str, code: str, year: int, month: int, value: int | None
+) -> None:
+    """Set the month's stored value, or (None) leave it unreported."""
     category_id = session.scalars(
         select(MetricCategory.id)
         .join(MetricSection, MetricSection.id == MetricCategory.section_id)
@@ -152,6 +166,16 @@ def monthly(session: Session, section: str, code: str, year: int, month: int, va
             MetricCategory.code == code,
         )
     ).one()
+    # Record writes rebuild a month's derived values; replace the rebuilt value.
+    session.execute(
+        delete(MonthlyMetricValue).where(
+            MonthlyMetricValue.category_id == category_id,
+            MonthlyMetricValue.reporting_year == year,
+            MonthlyMetricValue.reporting_month == month,
+        )
+    )
+    if value is None:
+        return
     session.execute(
         insert(MonthlyMetricValue).values(
             category_id=category_id,
@@ -674,7 +698,8 @@ def test_serious_risk_analytics(session: Session, repository: RecordRepository) 
     assert result.psif_records == 2
     assert [(m.month, m.records, m.monthly_count) for m in result.monthly] == [
         (1, 1, 2),
-        (2, 1, None),
+        # Month 2 was rebuilt from its records when they were written.
+        (2, 1, 1),
     ]
     assert [(c.name, c.count) for c in result.by_classification][-1] == ("Unclassified", 1)
     assert [(c.key, c.count) for c in result.by_severity] == [("fatality", 1), (None, 1)]
@@ -872,6 +897,7 @@ def test_reconcile_record_details_and_aggregates(
     classified(repository, "spill_release", "2003-03-01", incidentNumber="ZZT-2003-801")
     classified(repository, "pit_accident", "2003-03-02", pitDetails={"vehicleType": "Forklift"})
     monthly(session, "lopc", "lopc", 2003, 3, 2)
+    monthly(session, "pit", "pit", 2003, 3, None)  # unreported: the rebuilt count is removed
     findings = reconcile.check_record_details(session, 2003)
     missing = [f for f in findings if f.check == "detail_missing"]
     assert [f.status for f in missing] == ["warning"]

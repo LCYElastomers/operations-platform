@@ -478,6 +478,7 @@ def test_reconcile_reports_reviewed_values_until_they_are_stored_and_trir_follow
         changes=metrics_import.plan_import(Metrics(session), mapping).changes,
         actor_id="db-durability-tester",
         now=NOW,
+        allow_derived=True,
     )
     hours = hours_import.load_mapping(HOURS)
     hours_import.apply_plan(

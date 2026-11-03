@@ -380,6 +380,7 @@ def test_import_plans_insert_reported_cells_only_and_are_idempotent() -> None:
             changes=plan.changes,
             actor_id="legacy-import",
             now=OCTOBER_8_2026,
+            allow_derived=True,
         )
         again = plan_import(repository, mapping)
         assert (again.changes, again.unchanged) == ([], expected)
@@ -409,6 +410,7 @@ def save(repository: Repository, *changes: CellChange) -> service.SaveOutcome:
         changes=list(changes),
         actor_id="tester",
         now=OCTOBER_8_2026,
+        allow_derived=True,
     )
 
 

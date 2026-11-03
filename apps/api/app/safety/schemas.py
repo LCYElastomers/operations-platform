@@ -37,6 +37,8 @@ class MetricSectionBlock(CamelModel):
     code: str
     name: str
     categories: list[MetricCategoryRow]
+    # Computed from the Incident and Near Miss records; cannot be typed.
+    derived: bool = False
 
 
 class MonthlyMetricsResponse(CamelModel):

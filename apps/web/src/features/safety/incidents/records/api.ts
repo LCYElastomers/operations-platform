@@ -34,6 +34,10 @@ export type IncidentRecord = {
   updatedByName?: string | null;
   /** Classifications beyond `classificationCategoryId`. */
   additionalClassifications?: ClassificationRef[];
+  /** Record-level tags (metric category ids). Injury causes and body parts belong to First Aid records. */
+  injuryCauseCategoryIds?: number[];
+  bodyPartCategoryIds?: number[];
+  eventCauseCategoryIds?: number[];
   lopcDetails?: (LopcDetails & DetailStamp) | null;
   damageDetails?: (DamageDetails & DetailStamp) | null;
   pitDetails?: (PitDetails & DetailStamp) | null;
@@ -96,13 +100,26 @@ export type SeriousRiskDetails = {
  */
 export type DetailFields = {
   additionalClassificationIds?: number[];
+  /** A First Aid record needs at least one injury cause and one body part; both are cleared when First Aid is removed. */
+  injuryCauseCategoryIds?: number[];
+  bodyPartCategoryIds?: number[];
+  /** Optional (none, one or several) on Incidents and Near Misses. */
+  eventCauseCategoryIds?: number[];
   lopcDetails?: Partial<LopcDetails> | null;
   damageDetails?: Partial<DamageDetails> | null;
   pitDetails?: Partial<PitDetails> | null;
   seriousRiskDetails?: (Partial<SeriousRiskDetails> & { isPsif: boolean }) | null;
 };
 
-export type DetailKind = "classifications" | "lopc" | "damage" | "pit" | "serious_risk";
+export type DetailKind =
+  | "classifications"
+  | "injury_causes"
+  | "body_parts"
+  | "event_causes"
+  | "lopc"
+  | "damage"
+  | "pit"
+  | "serious_risk";
 
 /** What the signed-in user may do; `*Types` list the record types each action is allowed for. */
 export type RecordPermissions = {
@@ -137,6 +154,10 @@ export type DetailCode = { code: string; name: string; active: boolean };
 export type RecordOptionsResponse = {
   areas: RecordOption[];
   classifications: RecordOption[];
+  /** The Injury Cause, Body Part and Near-Miss Cause categories a record can be tagged with. */
+  injuryCauses?: RecordOption[];
+  bodyParts?: RecordOption[];
+  eventCauses?: RecordOption[];
   /** Taxonomy -> codes, e.g. quantity_unit, lopc_failure_mechanism, lopc_contributing_factor. */
   detailCodes?: Record<string, DetailCode[]>;
 };

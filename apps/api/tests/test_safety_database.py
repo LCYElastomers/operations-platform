@@ -191,6 +191,7 @@ def test_save_round_trip_with_audit(session: Session, repository: NonCommittingR
         ],
         actor_id="tester",
         now=NOW,
+        allow_derived=True,
     )
     service.save_changes(
         repository,
@@ -202,6 +203,7 @@ def test_save_round_trip_with_audit(session: Session, repository: NonCommittingR
         ],
         actor_id="second",
         now=NOW + dt.timedelta(minutes=5),
+        allow_derived=True,
     )
 
     metrics = service.load_metrics(repository, metric_set="incidents", year=2026, can_edit=True)
@@ -270,6 +272,7 @@ def test_analytics_read_the_seeded_definitions_and_write_nothing(
         ],
         actor_id="tester",
         now=NOW,
+        allow_derived=True,
     )
     audit_rows = session.scalar(select(func.count()).select_from(AuditEvent))
     value_rows = session.scalar(select(func.count()).select_from(MonthlyMetricValue))
@@ -305,6 +308,7 @@ def test_stale_previous_value_is_a_conflict(repository: NonCommittingRepository)
         changes=[CellChange(category_id=first_aid, month=4, value=1, previous_value=None)],
         actor_id="tester",
         now=NOW,
+        allow_derived=True,
     )
 
     with pytest.raises(EditConflictError):
@@ -315,6 +319,7 @@ def test_stale_previous_value_is_a_conflict(repository: NonCommittingRepository)
             changes=[CellChange(category_id=first_aid, month=4, value=5, previous_value=None)],
             actor_id="tester",
             now=NOW,
+            allow_derived=True,
         )
 
 
@@ -511,6 +516,7 @@ def test_downgrade_guard_refuses_when_dimension_values_exist(
         ],
         actor_id="tester",
         now=NOW,
+        allow_derived=True,
     )
 
     with pytest.raises(DBAPIError, match="Cannot downgrade"), session.begin_nested():
@@ -535,6 +541,7 @@ def test_area_values_round_trip_with_null_and_zero(
         ],
         actor_id="tester",
         now=NOW,
+        allow_derived=True,
     )
     audit = session.scalars(
         select(AuditEvent.entity_key).where(AuditEvent.entity_key.like("%/2099-01"))

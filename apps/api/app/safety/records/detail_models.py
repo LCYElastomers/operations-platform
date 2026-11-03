@@ -1,7 +1,10 @@
 """Record-level detail of Incident and Near Miss records (migration 0017).
 
-Each detail table holds at most one row per record and is never the source of
-a monthly total. Codes are stable analytical keys checked by a trigger against
+Each detail table holds at most one row per record. The record's classifications,
+its LOPC contributing factor, PSIF designation and the tag tables (injury
+causes, body parts, event causes; migration 0019) feed the derived monthly
+totals (see ``aggregation``); the other detail columns do not. Codes are stable
+analytical keys checked by a trigger against
 ``incident_detail_codes`` (or, for the LOPC contributing factor, the existing
 ``lopc_contributing_factor`` categories); names may change, codes never do.
 A null field is not recorded (unknown), never "no" or zero.
@@ -113,6 +116,68 @@ class IncidentRecordClassification(Base):
         ),
         nullable=False,
     )
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    created_by: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+def _tag_table_args(table: str, column: str) -> tuple[object, ...]:
+    return (
+        UniqueConstraint("incident_record_id", column, name=f"uq_{table}_record_category"),
+        Index(f"ix_{table}_category_id", column),
+        {"schema": SAFETY_SCHEMA},
+    )
+
+
+def _tag_category(table: str) -> Mapped[int]:
+    return mapped_column(
+        Integer,
+        ForeignKey(MetricCategory.id, name=f"fk_{table}_category", ondelete="RESTRICT"),
+        nullable=False,
+    )
+
+
+class IncidentRecordInjuryCause(Base):
+    """An Injury Cause (section ``injury_cause``) of a First Aid record. Feeds the
+    derived monthly Injury Cause counts (migration 0019)."""
+
+    __tablename__ = "incident_record_injury_causes"
+    __table_args__ = _tag_table_args(__tablename__, "injury_cause_category_id")
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    incident_record_id: Mapped[int] = _record_id(__tablename__)
+    injury_cause_category_id: Mapped[int] = _tag_category(__tablename__)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    created_by: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class IncidentRecordBodyPart(Base):
+    """A Body Part (section ``body_part``) of a First Aid record."""
+
+    __tablename__ = "incident_record_body_parts"
+    __table_args__ = _tag_table_args(__tablename__, "body_part_category_id")
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    incident_record_id: Mapped[int] = _record_id(__tablename__)
+    body_part_category_id: Mapped[int] = _tag_category(__tablename__)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    created_by: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class IncidentRecordEventCause(Base):
+    """An event cause (section ``near_miss_cause``) of an Incident or Near Miss record."""
+
+    __tablename__ = "incident_record_event_causes"
+    __table_args__ = _tag_table_args(__tablename__, "event_cause_category_id")
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    incident_record_id: Mapped[int] = _record_id(__tablename__)
+    event_cause_category_id: Mapped[int] = _tag_category(__tablename__)
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

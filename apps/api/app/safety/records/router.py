@@ -24,7 +24,7 @@ from app.core.authorization import (
 from app.core.permissions import Permission
 from app.db.session import DatabaseNotConfiguredError, get_sessionmaker
 from app.safety.models import MAX_REPORTING_YEAR, MIN_REPORTING_YEAR
-from app.safety.records import categories, details, service
+from app.safety.records import categories, details, service, tags
 from app.safety.records.numbers import InvalidIncidentNumberError, normalize_incident_number
 from app.safety.records.repository import RecordFilter, RecordRepository
 from app.safety.records.schemas import (
@@ -292,19 +292,29 @@ def list_records(
 
 @router.get("/records/options", response_model=RecordOptionsResponse)
 def record_options(principal: Viewer, repository: Repository) -> RecordOptionsResponse:
-    """Areas, Incident Classifications and record-detail codes a record can reference
-    (inactive ones flagged). The LOPC contributing factors are listed under
-    ``lopc_contributing_factor``."""
+    """Areas, Incident Classifications, tag categories (Injury Cause, Body Part, event
+    cause) and record-detail codes a record can reference (inactive ones flagged). The
+    LOPC contributing factors are listed under ``lopc_contributing_factor``."""
     try:
         areas, classifications = repository.areas(), repository.classifications()
         codes = repository.detail_codes()
+        tag_options = {tag.kind: repository.tag_options(tag) for tag in tags.TAGS}
     except SQLAlchemyError:
         raise _database_unavailable() from None
+
+    def options_out(kind: str) -> list[OptionOut]:
+        return [
+            OptionOut(id=o.id, code=o.code, name=o.name, active=o.active) for o in tag_options[kind]
+        ]
+
     return RecordOptionsResponse(
         areas=[OptionOut(id=o.id, code=o.code, name=o.name, active=o.active) for o in areas],
         classifications=[
             OptionOut(id=o.id, code=o.code, name=o.name, active=o.active) for o in classifications
         ],
+        injury_causes=options_out(tags.INJURY_CAUSES.kind),
+        body_parts=options_out(tags.BODY_PARTS.kind),
+        event_causes=options_out(tags.EVENT_CAUSES.kind),
         detail_codes={
             taxonomy.removeprefix("metric:"): [
                 DetailCodeOut(code=code, name=name, active=active) for code, name, active in entries

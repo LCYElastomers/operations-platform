@@ -37,6 +37,11 @@ type MonthlyGridProps = {
   onCellChange?: (rowId: string, column: number, text: string) => void;
   /** Escape restores the stored value of a cell. */
   onCellRevert?: (rowId: string, column: number) => void;
+  /**
+   * When the grid is not editable, activates a month cell (e.g. open that
+   * month's Incident / Near Miss records). Ignored while editable.
+   */
+  onCellActivate?: (rowId: string, column: number) => void;
   /** Makes the header a disclosure button. Collapsing only hides the grid; edits live with the caller. */
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -159,6 +164,7 @@ function GridTable({
   editable,
   onCellChange,
   onCellRevert,
+  onCellActivate,
   loading = false,
 }: GridTableProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -371,6 +377,20 @@ function GridTable({
                               "border-destructive bg-destructive/10 focus:border-destructive focus:ring-destructive/30",
                           )}
                         />
+                      ) : onCellActivate ? (
+                        <button
+                          type="button"
+                          data-cell={`${rowIndex}:${column}`}
+                          aria-label={`${row.label}, ${columns[column]}`}
+                          onClick={() => onCellActivate(row.id, column)}
+                          className={cn(
+                            "flex h-9 w-full items-center justify-end rounded-sm px-2 text-right tabular-nums",
+                            "pointer-coarse:h-11 hover:bg-muted/70",
+                            "focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none",
+                          )}
+                        >
+                          {cell.text === "" ? <NoValue /> : cell.text}
+                        </button>
                       ) : (
                         <div className="px-2 text-right tabular-nums">
                           {cell.text === "" ? <NoValue /> : cell.text}

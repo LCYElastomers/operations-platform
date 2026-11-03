@@ -6,8 +6,9 @@ of a response.
 Record detail (LOPC, damage, PIT, serious risk) and further classifications
 are optional. In a create or update, an omitted detail is left as stored, a
 null detail is removed, and an object replaces the stored detail; an omitted
-or null ``additionalClassificationIds`` is left as stored. A null detail field
-is not recorded (unknown), never "no" or zero.
+or null ``additionalClassificationIds`` is left as stored, and so are the tag lists
+(``injuryCauseCategoryIds``, ``bodyPartCategoryIds``, ``eventCauseCategoryIds``). A
+null detail field is not recorded (unknown), never "no" or zero.
 """
 
 import datetime as dt
@@ -117,6 +118,18 @@ class RecordDetailFields(CamelModel):
     additional_classification_ids: list[Annotated[int, Field(ge=1)]] | None = Field(
         default=None, max_length=20
     )
+    # Record-level tags (Injury Cause, Body Part and Near-Miss Cause categories).
+    # Omitted or null leaves the stored tags; a list replaces them. Injury causes and
+    # body parts belong to First Aid records and are cleared when First Aid is removed.
+    injury_cause_category_ids: list[Annotated[int, Field(ge=1)]] | None = Field(
+        default=None, max_length=60
+    )
+    body_part_category_ids: list[Annotated[int, Field(ge=1)]] | None = Field(
+        default=None, max_length=60
+    )
+    event_cause_category_ids: list[Annotated[int, Field(ge=1)]] | None = Field(
+        default=None, max_length=60
+    )
     lopc_details: LopcDetails | None = None
     damage_details: DamageDetails | None = None
     pit_details: PitDetails | None = None
@@ -222,6 +235,9 @@ class RecordOut(CamelModel):
     created_by_name: str | None = None
     updated_by_name: str | None = None
     additional_classifications: list[ClassificationRef] = []
+    injury_cause_category_ids: list[int] = []
+    body_part_category_ids: list[int] = []
+    event_cause_category_ids: list[int] = []
     lopc_details: LopcDetailsOut | None = None
     damage_details: DamageDetailsOut | None = None
     pit_details: PitDetailsOut | None = None
@@ -272,11 +288,24 @@ class DetailCodeOut(CamelModel):
 class RecordOptionsResponse(CamelModel):
     areas: list[OptionOut]
     classifications: list[OptionOut]
+    # Record tag choices: the Injury Cause, Body Part and Near-Miss Cause categories.
+    injury_causes: list[OptionOut] = []
+    body_parts: list[OptionOut] = []
+    event_causes: list[OptionOut] = []
     # Taxonomy -> codes in display order (record detail choices).
     detail_codes: dict[str, list[DetailCodeOut]] = {}
 
 
-DetailKind = Literal["classifications", "lopc", "damage", "pit", "serious_risk"]
+DetailKind = Literal[
+    "classifications",
+    "injury_causes",
+    "body_parts",
+    "event_causes",
+    "lopc",
+    "damage",
+    "pit",
+    "serious_risk",
+]
 
 
 class HistoryEventOut(CamelModel):

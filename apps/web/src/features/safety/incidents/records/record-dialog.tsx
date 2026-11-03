@@ -873,7 +873,15 @@ function HistoryList({
   const names = useMemo(
     () => ({
       areas: new Map((options?.areas ?? []).map((option) => [option.id, option.name])),
-      classifications: new Map((options?.classifications ?? []).map((option) => [option.id, option.name])),
+      // Category ids are unique across sections, so tags share the classification name lookup.
+      classifications: new Map(
+        [
+          ...(options?.classifications ?? []),
+          ...(options?.injuryCauses ?? []),
+          ...(options?.bodyParts ?? []),
+          ...(options?.eventCauses ?? []),
+        ].map((option) => [option.id, option.name]),
+      ),
       codes: codeNames(options?.detailCodes),
     }),
     [options],

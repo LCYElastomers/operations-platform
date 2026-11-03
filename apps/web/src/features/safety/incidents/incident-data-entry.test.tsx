@@ -17,22 +17,29 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const year = (values: Record<number, number>): (number | null)[] =>
   Array.from({ length: 12 }, (_, index) => values[index + 1] ?? null);
 
-function section(id: number, code: string, name: string, rows: [string, string, Record<number, number>][]): MetricSectionBlock {
+function section(
+  id: number,
+  code: string,
+  name: string,
+  rows: [string, string, Record<number, number>][],
+  derived = true,
+): MetricSectionBlock {
   return {
     id,
     code,
     name,
+    derived,
     categories: rows.map(([categoryCode, categoryName, values], index) => ({
       id: id * 100 + index + 1,
       code: categoryCode,
       name: categoryName,
       values: year(values),
-      ytd: null,
+      ytd: Object.values(values).reduce((sum, n) => sum + n, 0),
     })),
   };
 }
 
-/** Test fixture, not production data. */
+/** Test fixture, not production data. Derived sections mirror the API flag. */
 const METRICS: MonthlyMetricsResponse = {
   metricSet: "incidents",
   year: 2026,
@@ -59,6 +66,7 @@ const METRICS: MonthlyMetricsResponse = {
       ["hand", "Hand", { 1: 1 }],
       ["fingers", "Fingers", { 1: 1 }],
     ]),
+    section(14, "near_miss_potential", "Near-Miss Potential", [["sif", "SIF", { 1: 1 }]], false),
   ],
 };
 
@@ -233,36 +241,28 @@ describe("Incident & Near Miss Data Entry breakdowns", () => {
     expect(headings.join(" ")).not.toMatch(/Process Safety/);
   });
 
-  it("checks areas against Incidents live, as a warning that never fills or blocks", async () => {
+  it("makes record-derived lower tables read-only while Near-Miss Potential stays editable", async () => {
+    await render();
+
+    expect(input("Incident, Jan")).toBeNull();
+    expect(input("First Aid, Jan")).toBeNull();
+    expect(input("MUNDY, Feb")).toBeNull();
+    expect(input("Housekeeping, Jan")).toBeNull();
+    expect(input("Hand, Jan")).toBeNull();
+    // The only monthly section not rebuilt from records.
+    expect(input("SIF, Jan")).not.toBeNull();
+    expect(input("SIF, Jan").readOnly).toBe(false);
+  });
+
+  it("checks areas against Incidents as a warning that never fills or blocks", async () => {
     await render();
     const areas = grid("B · Incidents by Area");
 
     expect(areas.textContent).toContain("Checked against Incidents (warning only).");
     expect(areas.textContent).toContain("Reconciled: Jan");
     expect(areas.textContent).toContain("Feb: Areas 1, Incidents 3 · below total (reconciliation difference −2)");
-
-    await type("MUNDY, Feb", "3");
-
-    expect(areas.textContent).toContain("Reconciled: Jan, Feb");
-    // Nothing was filled into the other areas.
-    expect(input("100, Feb").value).toBe("");
-    expect(input("Lab, Feb").value).toBe("");
-
-    await type("MUNDY, Feb", "5");
-    expect(areas.textContent).toContain("Feb: Areas 5, Incidents 3 · above total (reconciliation difference +2)");
-    const save = [...container.querySelectorAll("button")].find((b) => b.textContent === "Save changes")!;
-    expect(save.disabled).toBe(false);
-  });
-
-  it("follows edits to the authoritative total and keeps a zero distinct from blank", async () => {
-    await render();
-    const areas = grid("B · Incidents by Area");
-
-    await type("Incident, Mar", "0");
-    expect(areas.textContent).toContain("Mar: Areas not reported, Incidents 0 · no area data");
-
-    await type("Lab, Mar", "0");
-    expect(areas.textContent).toContain("Reconciled: Jan, Mar");
+    // Derived: no typing into the area cells.
+    expect(areas.querySelector("input")).toBeNull();
   });
 
   it("checks body parts against First Aid + Recordable and allows a higher count", async () => {
@@ -274,6 +274,7 @@ describe("Incident & Near Miss Data Entry breakdowns", () => {
     expect(body.textContent).toContain(
       "Jan: Body parts 2, First Aid + Recordable Injury 1 · above total (reconciliation difference +1)",
     );
+    expect(body.querySelector("input")).toBeNull();
   });
 
   it("notes that near-miss tags may exceed the near-miss count", async () => {
@@ -317,7 +318,7 @@ describe("Monthly record actions", () => {
     );
   });
 
-  it("opens the month's records with the total, count, status and permitted actions only", async () => {
+  it("opens the month's Incident records from the Records row", async () => {
     await render();
     await act(async () => buttonLabelled("Manage 1 Incident record for January 2026")!.click());
     await settle();
@@ -337,6 +338,31 @@ describe("Monthly record actions", () => {
     expect(register.getAttribute("href")).toBe(
       "/safety/incidents/dashboard?view=register&year=2026&month=1&eventType=incident",
     );
+  });
+
+  it("opens the month's Near Miss records from the Records row", async () => {
+    await render();
+    await act(async () => buttonLabelled("Add Near Miss record for January 2026")!.click());
+    await settle();
+    expect(dialog().textContent).toContain("Back to January 2026 Near Misses");
+  });
+
+  it("opens the month's Incident records from the top-table total cell", async () => {
+    await render();
+    const cell = container.querySelector<HTMLButtonElement>('button[aria-label="Incident, Jan"]')!;
+    expect(cell).not.toBeNull();
+    await act(async () => cell.click());
+    await settle();
+    expect(dialog().querySelector("h2")!.textContent).toBe("January 2026 Incidents");
+  });
+
+  it("opens the month's Near Miss records from the top-table total cell", async () => {
+    await render();
+    const cell = container.querySelector<HTMLButtonElement>('button[aria-label="Near Miss, Jan"]')!;
+    expect(cell).not.toBeNull();
+    await act(async () => cell.click());
+    await settle();
+    expect(dialog().querySelector("h2")!.textContent).toBe("January 2026 Near Misses");
   });
 
   it("opens an empty month straight on the form and adds a record dated in it, refusing a blank description", async () => {

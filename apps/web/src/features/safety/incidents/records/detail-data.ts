@@ -30,6 +30,10 @@ export type ConditionalKind = "lopc" | "damage" | "pit";
 
 export type DetailDraft = {
   additional: number[];
+  /** Metric category ids; injury causes and body parts apply to First Aid records only. */
+  injuryCauses: number[];
+  bodyParts: number[];
+  eventCauses: number[];
   lopc: LopcDraft;
   damage: DamageDraft;
   pit: PitDraft;
@@ -64,6 +68,9 @@ export const SECTIONS: Record<
 
 export const DETAIL_LABELS: Record<DetailKind, string> = {
   classifications: "Further classifications",
+  injury_causes: "Injury causes",
+  body_parts: "Body parts",
+  event_causes: "Event causes",
   lopc: "LOPC details",
   damage: "Damage / failure details",
   pit: "PIT details",
@@ -136,6 +143,9 @@ export function detailDraftOf(record: IncidentRecord | null): DetailDraft {
   const risk = record?.seriousRiskDetails;
   return {
     additional: (record?.additionalClassifications ?? []).map((c) => c.id),
+    injuryCauses: record?.injuryCauseCategoryIds ?? [],
+    bodyParts: record?.bodyPartCategoryIds ?? [],
+    eventCauses: record?.eventCauseCategoryIds ?? [],
     lopc: draftFrom(LOPC_KEYS, record?.lopcDetails) as LopcDraft,
     damage: draftFrom(DAMAGE_KEYS, record?.damageDetails) as DamageDraft,
     pit: draftFrom(PIT_KEYS, record?.pitDetails) as PitDraft,
@@ -158,6 +168,15 @@ export function classificationCodes(
   const byId = new Map((options ?? []).map((option) => [option.id, option.code]));
   const ids = primaryId === null ? additional : [primaryId, ...additional];
   return new Set(ids.map((id) => byId.get(id)).filter((code): code is string => code !== undefined));
+}
+
+/** First Aid (primary or additional) asks for injury causes and body parts. */
+export function isFirstAid(codes: Set<string>): boolean {
+  return codes.has("first_aid");
+}
+
+function sameIds(left: number[], right: number[]): boolean {
+  return JSON.stringify([...left].sort((a, b) => a - b)) === JSON.stringify([...right].sort((a, b) => a - b));
 }
 
 export function visibleSections(codes: Set<string>): Record<ConditionalKind, boolean> {
@@ -242,6 +261,10 @@ export function detailHistoryChanges(
 export function detailProblems(draft: DetailDraft, codes: Set<string>): Record<string, string> {
   const shown = visibleSections(codes);
   const problems: Record<string, string> = {};
+  if (isFirstAid(codes)) {
+    if (draft.injuryCauses.length === 0) problems.injuryCauseCategoryIds = "Choose at least one injury cause.";
+    if (draft.bodyParts.length === 0) problems.bodyPartCategoryIds = "Choose at least one body part.";
+  }
   if (shown.lopc) {
     const { estimatedQuantity: quantity, quantityUnitCode: unit } = draft.lopc;
     if (quantity.trim() && !QUANTITY.test(quantity.trim()))
@@ -273,6 +296,15 @@ export function detailFieldsOf(draft: DetailDraft, codes: Set<string>, record: I
   const before = (record?.additionalClassifications ?? []).map((c) => c.id).sort();
   const after = [...draft.additional].sort();
   if (JSON.stringify(before) !== JSON.stringify(after)) out.additionalClassificationIds = draft.additional;
+
+  // Injury causes and body parts are sent only for First Aid; the API clears the stored
+  // ones when First Aid is removed. Event causes apply to every record.
+  if (isFirstAid(codes)) {
+    if (!sameIds(draft.injuryCauses, record?.injuryCauseCategoryIds ?? []))
+      out.injuryCauseCategoryIds = draft.injuryCauses;
+    if (!sameIds(draft.bodyParts, record?.bodyPartCategoryIds ?? [])) out.bodyPartCategoryIds = draft.bodyParts;
+  }
+  if (!sameIds(draft.eventCauses, record?.eventCauseCategoryIds ?? [])) out.eventCauseCategoryIds = draft.eventCauses;
 
   const conditional = (kind: ConditionalKind, keys: readonly string[], section: Record<string, string>) => {
     const field = SECTIONS[kind].field;

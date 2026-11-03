@@ -450,6 +450,7 @@ def apply(repository: RecordRepository, review: Review, now: dt.datetime) -> tup
             actor,
             source="legacy_import",
             source_reference=source_reference(review, c),
+            strict=False,
         )
         count += 1
         if p.incident_number:

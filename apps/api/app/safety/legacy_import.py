@@ -276,6 +276,8 @@ def run(command: str, path: Path) -> int:
             changes=plan.changes,
             actor_id=LEGACY_IMPORT_ACTOR,
             now=dt.datetime.now(dt.UTC),
+            # Reviewed historical totals; a later record change rebuilds its month.
+            allow_derived=True,
         )
         run_.finish(
             "applied",

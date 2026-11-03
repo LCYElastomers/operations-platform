@@ -420,3 +420,28 @@ def test_incident_detail_migration_creates_permanent_tables_and_codes_only(
     alters = [line for line in sql.splitlines() if line.startswith("ALTER TABLE")]
     assert alters and all(line.startswith("ALTER TABLE safety.import_runs") for line in alters)
     assert "'incident_details'" in sql
+
+
+def test_incident_record_tag_migration_creates_junction_tables_only() -> None:
+    """0018 offline SQL currently fails on JSONB seeds; assert 0019 from source."""
+    path = next(
+        (Path(__file__).resolve().parents[1] / "alembic" / "versions").glob(
+            "*-0019_incident_record_tags.py"
+        )
+    )
+    source = path.read_text(encoding="utf-8")
+    assert 'revision: str = "0019"' in source
+    assert 'down_revision: str | Sequence[str] | None = "0018"' in source
+    for table in (
+        "incident_record_injury_causes",
+        "incident_record_body_parts",
+        "incident_record_event_causes",
+    ):
+        assert table in source
+    assert "injury_cause" in source and "body_part" in source and "near_miss_cause" in source
+    assert 'ondelete="RESTRICT"' in source
+    assert "CASCADE" not in source
+    assert "INSERT INTO" not in source.upper()
+    assert "TEMPORARY" not in source.upper()
+    assert "UNLOGGED" not in source.upper()
+    assert "Cannot downgrade: incident record tags exist" in source

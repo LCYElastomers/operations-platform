@@ -189,6 +189,12 @@ see Authorization. `USER_AUTH_MODE` and `DEVELOPMENT_USER_PERMISSIONS` are
 retired and ignored.
 | `CAR_DUE_SOON_DAYS` | api | `14` | Window (0–365 days) for "due soon" on Corrective Action Reports |
 
+## Production deploy (Ubuntu)
+
+Step-by-step host deploy (pull, rebuild Compose, migrate, readiness, and the
+Incident-record `0019` cutover notes):
+[`docs/deploy-ubuntu.md`](docs/deploy-ubuntu.md).
+
 ## Database migrations
 
 Alembic is configured in `apps/api/alembic`. It reads `DATABASE_URL` from the

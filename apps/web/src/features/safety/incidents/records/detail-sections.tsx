@@ -5,9 +5,10 @@ import { useId } from "react";
 
 import { cn } from "@/lib/utils";
 
-import type { DetailCode, IncidentRecord, RecordOptionsResponse } from "./api";
+import type { DetailCode, IncidentRecord, RecordOption, RecordOptionsResponse } from "./api";
 import {
   allowedDamageKinds,
+  isFirstAid,
   SECTIONS,
   visibleSections,
   type ConditionalKind,
@@ -136,6 +137,59 @@ function TriSelect({ id, name, label, value, onChange, problems, hint, unknown =
   );
 }
 
+/** A multi-select of metric categories (injury causes, body parts, event causes). */
+function TagChecklist({
+  id,
+  legend,
+  hint,
+  options,
+  selected,
+  onChange,
+  error,
+}: {
+  id: string;
+  legend: string;
+  hint?: string;
+  options: RecordOption[] | undefined;
+  selected: number[];
+  onChange: (selected: number[]) => void;
+  error?: string;
+}) {
+  // Active choices, plus any already selected so an unchanged inactive value stays visible.
+  const choices = (options ?? []).filter((option) => option.active || selected.includes(option.id));
+  return (
+    <fieldset className="space-y-2" aria-describedby={hint ? `${id}-hint` : undefined}>
+      <legend className="text-sm font-medium">{legend}</legend>
+      {hint && (
+        <p id={`${id}-hint`} className="text-xs text-muted-foreground">
+          {hint}
+        </p>
+      )}
+      {error && (
+        <p role="alert" className="text-xs text-destructive">
+          {error}
+        </p>
+      )}
+      <div className="grid grid-cols-1 gap-x-4 sm:grid-cols-2 lg:grid-cols-3">
+        {choices.map((option) => (
+          <label key={option.id} className="flex min-h-8 items-center gap-2 text-sm pointer-coarse:min-h-11">
+            <input
+              type="checkbox"
+              checked={selected.includes(option.id)}
+              onChange={(event) =>
+                onChange(event.target.checked ? [...selected, option.id] : selected.filter((value) => value !== option.id))
+              }
+              className="size-4 accent-primary"
+            />
+            {option.name}
+            {option.active ? "" : " (inactive)"}
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
 function Section({ title, children, problem }: { title: string; children: React.ReactNode; problem?: string }) {
   return (
     <fieldset className="space-y-3 rounded-lg border bg-card p-3">
@@ -225,6 +279,39 @@ export function DetailSections({
           ))}
         </div>
       </fieldset>
+
+      {isFirstAid(codes) && (
+        <>
+          <TagChecklist
+            id={`${id}-injury`}
+            legend="Injury cause"
+            hint="Required for First Aid: choose at least one."
+            options={options?.injuryCauses}
+            selected={draft.injuryCauses}
+            onChange={(injuryCauses) => onChange({ ...draft, injuryCauses })}
+            error={problems.injuryCauseCategoryIds}
+          />
+          <TagChecklist
+            id={`${id}-body`}
+            legend="Body part"
+            hint="Required for First Aid: choose at least one."
+            options={options?.bodyParts}
+            selected={draft.bodyParts}
+            onChange={(bodyParts) => onChange({ ...draft, bodyParts })}
+            error={problems.bodyPartCategoryIds}
+          />
+        </>
+      )}
+
+      <TagChecklist
+        id={`${id}-cause`}
+        legend="Event cause (optional)"
+        hint="More than one cause may be selected."
+        options={options?.eventCauses}
+        selected={draft.eventCauses}
+        onChange={(eventCauses) => onChange({ ...draft, eventCauses })}
+        error={problems.eventCauseCategoryIds}
+      />
 
       {orphaned.map((kind) => (
         <div

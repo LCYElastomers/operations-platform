@@ -26,6 +26,8 @@ export type MetricSectionBlock = {
   code: string;
   name: string;
   categories: MetricCategoryRow[];
+  /** Calculated from the Incident and Near Miss records: shown read-only; the API refuses saves. */
+  derived?: boolean;
 };
 
 export type MonthlyMetricsResponse = {
