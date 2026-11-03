@@ -53,6 +53,11 @@ type MonthlyGridProps = {
   status?: React.ReactNode;
   /** Shown under the grid while it is expanded, e.g. data checks. */
   notes?: React.ReactNode;
+  /**
+   * 0-based index of the current reporting period column. Visual orientation
+   * only — does not change editability or activation.
+   */
+  currentColumn?: number;
   loading?: boolean;
   className?: string;
 };
@@ -66,6 +71,11 @@ const EDGE_FADE_START =
   "shadow-[inset_-1px_0_0_var(--color-border),8px_0_10px_-8px_rgb(15_23_42/0.28)]";
 const EDGE_FADE_END =
   "shadow-[inset_1px_0_0_var(--color-border),-8px_0_10px_-8px_rgb(15_23_42/0.28)]";
+/** Stronger left edge for calculated YTD / total columns. */
+const YTD_EDGE = "shadow-[inset_2px_0_0_var(--color-border)]";
+const YTD_EDGE_FADE =
+  "shadow-[inset_2px_0_0_var(--color-border),-8px_0_10px_-8px_rgb(15_23_42/0.28)]";
+const CURRENT_PERIOD = "bg-[var(--interaction-muted)]";
 
 function NoValue() {
   return (
@@ -116,8 +126,8 @@ export function MonthlyGrid({
             onClick={() => onOpenChange?.(!expanded)}
             className={cn(
               "flex min-h-10 w-full items-center gap-3 px-3 py-2 text-left select-none pointer-coarse:min-h-14",
-              "transition-colors hover:bg-muted/70",
-              "focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset",
+              "transition-interaction hover:bg-muted/70",
+              "focus-visible:ring-2 focus-visible:ring-ring/55 focus-visible:outline-none focus-visible:ring-inset",
             )}
           >
             <ChevronRight
@@ -128,7 +138,7 @@ export function MonthlyGrid({
               )}
             />
             <span className="flex min-w-0 flex-1 flex-col sm:flex-row sm:items-center sm:gap-3">
-              <span id={headingId} className="min-w-0 truncate sm:flex-1">
+              <span id={headingId} className="section-accent min-w-0 truncate sm:flex-1">
                 {title}
               </span>
               {!expanded && summary && (
@@ -140,7 +150,7 @@ export function MonthlyGrid({
             {status}
           </button>
         ) : (
-          <span id={headingId} className="block px-3 py-2">
+          <span id={headingId} className="section-accent block px-3 py-2">
             {title}
           </span>
         )}
@@ -167,6 +177,7 @@ function GridTable({
   onCellChange,
   onCellRevert,
   onCellActivate,
+  currentColumn,
   loading = false,
 }: GridTableProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -194,7 +205,7 @@ function GridTable({
   }, [updateEdges]);
 
   const stickyStart = cn("sticky left-0 z-10", edges.start ? EDGE_FADE_START : EDGE_LINE_START);
-  const stickyEnd = cn("sticky right-0 z-10", edges.end ? EDGE_FADE_END : EDGE_LINE_END);
+  const stickyEnd = cn("sticky right-0 z-10", edges.end ? YTD_EDGE_FADE : YTD_EDGE);
 
   const focusCell = (row: number, column: number) => {
     const target = tableRef.current?.querySelector<HTMLInputElement>(
@@ -290,9 +301,10 @@ function GridTable({
                 key={column}
                 scope="col"
                 className={cn(
-                  "h-9 px-2.5 text-right text-xs font-semibold tracking-wide text-muted-foreground uppercase transition-colors",
+                  "h-9 px-2.5 text-right text-xs font-semibold tracking-wide text-muted-foreground uppercase transition-interaction",
                   index > 0 && GRID_LINE,
-                  focusedColumn === index && "bg-primary/10 text-foreground",
+                  currentColumn === index && CURRENT_PERIOD,
+                  focusedColumn === index && "bg-[var(--interaction-hover)] text-foreground",
                 )}
               >
                 {column}
@@ -302,7 +314,7 @@ function GridTable({
               scope="col"
               title="Calculated from the monthly values; not editable"
               className={cn(
-                "h-9 bg-muted px-3 text-right text-xs font-semibold tracking-wide text-foreground uppercase",
+                "h-9 bg-muted/90 px-3 text-right text-xs font-semibold tracking-wide text-foreground uppercase",
                 stickyEnd,
               )}
             >
@@ -325,7 +337,7 @@ function GridTable({
                 <Fragment key={row.id}>
                 <tr
                   className={cn(
-                    "group/row border-b last:border-b-0 hover:bg-muted/30 focus-within:bg-primary/5",
+                    "group/row border-b last:border-b-0 transition-interaction hover:bg-[var(--interaction-muted)] focus-within:bg-[var(--interaction-hover)]",
                     row.subRow && "border-b-0",
                   )}
                 >
@@ -342,7 +354,11 @@ function GridTable({
                   {row.cells.map((cell, column) => (
                     <td
                       key={column}
-                      className={cn("h-10 p-0.5 pointer-coarse:h-12", column > 0 && GRID_LINE)}
+                      className={cn(
+                        "h-10 p-0.5 pointer-coarse:h-12",
+                        column > 0 && GRID_LINE,
+                        currentColumn === column && CURRENT_PERIOD,
+                      )}
                     >
                       {editable ? (
                         <input
@@ -370,10 +386,10 @@ function GridTable({
                           onKeyDown={(event) => handleKeyDown(event, rowIndex, column, row.id)}
                           className={cn(
                             // 16px text on touch devices stops iOS zooming in on focus.
-                            "h-9 w-full scroll-mt-44 scroll-mb-4 rounded-sm border border-transparent bg-transparent px-2 text-right tabular-nums outline-none select-text md:scroll-mt-36",
+                            "h-9 w-full scroll-mt-44 scroll-mb-4 rounded-sm border border-transparent bg-transparent px-2 text-right tabular-nums outline-none select-text transition-interaction md:scroll-mt-36",
                             "pointer-coarse:h-11 pointer-coarse:text-base",
-                            "placeholder:text-muted-foreground/45 hover:border-input hover:bg-muted/40",
-                            "focus:border-ring focus:bg-background focus:ring-2 focus:ring-ring/40",
+                            "placeholder:text-muted-foreground/45 hover:border-input hover:bg-[var(--interaction-hover)]",
+                            "focus:border-ring focus:bg-background focus:font-medium focus:ring-2 focus:ring-ring/55",
                             cell.dirty && "border-warning/50 bg-warning/20 font-semibold",
                             cell.invalid &&
                               "border-destructive bg-destructive/10 focus:border-destructive focus:ring-destructive/30",
@@ -386,9 +402,9 @@ function GridTable({
                           aria-label={`${row.label}, ${columns[column]}`}
                           onClick={() => onCellActivate(row.id, column)}
                           className={cn(
-                            "flex h-9 w-full items-center justify-end rounded-sm px-2 text-right tabular-nums",
-                            "pointer-coarse:h-11 hover:bg-muted/70",
-                            "focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none",
+                            "flex h-9 w-full cursor-pointer items-center justify-end rounded-sm px-2 text-right font-medium tabular-nums transition-interaction",
+                            "pointer-coarse:h-11 hover:bg-[var(--interaction-hover)] hover:text-foreground",
+                            "focus-visible:ring-2 focus-visible:ring-ring/55 focus-visible:outline-none",
                           )}
                         >
                           {cell.text === "" ? <NoValue /> : cell.text}
@@ -402,7 +418,7 @@ function GridTable({
                   ))}
                   <td
                     className={cn(
-                      "h-10 bg-muted px-3 text-right font-semibold tabular-nums pointer-coarse:h-12",
+                      "h-10 bg-muted/90 px-3 text-right font-semibold tabular-nums pointer-coarse:h-12",
                       stickyEnd,
                     )}
                   >
@@ -425,7 +441,7 @@ function GridTable({
                         {cell}
                       </td>
                     ))}
-                    <td className={cn("bg-muted", stickyEnd)} />
+                    <td className={cn("bg-muted/90", stickyEnd)} />
                   </tr>
                 )}
                 </Fragment>
@@ -454,7 +470,7 @@ function GridTable({
                   {formatTotal(value)}
                 </td>
               ))}
-              <td className={cn("h-10 bg-muted px-3 text-right font-semibold tabular-nums", stickyEnd)}>
+              <td className={cn("h-10 bg-muted/90 px-3 text-right font-semibold tabular-nums", stickyEnd)}>
                 {formatTotal(footer.total)}
               </td>
             </tr>

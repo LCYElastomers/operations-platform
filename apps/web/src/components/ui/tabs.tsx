@@ -74,10 +74,10 @@ export function Tabs<T extends string>({
               onClick={() => onValueChange(item.value)}
               onKeyDown={(event) => handleKeyDown(event, index)}
               className={cn(
-                "shrink-0 border-b-2 px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors pointer-coarse:min-h-11",
-                "focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset",
+                "shrink-0 border-b-2 px-3 py-2 text-sm font-medium whitespace-nowrap transition-interaction pointer-coarse:min-h-11",
+                "focus-visible:ring-2 focus-visible:ring-ring/55 focus-visible:outline-none focus-visible:ring-inset",
                 selected
-                  ? "border-primary text-foreground"
+                  ? "border-interaction text-foreground"
                   : "border-transparent text-muted-foreground hover:border-border hover:text-foreground",
               )}
             >

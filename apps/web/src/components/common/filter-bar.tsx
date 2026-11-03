@@ -28,8 +28,8 @@ export function FilterBar({ children, actions, className }: FilterBarProps) {
 }
 
 const controlClasses = cn(
-  "h-9 w-full rounded-md border border-input bg-background px-3 text-sm",
-  "outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40",
+  "h-9 w-full rounded-md border border-input bg-background px-3 text-sm transition-interaction",
+  "outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/55",
   "disabled:cursor-not-allowed disabled:opacity-60",
 );
 

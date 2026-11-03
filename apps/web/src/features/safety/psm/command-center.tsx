@@ -9,6 +9,7 @@ import { DashboardToolbar } from "@/components/common/dashboard-toolbar";
 import { FilterSelect } from "@/components/common/filter-bar";
 import { MetricCard } from "@/components/common/metric-card";
 import { PageHeader } from "@/components/common/page-header";
+import { interactiveSurfaceClassName, panelClassName, selectedSurfaceClassName } from "@/components/common/panel";
 import { StatusBadge } from "@/components/common/status-badge";
 import { buttonVariants } from "@/components/ui/button";
 import { TableSection, TD, TH } from "@/features/quality/cost/cost-shared";
@@ -83,8 +84,10 @@ function Selectable({
       aria-label={label}
       onClick={() => onSelect(selection)}
       className={cn(
-        "rounded-lg text-left focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none",
-        active && "ring-2 ring-primary",
+        "h-full text-left accent-corner focus-visible:ring-2 focus-visible:ring-ring/55 focus-visible:outline-none",
+        panelClassName,
+        interactiveSurfaceClassName,
+        active && cn(selectedSurfaceClassName, "selected-rail border-[var(--interaction-border)]"),
         className,
       )}
     >
@@ -251,7 +254,14 @@ function KpiCards({
       onSelect={onSelect}
       className="h-full"
     >
-      <MetricCard label={label} value={value} caption={caption} loading={loading} className="h-full hover:bg-muted/40" />
+      <MetricCard
+        label={label}
+        value={value}
+        caption={caption}
+        loading={loading}
+        accent={false}
+        className="h-full border-0 bg-transparent"
+      />
     </Selectable>
   );
   const recommendations = registerHref({ studyId: study });

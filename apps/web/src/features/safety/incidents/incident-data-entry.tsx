@@ -38,7 +38,7 @@ import {
   type Draft,
   type MonthCheck,
 } from "./grid";
-import { yearOf } from "../site-calendar";
+import { monthOf, yearOf } from "../site-calendar";
 import { useAutomaticValue, useSiteToday } from "../use-site-calendar";
 import { ReportingYearSelect } from "./reporting-year-select";
 import { useIncidentMetrics, useSaveIncidentMetrics } from "./use-incident-metrics";
@@ -121,6 +121,8 @@ type SectionGridsProps = {
   recordRow?: RecordSubRow;
   /** Opens the month's Incident / Near Miss records from a top-table total cell. */
   openMonth?: OpenMonth;
+  /** 0-based current reporting month when viewing the site's current year. */
+  currentColumn?: number;
 };
 
 /** Mounted only once data has loaded in the browser, so window is available. */
@@ -132,6 +134,7 @@ function SectionGrids({
   onCellRevert,
   recordRow,
   openMonth,
+  currentColumn,
 }: SectionGridsProps) {
   const [compact] = useState(() => window.matchMedia(COMPACT_LAYOUT_QUERY).matches);
   const [chosen, setChosen] = useState(readOpenSections);
@@ -177,6 +180,7 @@ function SectionGrids({
         onCellChange={onCellChange}
         onCellRevert={onCellRevert}
         onCellActivate={activateTotals}
+        currentColumn={currentColumn}
         open={isOpen(section.code)}
         onOpenChange={(open) => setOpen(section.code, open)}
         summary={sectionSummary(rows)}
@@ -194,7 +198,7 @@ function SectionGrids({
   return (
     <div className="space-y-6">
       <section aria-labelledby="group-totals" className="space-y-4">
-        <h2 id="group-totals" className="px-1 text-base font-semibold">
+        <h2 id="group-totals" className="section-accent px-1 text-base font-semibold">
           A · Incident totals and classifications
         </h2>
         {totalsGroup.map((section) => grid(section, section.name, false))}
@@ -202,7 +206,7 @@ function SectionGrids({
       {breakdowns.length > 0 && (
         <section aria-labelledby="group-breakdowns" className="space-y-4">
           <div className="px-1">
-            <h2 id="group-breakdowns" className="text-base font-semibold">
+            <h2 id="group-breakdowns" className="section-accent text-base font-semibold">
               Breakdowns
             </h2>
             <p className="mt-0.5 max-w-4xl text-sm text-muted-foreground">
@@ -597,6 +601,7 @@ export function IncidentDataEntry({ title, description, siteToday }: IncidentDat
           onCellChange={setCell}
           onCellRevert={revertCell}
           recordRow={records.subRow}
+          currentColumn={year === currentYear ? monthOf(today) - 1 : undefined}
           openMonth={records.openMonth}
         />
       )}

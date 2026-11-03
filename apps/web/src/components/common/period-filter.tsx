@@ -27,7 +27,7 @@ type PeriodFilterProps = {
 };
 
 const fieldClasses =
-  "h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 pointer-coarse:h-11";
+  "h-9 w-full rounded-md border border-input bg-background px-3 text-sm transition-interaction outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/55 pointer-coarse:h-11";
 
 /**
  * The global period picker: a compact trigger showing the chosen period, and a
@@ -167,8 +167,8 @@ function PanelBody({
                   aria-pressed={active}
                   onClick={() => onChoose({ mode })}
                   className={cn(
-                    "rounded-md border px-3 py-2 text-left text-sm hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none pointer-coarse:py-3",
-                    active && "border-primary bg-primary/5 font-semibold",
+                    "rounded-md border px-3 py-2 text-left text-sm transition-interaction hover:bg-[var(--interaction-muted)] focus-visible:ring-2 focus-visible:ring-ring/55 focus-visible:outline-none pointer-coarse:py-3",
+                    active && "selected-surface border-[var(--interaction-border)] font-semibold",
                   )}
                 >
                   {active && <span className="sr-only">Selected: </span>}

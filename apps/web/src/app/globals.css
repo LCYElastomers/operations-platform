@@ -25,8 +25,15 @@
   --warning: oklch(0.769 0.165 70.08);
   --border: oklch(0.885 0.014 255.508);
   --input: oklch(0.885 0.014 255.508);
-  --ring: oklch(0.62 0.05 256.788);
-  --info: oklch(0.588 0.158 241.966);
+  /* Interaction/focus blue — restrained, not decorative */
+  --ring: oklch(0.55 0.12 250);
+  --info: oklch(0.55 0.14 250);
+  --interaction: oklch(0.55 0.14 250);
+  --interaction-muted: oklch(0.55 0.14 250 / 6%);
+  --interaction-hover: oklch(0.55 0.14 250 / 8%);
+  --interaction-selected: oklch(0.55 0.14 250 / 10%);
+  --interaction-border: oklch(0.55 0.14 250 / 35%);
+  --duration-interaction: 140ms;
 
   --brand: oklch(0.769 0.165 70.08);
   --brand-foreground: oklch(0.208 0.042 265.755);
@@ -65,7 +72,13 @@
   --warning: oklch(0.828 0.189 84.429);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.551 0.027 264.364);
+  --ring: oklch(0.65 0.12 250);
+  --info: oklch(0.7 0.14 250);
+  --interaction: oklch(0.7 0.14 250);
+  --interaction-muted: oklch(0.7 0.14 250 / 10%);
+  --interaction-hover: oklch(0.7 0.14 250 / 12%);
+  --interaction-selected: oklch(0.7 0.14 250 / 14%);
+  --interaction-border: oklch(0.7 0.14 250 / 40%);
 }
 
 @theme inline {
@@ -94,6 +107,7 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-info: var(--info);
+  --color-interaction: var(--interaction);
   --color-brand: var(--brand);
   --color-brand-foreground: var(--brand-foreground);
   --color-sidebar: var(--sidebar);
@@ -115,5 +129,89 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  /* L-shaped navy/primary accent for important KPI cards (~20×20, 2.5px) */
+  .accent-corner {
+    position: relative;
+  }
+  .accent-corner::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 20px;
+    height: 20px;
+    border-top: 2.5px solid var(--primary);
+    border-left: 2.5px solid var(--primary);
+    border-top-left-radius: inherit;
+    pointer-events: none;
+  }
+
+  /* Interactive card/surface hover — apply only when the surface is clickable */
+  .interactive-surface {
+    cursor: pointer;
+    transition:
+      border-color var(--duration-interaction) ease,
+      background-color var(--duration-interaction) ease,
+      box-shadow var(--duration-interaction) ease,
+      color var(--duration-interaction) ease;
+  }
+  .interactive-surface:hover {
+    border-color: var(--interaction-border);
+    background-color: color-mix(in oklch, var(--card) 92%, var(--interaction));
+    box-shadow: 0 1px 2px oklch(0.25 0.04 260 / 0.06);
+  }
+  .interactive-surface:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--background), 0 0 0 4px color-mix(in oklch, var(--ring) 55%, transparent);
+  }
+
+  /* Selected row/card/filter — pale blue, stronger text; pair with existing indicators */
+  .selected-surface {
+    background-color: var(--interaction-selected);
+    color: var(--foreground);
+    font-weight: 500;
+  }
+  .selected-rail {
+    position: relative;
+  }
+  .selected-rail::before {
+    content: "";
+    position: absolute;
+    top: 0.35rem;
+    bottom: 0.35rem;
+    left: 0;
+    width: 2px;
+    border-radius: 1px;
+    background: var(--interaction);
+    pointer-events: none;
+  }
+
+  /* Short vertical accent beside major section titles */
+  .section-accent {
+    position: relative;
+    padding-left: 0.65rem;
+  }
+  .section-accent::before {
+    content: "";
+    position: absolute;
+    top: 0.15em;
+    bottom: 0.15em;
+    left: 0;
+    width: 2.5px;
+    border-radius: 1px;
+    background: var(--interaction);
+    pointer-events: none;
+  }
+
+  .transition-interaction {
+    transition:
+      border-color var(--duration-interaction) ease,
+      background-color var(--duration-interaction) ease,
+      box-shadow var(--duration-interaction) ease,
+      color var(--duration-interaction) ease;
   }
 }

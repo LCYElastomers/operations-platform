@@ -20,6 +20,11 @@ type MetricCardProps = {
   icon?: React.ComponentType<{ className?: string }>;
   /** Larger value for the page's headline metrics. Visual weight only; implies no status. */
   emphasis?: boolean;
+  /**
+   * Decorative upper-left L accent. On by default for summary KPIs; turn off for
+   * dense secondary tiles that should not compete with primary metrics.
+   */
+  accent?: boolean;
   loading?: boolean;
   className?: string;
 };
@@ -33,6 +38,7 @@ export function MetricCard({
   detail,
   icon: Icon,
   emphasis = false,
+  accent = true,
   loading = false,
   className,
 }: MetricCardProps) {
@@ -42,7 +48,12 @@ export function MetricCard({
 
   return (
     <div
-      className={cn(panelClassName, emphasis ? "p-3.5" : "p-3", className)}
+      className={cn(
+        panelClassName,
+        accent && "accent-corner",
+        emphasis ? "p-3.5" : "p-3",
+        className,
+      )}
       aria-busy={loading || undefined}
     >
       <div className="flex items-start justify-between gap-2">

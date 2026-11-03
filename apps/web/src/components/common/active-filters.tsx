@@ -17,7 +17,7 @@ export function ActiveFilters({ chips, onClearAll }: { chips: FilterChip[]; onCl
               type="button"
               onClick={chip.onRemove}
               aria-label={`Remove filter ${chip.label}`}
-              className="inline-flex items-center gap-1 rounded-full border bg-muted/60 py-1 pr-2 pl-3 text-xs font-medium hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none pointer-coarse:py-2"
+              className="inline-flex items-center gap-1 rounded-full border bg-muted/60 py-1 pr-2 pl-3 text-xs font-medium transition-interaction hover:border-[var(--interaction-border)] hover:bg-[var(--interaction-muted)] focus-visible:ring-2 focus-visible:ring-ring/55 focus-visible:outline-none pointer-coarse:py-2"
             >
               {chip.label}
               <X aria-hidden className="size-3.5 text-muted-foreground" />

@@ -52,7 +52,9 @@ describe("MonthlyGrid", () => {
     const html = render();
     const labelledBy = html.match(/<section aria-labelledby="([^"]+)"/)?.[1];
     expect(labelledBy).toBeTruthy();
-    expect(html).toContain(`id="${labelledBy}" class="block px-3 py-2">Incident Classification<`);
+    expect(html).toContain(
+      `id="${labelledBy}" class="section-accent block px-3 py-2">Incident Classification<`,
+    );
     expect(html).not.toContain("aria-expanded");
   });
 

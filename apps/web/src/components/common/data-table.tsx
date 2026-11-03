@@ -97,7 +97,7 @@ export function DataTable<TData extends RowData>({
                         <button
                           type="button"
                           onClick={header.column.getToggleSortingHandler()}
-                          className="-mx-1 inline-flex items-center gap-1 rounded px-1 hover:text-foreground"
+                          className="-mx-1 inline-flex items-center gap-1 rounded px-1 transition-interaction hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/55 focus-visible:outline-none"
                         >
                           <table.FlexRender header={header} />
                           <SortIcon
@@ -133,7 +133,10 @@ export function DataTable<TData extends RowData>({
               </tr>
             ) : (
               rows.map((row) => (
-                <tr key={row.id} className="border-b last:border-b-0 hover:bg-muted/40">
+                <tr
+                  key={row.id}
+                  className="border-b last:border-b-0 transition-interaction hover:bg-[var(--interaction-muted)]"
+                >
                   {row.getAllCells().map((cell) => (
                     <td key={cell.id} className="h-9 px-3 whitespace-nowrap tabular-nums">
                       <table.FlexRender cell={cell} />

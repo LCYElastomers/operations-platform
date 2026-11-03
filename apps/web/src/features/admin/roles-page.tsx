@@ -5,11 +5,13 @@ import { useState } from "react";
 
 import { EmptyState } from "@/components/common/empty-state";
 import { PageHeader } from "@/components/common/page-header";
+import { interactiveSurfaceClassName, panelClassName } from "@/components/common/panel";
 import { StatusBadge } from "@/components/common/status-badge";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { usePermissions } from "@/features/auth/use-session";
 import { ApiError } from "@/lib/api-client";
+import { cn } from "@/lib/utils";
 
 import {
   createRole,
@@ -65,7 +67,11 @@ export function RolesPage({ title, description }: { title: string; description?:
               <button
                 type="button"
                 onClick={() => setOpenCode(role.code)}
-                className="flex h-full w-full flex-col rounded-lg border bg-card p-4 text-left shadow-xs transition-colors hover:border-ring/60 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                className={cn(
+                  "flex h-full w-full flex-col p-4 text-left focus-visible:ring-2 focus-visible:ring-ring/55 focus-visible:outline-none",
+                  panelClassName,
+                  interactiveSurfaceClassName,
+                )}
               >
                 <span className="flex flex-wrap items-center gap-2">
                   <span className="font-semibold">{role.name}</span>

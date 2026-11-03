@@ -107,7 +107,7 @@ export function AppSidebar({ open, onClose }: AppSidebarProps) {
 }
 
 const itemBase =
-  "group relative flex w-full items-center gap-3 rounded-md py-2 pr-2 text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-brand/60";
+  "group relative flex w-full items-center gap-3 rounded-md py-2 pr-2 text-sm transition-interaction outline-none focus-visible:ring-2 focus-visible:ring-ring/55";
 
 const depthPadding = ["pl-3", "pl-9", "pl-12"];
 

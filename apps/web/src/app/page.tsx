@@ -2,11 +2,13 @@ import { ArrowRight, Database, RefreshCw } from "lucide-react";
 import Link from "next/link";
 
 import { PageHeader } from "@/components/common/page-header";
+import { interactiveSurfaceClassName, panelClassName } from "@/components/common/panel";
 import { StatusBadge, type StatusTone } from "@/components/common/status-badge";
 import { ApiStatusCard } from "@/components/system/api-status";
 import { Permitted } from "@/components/layout/permitted";
 import { moduleItems } from "@/config/navigation";
 import { pageRequirements, type ModuleStatus, type NavItem } from "@/lib/navigation";
+import { cn } from "@/lib/utils";
 
 const statusDisplay: Record<ModuleStatus, { label: string; tone: StatusTone }> = {
   available: { label: "Available", tone: "success" },
@@ -42,7 +44,11 @@ export default function OverviewPage() {
                 <li>
                   <Link
                     href={href ?? "/"}
-                    className="group flex h-full flex-col rounded-lg border bg-card p-4 shadow-xs transition-colors hover:border-ring/60 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                    className={cn(
+                      "group flex h-full flex-col p-4 accent-corner focus-visible:ring-2 focus-visible:ring-ring/55 focus-visible:outline-none",
+                      panelClassName,
+                      interactiveSurfaceClassName,
+                    )}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="grid size-9 place-items-center rounded-md border bg-muted">
@@ -65,7 +71,7 @@ export default function OverviewPage() {
       </section>
 
       <section aria-labelledby="platform-heading" className="space-y-3">
-        <h2 id="platform-heading" className="text-sm font-semibold text-muted-foreground">
+        <h2 id="platform-heading" className="section-accent text-sm font-semibold text-muted-foreground">
           Platform
         </h2>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -90,7 +96,11 @@ function PlatformLink({
   return (
     <Link
       href={href}
-      className="flex items-center justify-between gap-4 rounded-lg border bg-card px-4 py-3 transition-colors hover:border-ring/60 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+      className={cn(
+        "flex items-center justify-between gap-4 px-3 py-2.5 focus-visible:ring-2 focus-visible:ring-ring/55 focus-visible:outline-none",
+        panelClassName,
+        interactiveSurfaceClassName,
+      )}
     >
       <span className="flex items-center gap-3">
         <Icon className="size-4 text-muted-foreground" />

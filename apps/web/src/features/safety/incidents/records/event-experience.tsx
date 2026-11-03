@@ -4,6 +4,7 @@ import { AlertTriangle, CalendarClock, ExternalLink, ListFilter } from "lucide-r
 import { useId, useState } from "react";
 
 import { EmptyState } from "@/components/common/empty-state";
+import { interactiveSurfaceClassName, panelClassName, selectedSurfaceClassName } from "@/components/common/panel";
 import { StatusBadge } from "@/components/common/status-badge";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
@@ -120,9 +121,11 @@ function CategoryCard({
       aria-controls={controls}
       onClick={onSelect}
       className={cn(
-        "flex min-h-36 flex-col gap-2 rounded-lg border bg-card p-4 text-left shadow-xs transition-colors",
-        "hover:border-primary/50 focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none",
-        selected && "border-primary ring-1 ring-primary",
+        "flex min-h-36 flex-col gap-2 p-4 text-left accent-corner",
+        panelClassName,
+        interactiveSurfaceClassName,
+        "focus-visible:ring-2 focus-visible:ring-ring/55 focus-visible:outline-none",
+        selected && cn(selectedSurfaceClassName, "selected-rail border-[var(--interaction-border)]"),
       )}
     >
       <span className="flex items-start justify-between gap-2">
