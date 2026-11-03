@@ -15,11 +15,11 @@ export function FilterBar({ children, actions, className }: FilterBarProps) {
       role="group"
       aria-label="Filters"
       className={cn(
-        "flex flex-col gap-3 rounded-lg border bg-card p-3 md:flex-row md:items-end md:justify-between",
+        "flex flex-col gap-2.5 border-b border-border pb-3 md:flex-row md:items-end md:justify-between",
         className,
       )}
     >
-      <div className="grid flex-1 grid-cols-1 gap-3 sm:grid-cols-[repeat(auto-fit,minmax(10rem,1fr))]">
+      <div className="grid flex-1 grid-cols-1 gap-2.5 sm:grid-cols-[repeat(auto-fit,minmax(10rem,1fr))]">
         {children}
       </div>
       {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
@@ -28,7 +28,7 @@ export function FilterBar({ children, actions, className }: FilterBarProps) {
 }
 
 const controlClasses = cn(
-  "h-9 w-full rounded-md border border-input bg-background px-3 text-sm shadow-xs",
+  "h-9 w-full rounded-md border border-input bg-background px-3 text-sm",
   "outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40",
   "disabled:cursor-not-allowed disabled:opacity-60",
 );

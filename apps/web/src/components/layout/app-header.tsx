@@ -20,7 +20,7 @@ export function AppHeader({ sidebarOpen, onOpenSidebar }: AppHeaderProps) {
   const trail = findNavTrail([...navigation, ...accountNavigation], pathname);
 
   return (
-    <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-3 border-b bg-card/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-card/80 sm:px-6">
+    <header className="sticky top-0 z-20 flex h-12 shrink-0 items-center gap-3 border-b bg-card px-4 sm:px-5">
       <button
         type="button"
         onClick={onOpenSidebar}

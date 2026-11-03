@@ -64,7 +64,7 @@ export function Dialog({ open, onClose, title, description, children, footer, cl
     >
       {open && (
         <>
-          <header className="flex items-start gap-3 border-b px-4 py-3 sm:px-5">
+          <header className="flex items-start gap-3 border-b px-4 py-2.5 sm:px-4">
             <div className="min-w-0 flex-1">
               <h2 id={`${id}-title`} className="text-base font-semibold">
                 {title}
@@ -84,8 +84,8 @@ export function Dialog({ open, onClose, title, description, children, footer, cl
               <X className="size-4" />
             </button>
           </header>
-          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">{children}</div>
-          {footer && <footer className="border-t px-4 py-3 sm:px-5">{footer}</footer>}
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3.5 sm:px-4">{children}</div>
+          {footer && <footer className="border-t px-4 py-2.5 sm:px-4">{footer}</footer>}
         </>
       )}
     </dialog>

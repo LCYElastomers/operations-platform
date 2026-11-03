@@ -73,13 +73,13 @@ function SignedInShell({ pathname, children }: { pathname: string; children: Rea
         <div
           aria-hidden
           onClick={() => setSidebarOpen(false)}
-          className="fixed inset-0 z-30 bg-slate-950/50 backdrop-blur-[1px] lg:hidden"
+          className="fixed inset-0 z-30 bg-slate-950/50 lg:hidden"
         />
       )}
 
       <div className="flex min-h-screen flex-col lg:pl-64">
         <AppHeader sidebarOpen={sidebarOpen} onOpenSidebar={() => setSidebarOpen(true)} />
-        <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">
+        <main className="flex-1 px-4 py-5 sm:px-5 lg:px-7">
           <div className="mx-auto w-full max-w-7xl">{content}</div>
         </main>
       </div>

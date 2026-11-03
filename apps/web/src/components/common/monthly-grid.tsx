@@ -5,6 +5,8 @@ import { Fragment, useCallback, useEffect, useId, useRef, useState } from "react
 
 import { cn } from "@/lib/utils";
 
+import { panelClassName } from "./panel";
+
 export type MonthlyGridCell = {
   /** Raw input text. Empty means "not reported", which is distinct from "0". */
   text: string;
@@ -103,9 +105,9 @@ export function MonthlyGrid({
   return (
     <section
       aria-labelledby={headingId}
-      className={cn("min-w-0 overflow-hidden rounded-lg border bg-card", className)}
+      className={cn("min-w-0 overflow-hidden", panelClassName, className)}
     >
-      <h2 className={cn("bg-muted/40 text-sm font-semibold", expanded && "border-b")}>
+      <h2 className={cn("bg-muted/50 text-sm font-semibold", expanded && "border-b")}>
         {collapsible ? (
           <button
             type="button"
@@ -113,7 +115,7 @@ export function MonthlyGrid({
             aria-controls={bodyId}
             onClick={() => onOpenChange?.(!expanded)}
             className={cn(
-              "flex min-h-12 w-full items-center gap-3 px-4 py-2.5 text-left select-none pointer-coarse:min-h-14",
+              "flex min-h-10 w-full items-center gap-3 px-3 py-2 text-left select-none pointer-coarse:min-h-14",
               "transition-colors hover:bg-muted/70",
               "focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset",
             )}
@@ -138,14 +140,14 @@ export function MonthlyGrid({
             {status}
           </button>
         ) : (
-          <span id={headingId} className="block px-4 py-2.5">
+          <span id={headingId} className="block px-3 py-2">
             {title}
           </span>
         )}
       </h2>
       <div id={bodyId} hidden={!expanded}>
         {expanded && <GridTable {...grid} />}
-        {expanded && notes && <div className="border-t px-4 py-2.5">{notes}</div>}
+        {expanded && notes && <div className="border-t px-3 py-2">{notes}</div>}
       </div>
     </section>
   );
@@ -272,7 +274,7 @@ function GridTable({
           ))}
           <col className="w-16 sm:w-20" />
         </colgroup>
-        <thead className="bg-muted/60">
+        <thead className="bg-muted/80">
           <tr className="border-b">
             <th
               scope="col"
@@ -370,9 +372,9 @@ function GridTable({
                             // 16px text on touch devices stops iOS zooming in on focus.
                             "h-9 w-full scroll-mt-44 scroll-mb-4 rounded-sm border border-transparent bg-transparent px-2 text-right tabular-nums outline-none select-text md:scroll-mt-36",
                             "pointer-coarse:h-11 pointer-coarse:text-base",
-                            "placeholder:text-muted-foreground/45 hover:border-input",
+                            "placeholder:text-muted-foreground/45 hover:border-input hover:bg-muted/40",
                             "focus:border-ring focus:bg-background focus:ring-2 focus:ring-ring/40",
-                            cell.dirty && "bg-warning/20 font-semibold",
+                            cell.dirty && "border-warning/50 bg-warning/20 font-semibold",
                             cell.invalid &&
                               "border-destructive bg-destructive/10 focus:border-destructive focus:ring-destructive/30",
                           )}

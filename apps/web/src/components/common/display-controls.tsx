@@ -169,7 +169,7 @@ export function DisplayControls({
     <details className={cn("group relative", className)}>
       <summary
         className={cn(
-          "inline-flex h-9 cursor-pointer list-none items-center gap-2 rounded-md border bg-card px-3 text-sm font-medium shadow-xs select-none hover:bg-muted pointer-coarse:h-11",
+          "inline-flex h-9 cursor-pointer list-none items-center gap-2 rounded-md border bg-card px-3 text-sm font-medium select-none hover:bg-muted pointer-coarse:h-11",
           "focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none [&::-webkit-details-marker]:hidden",
         )}
       >

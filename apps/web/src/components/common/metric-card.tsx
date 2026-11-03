@@ -1,5 +1,7 @@
 import { cn } from "@/lib/utils";
 
+import { panelClassName } from "./panel";
+
 type MetricCardProps = {
   label: string;
   /**
@@ -36,36 +38,31 @@ export function MetricCard({
 }: MetricCardProps) {
   const hasValue =
     typeof value === "string" ? value.length > 0 : value !== null && Number.isFinite(value);
-  const valueSize = emphasis ? "text-4xl" : "text-2xl";
+  const valueSize = emphasis ? "text-3xl" : "text-2xl";
 
   return (
     <div
-      className={cn(
-        "rounded-lg border bg-card text-card-foreground shadow-xs",
-        emphasis ? "p-5" : "p-4",
-        className,
-      )}
+      className={cn(panelClassName, emphasis ? "p-3.5" : "p-3", className)}
       aria-busy={loading || undefined}
     >
       <div className="flex items-start justify-between gap-2">
-        <p
-          className={cn(
-            "line-clamp-2 font-medium tracking-wide text-muted-foreground uppercase",
-            emphasis ? "text-sm" : "text-xs",
-          )}
-        >
+        <p className="line-clamp-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
           {label}
         </p>
-        {Icon && <Icon className={cn("shrink-0 text-muted-foreground", emphasis ? "size-5" : "size-4")} />}
+        {Icon && (
+          <Icon
+            className={cn("shrink-0 text-muted-foreground", emphasis ? "size-4" : "size-3.5")}
+          />
+        )}
       </div>
       {loading ? (
         <>
-          <div className={cn("mt-3 w-20 animate-pulse rounded bg-muted", emphasis ? "h-9" : "h-6")} />
-          <div className="mt-2 h-3 w-28 animate-pulse rounded bg-muted" />
+          <div className={cn("mt-2.5 w-20 animate-pulse rounded bg-muted", emphasis ? "h-8" : "h-6")} />
+          <div className="mt-1.5 h-3 w-28 animate-pulse rounded bg-muted" />
         </>
       ) : (
         <>
-          <div className="mt-2 flex min-w-0 items-baseline gap-1">
+          <div className="mt-1.5 flex min-w-0 items-baseline gap-1">
             {hasValue ? (
               <>
                 <span

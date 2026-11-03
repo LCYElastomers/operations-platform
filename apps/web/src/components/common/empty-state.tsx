@@ -23,19 +23,19 @@ export function EmptyState({
   return (
     <div
       className={cn(
-        "flex flex-col items-center justify-center px-6 py-12 text-center",
+        "flex flex-col items-center justify-center px-5 py-8 text-center",
         variant === "card" && "rounded-lg border border-dashed bg-card",
         className,
       )}
     >
-      <div className="grid size-11 place-items-center rounded-full border bg-muted">
-        <Icon className="size-5 text-muted-foreground" />
+      <div className="grid size-9 place-items-center rounded-md border bg-muted">
+        <Icon className="size-4 text-muted-foreground" />
       </div>
-      <h3 className="mt-4 text-sm font-semibold">{title}</h3>
+      <h3 className="mt-3 text-sm font-semibold">{title}</h3>
       {description && (
         <p className="mt-1 max-w-md text-sm text-muted-foreground">{description}</p>
       )}
-      {action && <div className="mt-5">{action}</div>}
+      {action && <div className="mt-4">{action}</div>}
     </div>
   );
 }

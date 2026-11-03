@@ -36,7 +36,7 @@ type HeatmapTableProps = {
 
 const STATUS_TONES: Record<HeatmapColumnStatus["tone"], string> = {
   ok: "text-success",
-  warning: "bg-warning/15 font-semibold text-amber-700 dark:text-warning",
+  warning: "bg-warning/15 font-semibold text-foreground dark:text-warning",
   neutral: "text-muted-foreground",
 };
 
@@ -67,7 +67,8 @@ export function HeatmapTable({
   total,
   statusLabel,
   statuses,
-  rgb = "37 99 235",
+  // Default shade uses the info/interactive blue from the design tokens.
+  rgb = "59 130 246",
   className,
 }: HeatmapTableProps) {
   const max = Math.max(0, ...rows.flatMap((row) => row.values.map((value) => value ?? 0)));
@@ -82,7 +83,7 @@ export function HeatmapTable({
     <div className={cn("relative overflow-x-auto overscroll-x-contain", className)}>
       <table className="w-full min-w-[640px] border-collapse text-sm tabular-nums">
         <caption className="sr-only">{caption}</caption>
-        <thead className="bg-muted/60">
+        <thead className="bg-muted/80">
           <tr className="border-b">
             <th
               scope="col"

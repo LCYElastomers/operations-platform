@@ -14,6 +14,7 @@ import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 import { EmptyState } from "./empty-state";
+import { panelClassName } from "./panel";
 
 const dataTableFeatures = tableFeatures({
   rowSortingFeature,
@@ -70,11 +71,11 @@ export function DataTable<TData extends RowData>({
   const columnCount = table.getAllLeafColumns().length;
 
   return (
-    <div className={cn("overflow-hidden rounded-lg border bg-card", className)}>
+    <div className={cn("overflow-hidden", panelClassName, className)}>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[640px] border-collapse text-sm">
           {caption && <caption className="sr-only">{caption}</caption>}
-          <thead className="bg-muted/60">
+          <thead className="bg-muted/80">
             {table.getHeaderGroups().map((group) => (
               <tr key={group.id} className="border-b">
                 {group.headers.map((header) => {
@@ -90,7 +91,7 @@ export function DataTable<TData extends RowData>({
                       aria-sort={
                         sorted === "asc" ? "ascending" : sorted === "desc" ? "descending" : undefined
                       }
-                      className="h-10 px-4 text-left text-xs font-semibold tracking-wide whitespace-nowrap text-muted-foreground uppercase"
+                      className="h-9 px-3 text-left text-xs font-semibold tracking-wide whitespace-nowrap text-muted-foreground uppercase"
                     >
                       {header.isPlaceholder ? null : canSort ? (
                         <button
@@ -118,7 +119,7 @@ export function DataTable<TData extends RowData>({
               Array.from({ length: LOADING_ROWS }, (_, index) => (
                 <tr key={index} className="border-b last:border-b-0">
                   {Array.from({ length: columnCount }, (_, cell) => (
-                    <td key={cell} className="h-11 px-4">
+                    <td key={cell} className="h-9 px-3">
                       <div className="h-3 w-full max-w-24 animate-pulse rounded bg-muted" />
                     </td>
                   ))}
@@ -134,7 +135,7 @@ export function DataTable<TData extends RowData>({
               rows.map((row) => (
                 <tr key={row.id} className="border-b last:border-b-0 hover:bg-muted/40">
                   {row.getAllCells().map((cell) => (
-                    <td key={cell.id} className="h-11 px-4 whitespace-nowrap tabular-nums">
+                    <td key={cell.id} className="h-9 px-3 whitespace-nowrap tabular-nums">
                       <table.FlexRender cell={cell} />
                     </td>
                   ))}

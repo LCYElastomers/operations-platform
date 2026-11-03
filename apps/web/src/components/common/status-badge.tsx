@@ -7,7 +7,7 @@ const toneClasses: Record<StatusTone, { badge: string; dot: string }> = {
   info: { badge: "border-info/25 bg-info/10 text-info", dot: "bg-info" },
   success: { badge: "border-success/25 bg-success/10 text-success", dot: "bg-success" },
   warning: {
-    badge: "border-warning/30 bg-warning/15 text-amber-700 dark:text-warning",
+    badge: "border-warning/30 bg-warning/15 text-foreground dark:text-warning",
     dot: "bg-warning",
   },
   danger: { badge: "border-destructive/25 bg-destructive/10 text-destructive", dot: "bg-destructive" },

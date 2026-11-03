@@ -2,8 +2,10 @@
 
 import { useQuery } from "@tanstack/react-query";
 
+import { panelClassName } from "@/components/common/panel";
 import { StatusBadge, type StatusTone } from "@/components/common/status-badge";
 import { apiGet } from "@/lib/api-client";
+import { cn } from "@/lib/utils";
 
 type HealthResponse = {
   status: "ok";
@@ -51,7 +53,7 @@ export function ApiStatusCard() {
   const { state, data, dataUpdatedAt } = useApiHealth();
 
   return (
-    <div className="flex items-center justify-between gap-4 rounded-lg border bg-card px-4 py-3 text-card-foreground">
+    <div className={cn("flex items-center justify-between gap-4 px-3 py-2.5", panelClassName)}>
       <div className="min-w-0">
         <p className="text-sm font-medium">API service</p>
         <p className="truncate text-xs text-muted-foreground">

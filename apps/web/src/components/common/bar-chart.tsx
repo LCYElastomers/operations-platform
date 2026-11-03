@@ -22,6 +22,7 @@ import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
 import { EmptyState } from "./empty-state";
+import { panelClassName } from "./panel";
 import { ChartLegend, PALETTE } from "./trend-chart";
 
 echarts.use([
@@ -119,9 +120,9 @@ export function BarChart({
 
   return (
     <section
-      className={cn("flex flex-col rounded-lg border bg-card text-card-foreground", className)}
+      className={cn("flex flex-col", panelClassName, className)}
     >
-      <header className="flex items-start justify-between gap-4 border-b px-4 py-3">
+      <header className="flex items-start justify-between gap-4 border-b px-3 py-2.5">
         <div className="min-w-0">
           <h2 className="text-sm font-semibold">{title}</h2>
           {description && <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>}

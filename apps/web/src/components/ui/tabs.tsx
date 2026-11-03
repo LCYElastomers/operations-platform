@@ -86,7 +86,7 @@ export function Tabs<T extends string>({
           );
         })}
       </div>
-      <div id={panelId} role="tabpanel" aria-labelledby={tabId(value)} className="pt-5">
+      <div id={panelId} role="tabpanel" aria-labelledby={tabId(value)} className="pt-4">
         {children}
       </div>
     </div>

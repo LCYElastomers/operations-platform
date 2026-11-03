@@ -74,9 +74,9 @@ function ToastItem({ item }: { item: Toast }) {
         aria-hidden
         className={cn(
           "mt-0.5 size-4 shrink-0",
-          item.tone === "success" && "text-emerald-600",
+          item.tone === "success" && "text-success",
           item.tone === "error" && "text-destructive",
-          item.tone === "info" && "text-primary",
+          item.tone === "info" && "text-info",
         )}
       />
       <div className="min-w-0 flex-1">

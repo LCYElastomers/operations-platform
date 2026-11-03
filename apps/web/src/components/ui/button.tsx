@@ -7,13 +7,15 @@ export const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground shadow-xs hover:bg-primary/90",
-        outline: "border bg-card shadow-xs hover:bg-muted",
+        default: "bg-primary text-primary-foreground hover:bg-primary/90",
+        outline: "border bg-card hover:bg-muted",
         ghost: "hover:bg-muted",
+        destructive:
+          "border border-destructive/30 bg-destructive/10 text-destructive hover:bg-destructive/15",
       },
       size: {
-        default: "h-9 px-4",
-        sm: "h-8 px-3",
+        default: "h-9 px-3.5",
+        sm: "h-8 px-2.5",
       },
     },
     defaultVariants: { variant: "default", size: "default" },
