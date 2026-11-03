@@ -30,6 +30,7 @@ import {
   detailFieldsOf,
   detailHistoryChanges,
   detailProblems,
+  withExclusiveInjuryOutcome,
 } from "./detail-data";
 import { DetailSections } from "./detail-sections";
 import { Field, fieldClasses } from "./form-fields";
@@ -461,6 +462,7 @@ function ProblemAlert({ problem, onReload }: { problem: SaveProblem; onReload: (
 function RecordFieldsEditor({
   draft,
   onChange,
+  onClassificationChange,
   eventType,
   range,
   problems,
@@ -469,6 +471,7 @@ function RecordFieldsEditor({
 }: {
   draft: Draft;
   onChange: (draft: Draft) => void;
+  onClassificationChange?: (classificationId: string) => void;
   eventType: EventType;
   range: { min: string; max: string } | null;
   problems: Partial<Record<keyof Draft | string, string>>;
@@ -541,7 +544,11 @@ function RecordFieldsEditor({
         <select
           id={`${id}-classificationCategoryId`}
           value={draft.classificationId}
-          onChange={set("classificationId")}
+          onChange={(event) =>
+            onClassificationChange
+              ? onClassificationChange(event.target.value)
+              : set("classificationId")(event)
+          }
           aria-invalid={problems.classificationCategoryId ? true : undefined}
           aria-describedby={described("classificationCategoryId", false)}
           className={cn(fieldClasses, "h-9 pointer-coarse:h-11")}
@@ -666,6 +673,21 @@ function RecordForm({
       <RecordFieldsEditor
         draft={draft}
         onChange={setDraft}
+        onClassificationChange={(classificationId) => {
+          const selected = classificationId ? Number(classificationId) : null;
+          if (selected === null) {
+            setDraft({ ...draft, classificationId: "" });
+            return;
+          }
+          const next = withExclusiveInjuryOutcome(
+            selected,
+            details.additional,
+            selected,
+            options?.classifications,
+          );
+          setDraft({ ...draft, classificationId: String(next.primaryId ?? "") });
+          setDetails({ ...details, additional: next.additional });
+        }}
         eventType={eventType}
         range={range}
         problems={problems}
@@ -676,6 +698,7 @@ function RecordForm({
         draft={details}
         onChange={setDetails}
         primaryId={primaryId}
+        onPrimaryIdChange={(id) => setDraft({ ...draft, classificationId: id ? String(id) : "" })}
         codes={codes}
         options={options}
         record={record}

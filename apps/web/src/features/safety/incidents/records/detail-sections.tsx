@@ -11,6 +11,7 @@ import {
   isFirstAid,
   SECTIONS,
   visibleSections,
+  withExclusiveInjuryOutcome,
   type ConditionalKind,
   type DamageDraft,
   type DetailDraft,
@@ -213,6 +214,7 @@ export function DetailSections({
   draft,
   onChange,
   primaryId,
+  onPrimaryIdChange,
   codes,
   options,
   record,
@@ -221,6 +223,8 @@ export function DetailSections({
   draft: DetailDraft;
   onChange: (draft: DetailDraft) => void;
   primaryId: number | null;
+  /** When an injury outcome is chosen as additional, it may become the primary. */
+  onPrimaryIdChange?: (primaryId: number | null) => void;
   codes: Set<string>;
   options: RecordOptionsResponse | undefined;
   record: IncidentRecord | null;
@@ -242,11 +246,15 @@ export function DetailSections({
   const additionalChoices = (options?.classifications ?? []).filter(
     (option) => option.id !== primaryId && (option.active || draft.additional.includes(option.id)),
   );
-  const toggle = (optionId: number, checked: boolean) =>
-    onChange({
-      ...draft,
-      additional: checked ? [...draft.additional, optionId] : draft.additional.filter((value) => value !== optionId),
-    });
+  const toggle = (optionId: number, checked: boolean) => {
+    if (!checked) {
+      onChange({ ...draft, additional: draft.additional.filter((value) => value !== optionId) });
+      return;
+    }
+    const next = withExclusiveInjuryOutcome(primaryId, draft.additional, optionId, options?.classifications);
+    if (next.primaryId !== primaryId) onPrimaryIdChange?.(next.primaryId);
+    onChange({ ...draft, additional: next.additional });
+  };
 
   const orphaned = (Object.keys(SECTIONS) as ConditionalKind[]).filter(
     (kind) => !shown[kind] && record?.[SECTIONS[kind].field],
@@ -258,6 +266,8 @@ export function DetailSections({
         <legend className="text-sm font-medium">Additional classifications (optional)</legend>
         <p id={`${id}-additional-hint`} className="text-xs text-muted-foreground">
           One event can carry more than one classification, for example a PIT accident that also damaged property.
+          Select the most specific injury outcome. Lost Time and Restricted cases are automatically included in TRIR
+          reporting.
         </p>
         {problems.additionalClassificationIds && (
           <p role="alert" className="text-xs text-destructive">

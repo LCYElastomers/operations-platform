@@ -48,9 +48,10 @@ class Measure(StrEnum):
     PROPERTY_EQUIPMENT_DAMAGE = "property_equipment_damage"
 
 
-# Incident & Near Miss categories read for each numerator. TRIR adds recordable
-# injuries and occupational illnesses; Lost Time Injury is a subset of
-# recordable injuries and is not added again.
+# Incident & Near Miss categories read for each numerator. TRIR for incident
+# years uses distinct qualifying records (see ``trir_eligibility``), not the
+# sum of Recordable + Lost Time + Restricted classification cells. These
+# category cells still feed First Aid, LOPC, damage rates and display fields.
 INCIDENT_CATEGORIES: dict[str, CategoryKey] = {
     "recordable_injury": ("incident_classification", "recordable_injury"),
     "occupational_illness": ("incident_classification", "occupational_illness"),
@@ -135,10 +136,14 @@ def month_counts(
 
         injury, illness = value("recordable_injury"), value("occupational_illness")
         damage, equipment = value("property_damage"), value("equipment_damage_failure")
+        # Distinct active records with RI, LTI, Restricted or Occupational Illness.
+        # Supplied by the repository as ``trir_cases``; fixtures without it fall
+        # back to RI + OI cells (pre-record overlay).
+        trir = value("trir_cases") if "trir_cases" in stored else _sum(injury, illness)
         return MonthCounts(
             source=source,
             confirmed=confirmed,
-            trir=_sum(injury, illness),
+            trir=trir,
             first_aid=value("first_aid"),
             lopc=value("lopc"),
             # Defined as property_damage + equipment_damage_failure. Monthly

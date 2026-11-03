@@ -6,9 +6,11 @@ Sources, each read from its owner and never copied:
 
 - Hours: Safety Performance monthly ``total_hours`` ("Monthly Hours Worked
   (Total)", hourly + salary), through ``performance.service.trir_inputs``.
-- Recordables: the TRIR numerator Safety Performance uses, i.e. Incident &
-  Near Miss recordable injuries + occupational illnesses (from 2026), or the
-  pre-platform workbook recordable counts (before 2026).
+- Recordables: the TRIR numerator Safety Performance uses — from 2026,
+  distinct active Incident & Near Miss records that qualify under
+  ``trir_eligibility`` (Recordable Injury, Lost Time Injury, Restricted, or
+  Occupational Illness, each incident at most once); before 2026, the
+  pre-platform workbook recordable counts.
 - Benchmark and history: ``safety.trir_annual_facts`` (reviewed import).
 
 A year with monthly hours in Safety Performance is calculated live, January
@@ -60,7 +62,10 @@ from app.safety.trir.schemas import (
 )
 
 NUMERATOR_SOURCE = {
-    "incidents": "Incident & Near Miss: Recordable Injury + Occupational Illness",
+    "incidents": (
+        "Incident & Near Miss: distinct qualifying records "
+        "(Recordable Injury, Lost Time Injury, Restricted, or Occupational Illness)"
+    ),
     "performance_legacy": "Pre-platform workbook monthly recordable counts (Safety Performance)",
     "historical": "TRIR history: annual recordable count",
 }
@@ -73,10 +78,12 @@ METHODOLOGY = MethodologyOut(
     formula="TRIR = recordable cases × 200,000 ÷ worked hours",
     rate_base=RATE_BASE,
     numerator=(
-        "OSHA-recordable cases: from 2026, Incident & Near Miss Recordable Injury plus "
-        "Occupational Illness (Lost Time Injury is part of Recordable Injury and is not added "
-        "again); before 2026, the recordable counts of the pre-platform workbook. Incidents "
-        "that are not recordable (first aid, near misses, property damage) are never counted."
+        "OSHA-recordable cases: from 2026, each distinct active Incident & Near Miss record "
+        "that carries Recordable Injury, Lost Time Injury, Restricted, or Occupational "
+        "Illness (overlapping tags on one record still count once; classification cells are "
+        "not summed into the numerator); before 2026, the recordable counts of the "
+        "pre-platform workbook. Incidents that are not recordable (first aid, near misses, "
+        "property damage alone) are never counted."
     ),
     denominator=(
         "Safety Performance 'Monthly Hours Worked (Total)': the total worked hours entered for "

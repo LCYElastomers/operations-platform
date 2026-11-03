@@ -39,7 +39,7 @@ function section(
   };
 }
 
-/** Test fixture, not production data. Derived sections mirror the API flag. */
+/** Test fixture: only top totals stay derived; downstream tables are editable. */
 const METRICS: MonthlyMetricsResponse = {
   metricSet: "incidents",
   year: 2026,
@@ -50,22 +50,40 @@ const METRICS: MonthlyMetricsResponse = {
       ["near_miss", "Near Miss", { 1: 2 }],
       ["incident", "Incident", { 1: 2, 2: 3 }],
     ]),
-    section(2, "incident_classification", "Incident Classification", [
-      ["first_aid", "First Aid", { 1: 1 }],
-      ["recordable_injury", "Recordable Injury", { 1: 0 }],
-    ]),
-    section(3, "lopc", "LOPC", [["lopc", "LOPC", { 1: 1 }]]),
-    section(7, "incidents_by_area", "Incidents by Area", [
-      ["100", "100", { 1: 1 }],
-      ["mundy", "MUNDY", { 1: 1, 2: 1 }],
-      ["lab", "Lab", {}],
-    ]),
-    section(10, "near_miss_cause", "Near-Miss Cause", [["housekeeping", "Housekeeping", { 1: 3 }]]),
-    section(11, "lopc_contributing_factor", "LOPC Contributing Factor", [["other", "Other", {}]]),
-    section(13, "body_part", "Body Part", [
-      ["hand", "Hand", { 1: 1 }],
-      ["fingers", "Fingers", { 1: 1 }],
-    ]),
+    section(
+      2,
+      "incident_classification",
+      "Incident Classification",
+      [
+        ["first_aid", "First Aid", { 1: 1 }],
+        ["recordable_injury", "Recordable Injury", { 1: 0 }],
+      ],
+      false,
+    ),
+    section(3, "lopc", "LOPC", [["lopc", "LOPC", { 1: 1 }]], false),
+    section(
+      7,
+      "incidents_by_area",
+      "Incidents by Area",
+      [
+        ["100", "100", { 1: 1 }],
+        ["mundy", "MUNDY", { 1: 1, 2: 1 }],
+        ["lab", "Lab", {}],
+      ],
+      false,
+    ),
+    section(10, "near_miss_cause", "Near-Miss Cause", [["housekeeping", "Housekeeping", { 1: 3 }]], false),
+    section(11, "lopc_contributing_factor", "LOPC Contributing Factor", [["other", "Other", {}]], false),
+    section(
+      13,
+      "body_part",
+      "Body Part",
+      [
+        ["hand", "Hand", { 1: 1 }],
+        ["fingers", "Fingers", { 1: 1 }],
+      ],
+      false,
+    ),
     section(14, "near_miss_potential", "Near-Miss Potential", [["sif", "SIF", { 1: 1 }]], false),
   ],
 };
@@ -111,7 +129,9 @@ beforeEach(() => {
       if (init?.method === "PATCH") {
         const body = JSON.parse(String(init.body));
         patches.push(body);
-        const response = behavior ? { changedCategories: body.changes.length, counts: BEHAVIOR } : METRICS;
+        const response = behavior
+          ? { changedCategories: body.changes.length, counts: BEHAVIOR }
+          : { changedCells: body.changes.length, metrics: METRICS };
         return Promise.resolve({ ok: true, status: 200, json: async () => response });
       }
       if (init?.method === "POST") {
@@ -241,17 +261,15 @@ describe("Incident & Near Miss Data Entry breakdowns", () => {
     expect(headings.join(" ")).not.toMatch(/Process Safety/);
   });
 
-  it("makes record-derived lower tables read-only while Near-Miss Potential stays editable", async () => {
+  it("keeps top totals read-only while restoring edit on downstream tables", async () => {
     await render();
 
     expect(input("Incident, Jan")).toBeNull();
-    expect(input("First Aid, Jan")).toBeNull();
-    expect(input("MUNDY, Feb")).toBeNull();
-    expect(input("Housekeeping, Jan")).toBeNull();
-    expect(input("Hand, Jan")).toBeNull();
-    // The only monthly section not rebuilt from records.
+    expect(input("First Aid, Jan")).not.toBeNull();
+    expect(input("MUNDY, Feb")).not.toBeNull();
+    expect(input("Housekeeping, Jan")).not.toBeNull();
+    expect(input("Hand, Jan")).not.toBeNull();
     expect(input("SIF, Jan")).not.toBeNull();
-    expect(input("SIF, Jan").readOnly).toBe(false);
   });
 
   it("checks areas against Incidents as a warning that never fills or blocks", async () => {
@@ -261,8 +279,11 @@ describe("Incident & Near Miss Data Entry breakdowns", () => {
     expect(areas.textContent).toContain("Checked against Incidents (warning only).");
     expect(areas.textContent).toContain("Reconciled: Jan");
     expect(areas.textContent).toContain("Feb: Areas 1, Incidents 3 · below total (reconciliation difference −2)");
-    // Derived: no typing into the area cells.
-    expect(areas.querySelector("input")).toBeNull();
+
+    await type("MUNDY, Feb", "3");
+    expect(areas.textContent).toContain("Reconciled: Jan, Feb");
+    expect(input("100, Feb").value).toBe("");
+    expect(input("Lab, Feb").value).toBe("");
   });
 
   it("checks body parts against First Aid + Recordable and allows a higher count", async () => {
@@ -274,7 +295,29 @@ describe("Incident & Near Miss Data Entry breakdowns", () => {
     expect(body.textContent).toContain(
       "Jan: Body parts 2, First Aid + Recordable Injury 1 · above total (reconciliation difference +1)",
     );
-    expect(body.querySelector("input")).toBeNull();
+    expect(body.querySelector("input")).not.toBeNull();
+  });
+
+  it("saves a downstream classification edit and discards restore the prior value", async () => {
+    await render();
+    await type("First Aid, Jan", "9");
+    expect(input("First Aid, Jan").value).toBe("9");
+    const discard = [...container.querySelectorAll("button")].find((b) => b.textContent === "Discard")!;
+    await act(async () => discard.click());
+    expect(input("First Aid, Jan").value).toBe("1");
+
+    await type("First Aid, Jan", "4");
+    const save = [...container.querySelectorAll("button")].find((b) => b.textContent === "Save changes")!;
+    await act(async () => save.click());
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(patches).toEqual([
+      {
+        year: 2026,
+        changes: [{ categoryId: 201, month: 1, value: 4, previousValue: 1 }],
+      },
+    ]);
   });
 
   it("notes that near-miss tags may exceed the near-miss count", async () => {

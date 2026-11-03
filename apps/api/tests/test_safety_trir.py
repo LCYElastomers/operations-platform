@@ -459,7 +459,9 @@ def test_non_recordable_classifications_are_not_counted(performance: InMemoryRep
     before = _experience(performance).current.recordables
     month = performance.incidents[(2026, 2)]
     month.update(first_aid=4, property_damage=3, equipment_damage_failure=2, lopc=5)
-    month["lost_time_injury"] = 1  # a subset of recordable injuries, never added again
+    # Classification cells alone are not the TRIR authority; without ``trir_cases``
+    # the experience fixture still uses the RI + OI fallback and ignores LTI cells.
+    month["lost_time_injury"] = 1
 
     after = _experience(performance).current
 

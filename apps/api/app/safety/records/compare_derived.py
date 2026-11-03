@@ -46,8 +46,8 @@ class CellDifference:
 
 
 def month_differences(session: Session, year: int, month: int) -> list[CellDifference]:
-    """Stored vs record-derived values for one month of the derived sections."""
-    categories = aggregation._load_categories(session)
+    """Stored vs record-derived expected values for one month."""
+    categories = aggregation._load_categories(session, aggregation.RECORD_EXPECTED_SECTIONS)
     derived_counts = aggregation.month_counts(session, categories, year, month)
     v = MonthlyMetricValue
     stored_rows = {

@@ -5,12 +5,14 @@ Every change is audited as ``safety.incident_record`` with key
 change. ``version`` guards each change: a request carrying a stale version is
 refused with the current record, and nothing is written.
 
-Individual records are the source of truth for the derived monthly values (the
-Incident and Near Miss totals and their breakdowns). After every create, edit,
-void or reclassification, the derived ``monthly_metric_values`` of each affected
-month are rebuilt from the active records only (``aggregation``), in the same
-transaction as the record change. Derived values are never typed, so saving a
-monthly value never creates or removes records.
+Individual records are the source of truth for the top Incident & Near Miss
+Totals. After every create, edit, void or reclassification, those derived
+``monthly_metric_values`` are rebuilt from the active records only
+(``aggregation``), in the same transaction as the record change. Downstream
+monthly tables (classification, area, LOPC, …) remain manually editable for
+authorized corrections; expected record-derived counts support reconciliation.
+TRIR uses distinct qualifying records (``trir_eligibility``), not classification
+cell sums.
 
 A record's further classifications, tags (injury causes, body parts, event
 causes) and details (``details``) are written in the record's transaction and
@@ -53,6 +55,7 @@ from app.safety.records.schemas import (
     VoidRequest,
 )
 from app.safety.site_calendar import site_today
+from app.safety.trir_eligibility import has_multiple_injury_outcomes
 
 logger = logging.getLogger(__name__)
 
@@ -387,6 +390,13 @@ def _plan_details(
     further = _further(repository, request, primary_id, current)
     by_id = {o.id: o.code for o in repository.classifications()}
     codes = {by_id[i] for i in (primary_id, *further) if i is not None and i in by_id}
+    # Reviewed historical imports may still carry overlapping outcomes; new edits cannot.
+    if strict and has_multiple_injury_outcomes(codes):
+        raise RecordRuleError(
+            "injury_outcome_conflict",
+            "Choose only one of Recordable Injury, Lost Time Injury, or Restricted.",
+            field="additionalClassificationIds",
+        )
     plan = DetailPlan(further_before=current, further_after=further)
     _plan_tags(
         repository, request, plan, record_id=record_id, first_aid=FIRST_AID in codes, strict=strict

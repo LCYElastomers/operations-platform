@@ -9,6 +9,7 @@ import {
   detailHistoryChanges,
   detailProblems,
   visibleSections,
+  withExclusiveInjuryOutcome,
 } from "./detail-data";
 import { daysSinceText, drillLabel, parseDrill, ytdText } from "./insights-data";
 
@@ -18,6 +19,9 @@ const OPTIONS: RecordOption[] = [
   { id: 2, code: "pit_accident", name: "PIT Accident", active: true },
   { id: 3, code: "property_damage", name: "Property Damage", active: true },
   { id: 4, code: "equipment_damage_failure", name: "Equipment Damage / Failure", active: true },
+  { id: 10, code: "recordable_injury", name: "Recordable Injury", active: true },
+  { id: 11, code: "lost_time_injury", name: "Lost Time Injury", active: true },
+  { id: 12, code: "restricted", name: "Restricted", active: true },
 ];
 const STAMP = { updatedAt: "2026-01-01T00:00:00Z", updatedBy: "fixture" };
 
@@ -99,6 +103,19 @@ describe("record detail drafts", () => {
     const draft = detailDraftOf(record);
     expect(detailFieldsOf(draft, new Set(), record).additionalClassificationIds).toBeUndefined();
     expect(detailFieldsOf({ ...draft, additional: [] }, new Set(), record).additionalClassificationIds).toEqual([]);
+  });
+
+  it("keeps Recordable, Lost Time and Restricted mutually exclusive", () => {
+    // Selecting LTI after Recordable clears Recordable.
+    expect(withExclusiveInjuryOutcome(10, [], 11, OPTIONS)).toEqual({ primaryId: 11, additional: [] });
+    // Selecting Restricted after Recordable clears Recordable (keeps Fire).
+    expect(withExclusiveInjuryOutcome(10, [2], 12, OPTIONS)).toEqual({ primaryId: 12, additional: [2] });
+    // Selecting Recordable after LTI clears LTI.
+    expect(withExclusiveInjuryOutcome(11, [10, 2], 10, OPTIONS)).toEqual({ primaryId: 10, additional: [2] });
+    // Selecting Restricted after LTI leaves only Restricted (+ Fire).
+    expect(withExclusiveInjuryOutcome(11, [2], 12, OPTIONS)).toEqual({ primaryId: 12, additional: [2] });
+    // Non-injury classifications are unchanged.
+    expect(withExclusiveInjuryOutcome(10, [2], 3, OPTIONS)).toEqual({ primaryId: 10, additional: [2] });
   });
 
   it("asks for injury causes and body parts only with First Aid, and event causes always", () => {

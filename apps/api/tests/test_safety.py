@@ -294,7 +294,8 @@ def test_derived_categories_cannot_be_saved() -> None:
             allow_derived=False,
         )
 
-    assert error.value.category_ids == [11, 22]
+    # Only Incident & Near Miss Totals remain derived; classification is editable again.
+    assert error.value.category_ids == [22]
     assert repository.locks == []
     assert repository.pending == {}
     assert repository.stored == {(31, 2026, 1): 1}
@@ -315,7 +316,7 @@ def test_derived_sections_are_flagged_in_the_grid() -> None:
     )
 
     assert {s.code: s.derived for s in metrics.sections} == {
-        "incident_classification": True,
+        "incident_classification": False,
         "incident_near_miss_totals": True,
         "near_miss_potential": False,
     }
@@ -411,7 +412,7 @@ def test_get_returns_the_monthly_grid(editor: TestClient) -> None:
         "ytd": 2,
     }
     assert set(data["sections"][1]) == {"id", "code", "name", "categories", "derived"}
-    assert [s["derived"] for s in data["sections"]] == [True, True, False]
+    assert [s["derived"] for s in data["sections"]] == [False, True, False]
     assert data["sections"][1]["categories"][1]["ytd"] is None
 
 
@@ -439,7 +440,7 @@ def test_save_returns_the_refreshed_grid(
     assert repository.stored == {(31, 2026, 1): 3, (32, 2026, 1): 0}
 
 
-@pytest.mark.parametrize("category_id", [11, 21, 22])
+@pytest.mark.parametrize("category_id", [21, 22])
 def test_save_rejects_derived_categories(
     editor: TestClient, repository: InMemoryRepository, category_id: int
 ) -> None:
@@ -453,6 +454,16 @@ def test_save_rejects_derived_categories(
     assert detail["categoryIds"] == [category_id]
     assert repository.stored == {(31, 2026, 1): 2}
     assert repository.audit == []
+
+
+def test_classification_cells_can_be_saved_again(
+    editor: TestClient, repository: InMemoryRepository
+) -> None:
+    response = editor.patch(
+        URL, json=body(cell(categoryId=11, value=4, previousValue=None))
+    )
+    assert response.status_code == 200
+    assert repository.stored[(11, 2026, 1)] == 4
 
 
 @pytest.mark.parametrize(

@@ -87,8 +87,8 @@ def edit(repository: RecordRepository, record_id: int, **changes: Any) -> Any:
     return service.update(repository, record_id, RecordUpdate.model_validate(body), ACTOR)
 
 
-def stored(session: Session, year: int, month: int) -> dict[tuple[str, str], int]:
-    """(section, category) -> derived value of the month."""
+def stored_totals(session: Session, year: int, month: int) -> dict[tuple[str, str], int]:
+    """(section, category) -> values written by rebuild (totals only)."""
     s, c, v = MetricSection, MetricCategory, MonthlyMetricValue
     rows = session.execute(
         select(s.code, c.code, v.value)
@@ -102,6 +102,18 @@ def stored(session: Session, year: int, month: int) -> dict[tuple[str, str], int
         )
     ).all()
     return {(section, category): value for section, category, value in rows}
+
+
+def expected(session: Session, year: int, month: int) -> dict[tuple[str, str], int]:
+    """Record-derived expected counts (not necessarily stored in monthly cells)."""
+    categories = aggregation._load_categories(session, aggregation.RECORD_EXPECTED_SECTIONS)
+    counts = aggregation.month_counts(session, categories, year, month)
+    return {(c.section, c.code): counts.get(c.id, 0) for c in categories.all}
+
+
+def stored(session: Session, year: int, month: int) -> dict[tuple[str, str], int]:
+    """Alias used by totals-focused tests."""
+    return stored_totals(session, year, month)
 
 
 def test_each_counting_rule_feeds_its_derived_category(
@@ -135,10 +147,11 @@ def test_each_counting_rule_feeds_its_derived_category(
         seriousRiskDetails={"isPsif": True},
     )
 
-    values = stored(session, 2003, 1)
+    totals = stored_totals(session, 2003, 1)
+    assert totals[("incident_near_miss_totals", "incident")] == 2
+    assert totals[("incident_near_miss_totals", "near_miss")] == 1
 
-    assert values[("incident_near_miss_totals", "incident")] == 2
-    assert values[("incident_near_miss_totals", "near_miss")] == 1
+    values = expected(session, 2003, 1)
     assert values[("incidents_by_area", "300")] == 2
     assert values[("incidents_by_area", "100")] == 0
     assert values[("near_misses_by_area", "100")] == 1
@@ -211,13 +224,13 @@ def test_removing_first_aid_clears_injury_causes_and_body_parts(
         injuryCauseCategoryIds=tag_ids(repository, INJURY_CAUSES, "struck_by"),
         bodyPartCategoryIds=tag_ids(repository, BODY_PARTS, "hand"),
     )
-    assert stored(session, 2003, 1)[("injury_cause", "struck_by")] == 1
+    assert expected(session, 2003, 1)[("injury_cause", "struck_by")] == 1
 
     row = edit(repository, record_id, classificationCategoryId=classes["hazardous_condition"])
 
     out = service.record_out(row)
     assert out.injury_cause_category_ids == [] and out.body_part_category_ids == []
-    values = stored(session, 2003, 1)
+    values = expected(session, 2003, 1)
     assert values[("injury_cause", "struck_by")] == 0 and values[("body_part", "hand")] == 0
 
 
@@ -280,3 +293,63 @@ def test_historical_first_aid_without_tags_remains_readable(
     assert out.classification_code == "first_aid"
     assert out.injury_cause_category_ids == []
     assert out.body_part_category_ids == []
+
+
+def test_august_lti_does_not_increment_recordable_injury_row(
+    session: Session, repository: RecordRepository
+) -> None:
+    """One August Lost Time Injury → LTI 1, Recordable 0, TRIR cases 1."""
+    from app.safety.trir_eligibility import trir_case_counts
+
+    classes = class_ids(repository)
+    create(
+        repository,
+        incidentDate="2003-08-12",
+        classificationCategoryId=classes["lost_time_injury"],
+    )
+    values = expected(session, 2003, 8)
+    assert values[("incident_classification", "lost_time_injury")] == 1
+    assert values[("incident_classification", "recordable_injury")] == 0
+    assert values[("incident_classification", "restricted")] == 0
+    assert trir_case_counts(session, {2003}).get((2003, 8)) == 1
+
+
+def test_create_rejects_recordable_plus_lost_time(
+    repository: RecordRepository,
+) -> None:
+    classes = class_ids(repository)
+    with pytest.raises(service.RecordRuleError) as raised:
+        create(
+            repository,
+            classificationCategoryId=classes["recordable_injury"],
+            additionalClassificationIds=[classes["lost_time_injury"]],
+        )
+    assert raised.value.error == "injury_outcome_conflict"
+
+
+def test_overlapping_historical_tags_count_once_for_trir(
+    session: Session, repository: RecordRepository
+) -> None:
+    from app.safety.records.detail_models import IncidentRecordClassification
+    from app.safety.trir_eligibility import (
+        overlapping_injury_outcome_records,
+        trir_case_counts,
+    )
+
+    classes = class_ids(repository)
+    record_id = create(
+        repository,
+        incidentDate="2003-08-15",
+        classificationCategoryId=classes["lost_time_injury"],
+    )
+    # Simulate a legacy overlap the UI/API no longer allow.
+    session.add(
+        IncidentRecordClassification(
+            incident_record_id=record_id,
+            classification_category_id=classes["recordable_injury"],
+        )
+    )
+    session.flush()
+    overlaps = overlapping_injury_outcome_records(session)
+    assert any(row["recordId"] == record_id for row in overlaps)
+    assert trir_case_counts(session, {2003}).get((2003, 8)) == 1

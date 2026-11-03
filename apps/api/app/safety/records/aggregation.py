@@ -1,10 +1,10 @@
-"""Derived monthly Incident & Near Miss values, rebuilt from the individual records.
+"""Record-derived monthly Incident & Near Miss values.
 
-Individual ``incident_records`` are the source of truth. After a record is
-created, edited, voided or reclassified, the derived ``monthly_metric_values``
-of every affected month are rebuilt from the *active* records only: voided
-records and reclassified (superseded) originals are never counted, so a
-reclassification's replacement is counted once.
+After a record is created, edited, voided or reclassified, the top Incident &
+Near Miss Totals (``DERIVED_SECTIONS``) are rebuilt from *active* records only:
+voided and superseded (reclassified) originals are never counted. Downstream
+monthly tables remain manually editable; ``RECORD_EXPECTED_SECTIONS`` supports
+reconciliation of stored values against what active records would produce.
 
 Counting rules, per active record dated in the month:
 
@@ -61,10 +61,17 @@ LOPC_CONTRIBUTING_FACTOR = "lopc_contributing_factor"
 INJURY_CAUSE = "injury_cause"
 BODY_PART = "body_part"
 
-# Sections whose monthly values are computed from the records and so are never typed.
-# Near-Miss Potential is not here: nothing on a record feeds it. Behavior is a separate
-# table (and endpoint) and is not a metric section.
-DERIVED_SECTIONS = (
+# Only the top Incident & Near Miss Totals stay record-derived and non-editable.
+# Downstream monthly tables are again manually editable for authorized corrections;
+# ``compare_derived`` reports expected record-derived counts for reconciliation.
+# Near-Miss Potential is not derived (nothing on a record feeds it). Behavior is a
+# separate table. TRIR uses distinct qualifying records (``trir_eligibility``), not
+# these monthly classification cells.
+DERIVED_SECTIONS = (TOTALS,)
+
+# Sections whose expected monthly values can be recomputed from active records
+# (for cutover / discrepancy reports). Broader than ``DERIVED_SECTIONS``.
+RECORD_EXPECTED_SECTIONS = (
     TOTALS,
     CLASSIFICATION,
     LOPC,
@@ -118,12 +125,14 @@ class _Categories:
         return self._by_area.get((section, area_id))
 
 
-def _load_categories(session: Session) -> _Categories:
+def _load_categories(
+    session: Session, sections: Sequence[str] = DERIVED_SECTIONS
+) -> _Categories:
     c, s = MetricCategory, MetricSection
     rows = session.execute(
         select(c.id, s.code, c.code, c.area_id, c.active)
         .join(s, s.id == c.section_id)
-        .where(s.metric_set == INCIDENTS_METRIC_SET, s.code.in_(DERIVED_SECTIONS))
+        .where(s.metric_set == INCIDENTS_METRIC_SET, s.code.in_(list(sections)))
         .order_by(s.display_order, c.display_order, c.id)
     ).all()
     return _Categories([_Category(*row) for row in rows])

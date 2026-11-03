@@ -20,6 +20,7 @@ from app.safety.performance.calculations import (
     Period,
 )
 from app.safety.performance.models import PerformanceAnnualLegacy, PerformanceHours
+from app.safety.trir_eligibility import apply_trir_case_counts, trir_case_counts
 
 # A month's Incident & Near Miss counts are reported when it has a value in these
 # sections. Breakdowns (area, cause, body part...) never confirm a zero count.
@@ -234,6 +235,8 @@ class DatabasePerformanceRepository:
         incidents = self._metric_counts(INCIDENTS, INCIDENT_CATEGORIES, years)
         for period in self._reported_periods(INCIDENTS, REPORTED_SECTIONS, years):
             incidents.setdefault(period, {})
+        # TRIR numerator authority: distinct qualifying records, not cell sums.
+        apply_trir_case_counts(incidents, trir_case_counts(self._session, years))
         return incidents, self._metric_counts(PERFORMANCE_LEGACY, LEGACY_CATEGORIES, years)
 
     def _reported_periods(

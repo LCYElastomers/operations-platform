@@ -159,6 +159,9 @@ export function detailDraftOf(record: IncidentRecord | null): DetailDraft {
   };
 }
 
+/** Mutually exclusive injury outcomes (one event → one classification row). */
+export const INJURY_OUTCOME_CODES = new Set(["recordable_injury", "lost_time_injury", "restricted"]);
+
 /** The codes of the chosen primary and additional classifications. */
 export function classificationCodes(
   primaryId: number | null,
@@ -168,6 +171,37 @@ export function classificationCodes(
   const byId = new Map((options ?? []).map((option) => [option.id, option.code]));
   const ids = primaryId === null ? additional : [primaryId, ...additional];
   return new Set(ids.map((id) => byId.get(id)).filter((code): code is string => code !== undefined));
+}
+
+/**
+ * Keep only the latest injury outcome across primary + additional.
+ * Selecting Lost Time or Restricted clears Recordable (and the other), so the
+ * classification table never increments two of these rows for one event.
+ */
+export function withExclusiveInjuryOutcome(
+  primaryId: number | null,
+  additional: number[],
+  selectedId: number,
+  options: RecordOption[] | undefined,
+): { primaryId: number | null; additional: number[] } {
+  const byId = new Map((options ?? []).map((option) => [option.id, option.code]));
+  const selectedCode = byId.get(selectedId);
+  if (!selectedCode || !INJURY_OUTCOME_CODES.has(selectedCode)) {
+    return { primaryId, additional };
+  }
+  const outcomeIds = new Set(
+    (options ?? []).filter((option) => INJURY_OUTCOME_CODES.has(option.code)).map((option) => option.id),
+  );
+  const clearedAdditional = additional.filter((id) => id === selectedId || !outcomeIds.has(id));
+  const primaryIsOtherOutcome =
+    primaryId !== null && primaryId !== selectedId && outcomeIds.has(primaryId);
+  if (primaryIsOtherOutcome || primaryId === null || primaryId === selectedId) {
+    return {
+      primaryId: selectedId,
+      additional: clearedAdditional.filter((id) => id !== selectedId),
+    };
+  }
+  return { primaryId, additional: clearedAdditional.includes(selectedId) ? clearedAdditional : [...clearedAdditional, selectedId] };
 }
 
 /** First Aid (primary or additional) asks for injury causes and body parts. */
