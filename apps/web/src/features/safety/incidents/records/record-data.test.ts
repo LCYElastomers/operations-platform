@@ -7,6 +7,7 @@ import {
   monthActionLabel,
   monthDateRange,
   monthTitle,
+  recordFormDateRange,
 } from "./record-data";
 
 const month = (monthlyTotal: number | null, documented: number, state: MonthReconciliation["state"]) => ({
@@ -45,6 +46,17 @@ describe("record labels", () => {
     expect(monthDateRange(2024, 2, "2026-10-08")).toEqual({ min: "2024-02-01", max: "2024-02-29" });
     expect(monthDateRange(2026, 10, "2026-10-08")).toEqual({ min: "2026-10-01", max: "2026-10-08" });
     expect(monthDateRange(2026, 11, "2026-10-08")).toBeNull();
+  });
+
+  it("lets Register edits cross a year boundary while month grids stay locked", () => {
+    expect(recordFormDateRange(undefined, "2027-01-01")).toEqual({
+      min: "2000-01-01",
+      max: "2027-01-01",
+    });
+    expect(recordFormDateRange({ reportingYear: 2026, reportingMonth: 12 }, "2027-01-01")).toEqual({
+      min: "2026-12-01",
+      max: "2026-12-31",
+    });
   });
 
   it("lists changed fields of an audit event by name", () => {

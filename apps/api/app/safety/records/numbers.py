@@ -5,6 +5,11 @@ Numbers are written in several forms (``LCY-2026-037``, ``LCY 2026-040``,
 an upper-case prefix, the four-digit year and the sequence padded to three
 digits, joined by hyphens (``LCY-2026-037``). Anything else is rejected
 rather than guessed.
+
+Numbers are entered by the user (or legacy import), not allocated by the
+platform. The year in the number is part of the unique identity, so
+``LCY-2026-001`` and ``LCY-2027-001`` do not collide; each calendar year can
+restart its sequence without colliding with prior years.
 """
 
 import re

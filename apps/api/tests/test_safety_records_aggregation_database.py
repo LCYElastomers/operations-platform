@@ -10,11 +10,13 @@ from typing import Any
 
 import pytest
 from postgres_support import requires_postgres
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session
 
+from app.audit.models import AuditEvent
 from app.safety.models import MetricCategory, MetricSection, MonthlyMetricValue
 from app.safety.records import aggregation, service
+from app.safety.records.models import IncidentRecord
 from app.safety.records.repository import RecordRepository
 from app.safety.records.schemas import ReclassifyRequest, RecordCreate, RecordUpdate, VoidRequest
 from app.safety.records.tags import BODY_PARTS, EVENT_CAUSES, INJURY_CAUSES, TagSpec
@@ -61,17 +63,25 @@ def tag_ids(repository: RecordRepository, tag: TagSpec, *codes: str) -> list[int
     return [by_code[code] for code in codes]
 
 
-def create(repository: RecordRepository, **fields: Any) -> int:
+def create(
+    repository: RecordRepository, *, actor: service.Actor = ACTOR, **fields: Any
+) -> int:
     data: dict[str, Any] = {
         "eventType": "incident",
         "incidentDate": "2003-01-14",
         "description": "ZZ test event.",
         **fields,
     }
-    return service.create(repository, RecordCreate.model_validate(data), ACTOR).record.id
+    return service.create(repository, RecordCreate.model_validate(data), actor).record.id
 
 
-def edit(repository: RecordRepository, record_id: int, **changes: Any) -> Any:
+def edit(
+    repository: RecordRepository,
+    record_id: int,
+    *,
+    actor: service.Actor = ACTOR,
+    **changes: Any,
+) -> Any:
     row = repository.get(record_id)
     assert row is not None
     r = row.record
@@ -84,7 +94,7 @@ def edit(repository: RecordRepository, record_id: int, **changes: Any) -> Any:
         "version": r.version,
         **changes,
     }
-    return service.update(repository, record_id, RecordUpdate.model_validate(body), ACTOR)
+    return service.update(repository, record_id, RecordUpdate.model_validate(body), actor)
 
 
 def stored_totals(session: Session, year: int, month: int) -> dict[tuple[str, str], int]:
@@ -212,6 +222,82 @@ def test_void_move_and_reclassify_rebuild_from_active_records_only(
     assert march[("incident_near_miss_totals", "near_miss")] == 0
     assert april[("incident_near_miss_totals", "incident")] == 0
     assert april[("incident_near_miss_totals", "near_miss")] == 1
+
+
+def _incident_total(session: Session, year: int, month: int) -> int:
+    return stored(session, year, month).get(("incident_near_miss_totals", "incident"), 0)
+
+
+def _incident_ytd(session: Session, year: int) -> int:
+    return sum(_incident_total(session, year, month) for month in range(1, 13))
+
+
+def test_editing_across_the_year_boundary_moves_reporting_contributions(
+    session: Session, repository: RecordRepository
+) -> None:
+    """Register-style edit (no month context): same record ID moves from 2026 into 2027.
+
+    Month/YTD checks are deltas from the post-create rebuild so a shared
+    database that already has 2026 rows remains valid.
+    """
+    actor = service.Actor("db-aggregation-tester", dt.datetime(2027, 1, 15, 18, 0, tzinfo=dt.UTC))
+
+    record_id = create(repository, actor=actor, incidentDate="2026-12-31")
+    other_id = create(repository, actor=actor, incidentDate="2026-12-15")
+    assert other_id != record_id
+
+    after_create_dec = _incident_total(session, 2026, 12)
+    after_create_jan = _incident_total(session, 2027, 1)
+    after_create_ytd_2026 = _incident_ytd(session, 2026)
+    after_create_ytd_2027 = _incident_ytd(session, 2027)
+    assert after_create_dec >= 2
+
+    edited = edit(repository, record_id, actor=actor, incidentDate="2027-01-01")
+    assert edited.record.id == record_id
+    assert edited.record.incident_date == dt.date(2027, 1, 1)
+    out = service.record_out(edited)
+    assert (out.reporting_year, out.reporting_month) == (2027, 1)
+
+    # December contribution for the moved record is removed; January gains it.
+    assert _incident_total(session, 2026, 12) == after_create_dec - 1
+    assert _incident_total(session, 2027, 1) == after_create_jan + 1
+    assert _incident_ytd(session, 2026) == after_create_ytd_2026 - 1
+    assert _incident_ytd(session, 2027) == after_create_ytd_2027 + 1
+
+    # One physical row; it cannot remain dated in both years.
+    assert session.scalar(select(func.count()).select_from(IncidentRecord).where(IncidentRecord.id == record_id)) == 1
+    assert (
+        session.scalar(
+            select(func.count())
+            .select_from(IncidentRecord)
+            .where(IncidentRecord.id == record_id, IncidentRecord.incident_date == dt.date(2026, 12, 31))
+        )
+        == 0
+    )
+    assert (
+        session.scalar(
+            select(func.count())
+            .select_from(IncidentRecord)
+            .where(IncidentRecord.id == record_id, IncidentRecord.incident_date == dt.date(2027, 1, 1))
+        )
+        == 1
+    )
+
+    # Existing audit trail records the previous and corrected dates (reporting
+    # period is derived from incident_date, not stored separately).
+    events = list(
+        session.scalars(
+            select(AuditEvent)
+            .where(AuditEvent.entity_key == service.entity_key(record_id))
+            .order_by(AuditEvent.id)
+        )
+    )
+    updates = [e for e in events if e.action == "update"]
+    assert updates
+    assert updates[-1].old_value["incident_date"] == "2026-12-31"
+    assert updates[-1].new_value["incident_date"] == "2027-01-01"
+    assert updates[-1].actor_id == actor.actor_id
+    assert updates[-1].occurred_at is not None
 
 
 def test_removing_first_aid_clears_injury_causes_and_body_parts(

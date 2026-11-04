@@ -96,6 +96,19 @@ export function monthDateRange(year: number, month: number, today: string): { mi
   return { min, max: end < today ? end : today };
 }
 
+/**
+ * Date bounds for the record form. Month-scoped entry stays in that month.
+ * Register create/edit uses any past-or-today date so a correction can cross a
+ * year boundary; reporting year always follows incident_date.
+ */
+export function recordFormDateRange(
+  context: { reportingYear: number; reportingMonth: number } | undefined,
+  today: string,
+): { min: string; max: string } | null {
+  if (context) return monthDateRange(context.reportingYear, context.reportingMonth, today);
+  return { min: "2000-01-01", max: today };
+}
+
 export function formatRecordDate(iso: string): string {
   const [year, month, day] = iso.split("-").map(Number);
   return `${MONTH_NAMES[month - 1].slice(0, 3)} ${day}, ${year}`;

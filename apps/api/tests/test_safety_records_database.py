@@ -93,7 +93,9 @@ def option_id(options: list[Any], code: str) -> int:
     return next(o.id for o in options if o.code == code)
 
 
-def create(repository: RecordRepository, **overrides: Any) -> int:
+def create(
+    repository: RecordRepository, *, actor: service.Actor = ACTOR, **overrides: Any
+) -> int:
     data: dict[str, Any] = {
         "eventType": "incident",
         "incidentDate": "2003-01-14",
@@ -105,7 +107,7 @@ def create(repository: RecordRepository, **overrides: Any) -> int:
         # A First Aid record needs an injury cause and a body part (migration 0019).
         data.setdefault("injuryCauseCategoryIds", [repository.tag_options(INJURY_CAUSES)[0].id])
         data.setdefault("bodyPartCategoryIds", [repository.tag_options(BODY_PARTS)[0].id])
-    return service.create(repository, RecordCreate.model_validate(data), ACTOR).record.id
+    return service.create(repository, RecordCreate.model_validate(data), actor).record.id
 
 
 def audit(session: Session, record_id: int) -> list[AuditEvent]:
@@ -356,6 +358,25 @@ def test_edit_cannot_move_a_record_to_another_month(repository: RecordRepository
     )
     with pytest.raises(service.RecordRuleError, match="January 2003"):
         service.update(repository, record_id, request, ACTOR)
+
+
+def test_edit_without_month_context_may_cross_the_year_boundary(
+    repository: RecordRepository,
+) -> None:
+    """Register edits omit month context so reporting follows the new incident_date."""
+    actor = service.Actor("db-records-tester", dt.datetime(2027, 1, 15, 18, 0, tzinfo=dt.UTC))
+    record_id = create(repository, incidentDate="2026-12-31", actor=actor)
+    request = RecordUpdate.model_validate(
+        {
+            "incidentDate": "2027-01-01",
+            "description": "ZZ crossed the year.",
+            "version": 1,
+        }
+    )
+    updated = service.update(repository, record_id, request, actor)
+    out = service.record_out(updated)
+    assert out.incident_date == dt.date(2027, 1, 1)
+    assert (out.reporting_year, out.reporting_month) == (2027, 1)
 
 
 def test_void_keeps_the_record_and_excludes_it(

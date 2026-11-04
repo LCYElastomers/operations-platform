@@ -238,8 +238,7 @@ def _validated(
         if (day.year, day.month) != (year, month):
             raise RecordRuleError(
                 "date_outside_month",
-                f"The date must fall in {calendar.month_name[month]} {year}. "
-                "Records are never moved to another month.",
+                f"The date must fall in {calendar.month_name[month]} {year}.",
                 field="incidentDate",
             )
 

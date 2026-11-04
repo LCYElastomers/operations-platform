@@ -41,6 +41,7 @@ import {
   formatRecordDate,
   historyChanges,
   monthDateRange,
+  recordFormDateRange,
   monthTitle,
   OTHER_EVENT,
   recordName,
@@ -594,15 +595,12 @@ function FormButtons({ saving, label, onCancel }: { saving: boolean; label: stri
   );
 }
 
-/** The record's own month for edits (records never move month); the dialog's month or open range for new ones. */
+/** Month-scoped entry stays in that month; Register allows any past-or-today date. */
 function dateRange(
-  record: IncidentRecord | null,
   context: { reportingYear: number; reportingMonth: number } | undefined,
   today: string,
 ) {
-  if (record) return monthDateRange(record.reportingYear, record.reportingMonth, today);
-  if (context) return monthDateRange(context.reportingYear, context.reportingMonth, today);
-  return { min: "2000-01-01", max: today };
+  return recordFormDateRange(context, today);
 }
 
 function RecordForm({
@@ -624,7 +622,7 @@ function RecordForm({
   onSaved: (record: IncidentRecord, created: boolean) => void;
   onReload: (record: IncidentRecord) => void;
 }) {
-  const range = dateRange(record, context, today);
+  const range = dateRange(context, today);
   const defaultDate = range && context && !record ? (today < range.max ? today : range.max) : "";
   const [draft, setDraft] = useState(() => draftOf(record, defaultDate));
   const [details, setDetails] = useState(() => detailDraftOf(record));
@@ -650,13 +648,14 @@ function RecordForm({
       ...detailFieldsOf({ ...details, additional: details.additional.filter((id) => id !== primaryId) }, codes, record),
     };
     if (record) {
+      // Month context only when editing from a month grid; omit it from Register
+      // so a date correction can move reporting across a year boundary.
       update.mutate(
         {
           id: record.id,
           body: {
             ...fields,
-            reportingYear: record.reportingYear,
-            reportingMonth: record.reportingMonth,
+            ...context,
             version: record.version,
           },
         },
