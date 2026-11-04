@@ -295,7 +295,8 @@ export function fetchHistory(id: number, signal?: AbortSignal) {
 }
 
 export type CreateBody = RecordFields & DetailFields & { eventType: EventType } & Partial<MonthContext>;
-export type UpdateBody = RecordFields & DetailFields & MonthContext & { version: number };
+/** Month context is optional: omit it for Register edits that may cross a month/year boundary. */
+export type UpdateBody = RecordFields & DetailFields & Partial<MonthContext> & { version: number };
 
 export function createRecord(body: CreateBody) {
   return apiSend<RecordResponse>("POST", BASE, body);
